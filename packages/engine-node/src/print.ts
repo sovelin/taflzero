@@ -1,5 +1,7 @@
 import {Board} from "../../engine/src/model/Board";
 import {Piece} from "../../engine/src/types";
+import {moveFrom, moveTo} from "../../engine/src/move";
+import {getCol, getRow} from "../../engine/src/utils";
 
 export function printBoard (b: Board) {
   const size = 11;
@@ -37,4 +39,15 @@ export function printBoard (b: Board) {
 
   console.log(borderBottom);
   console.log(top);
+}
+
+function getSquareAlg(sq) {
+  const cols = "abcdefghijk";
+  const row = getRow(sq)
+  const col = getCol(sq)
+  return `${cols[col]}${row + 1}`;
+}
+
+export function getMoveAlg(move: number) {
+  return `${getSquareAlg(moveFrom(move))}-${getSquareAlg(moveTo(move))}`;
 }

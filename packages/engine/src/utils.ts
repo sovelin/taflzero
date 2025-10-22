@@ -17,3 +17,7 @@ export function getRow(sq: number): number {
 export function getCol(sq: number): number {
   return sq % BOARD_SIZE;
 }
+
+export function getBinary(num: number, digits: number) {
+  return num.toString(2).padStart(digits, '0');
+}
