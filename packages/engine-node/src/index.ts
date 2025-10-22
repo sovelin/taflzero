@@ -1,7 +1,7 @@
-export function createEngine() {
-  // Placeholder: wire up the core engine implementation.
-  console.log('lol')
-  throw new Error('createEngine is not implemented yet');
-}
+import {createBoard, setInitialPosition} from "../../engine/src/board";
+import {printBoard} from "./print";
 
-createEngine()
+
+const board = createBoard();
+setInitialPosition(board);
+printBoard(board);
