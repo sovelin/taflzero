@@ -1,15 +1,15 @@
 import {Piece, Side} from "./types";
 import {Board} from "./model/Board";
-import {getCol, getRow, getSquare, getSquareFromAlgebraic} from "./utils";
+import {getCol, getRow, getSquareFromAlgebraic} from "./utils";
+import {BOARD_SIZE, SQS} from "./constants";
 
-const BOARD_SIZE = 11;
 const ATTACKERS_MAX = 24;
 const DEFENDERS_MAX = 12;
 const HOLE = -1;
 
 export function createBoard(): Board {
   return {
-    board: new Int8Array(BOARD_SIZE * BOARD_SIZE).fill(0),
+    board: new Int8Array(SQS).fill(0),
     attackers: new Int16Array(ATTACKERS_MAX).fill(HOLE),
     defenders: new Int16Array(DEFENDERS_MAX).fill(HOLE),
     kingSq: HOLE,
@@ -19,7 +19,7 @@ export function createBoard(): Board {
 
     rowOcc: new Uint16Array(BOARD_SIZE),
     colOcc: new Uint16Array(BOARD_SIZE),
-    pieceIndexBySquare: new Int16Array(BOARD_SIZE * BOARD_SIZE).fill(HOLE),
+    pieceIndexBySquare: new Int16Array(SQS).fill(HOLE),
 
     sideToMove: Side.ATTACKERS,
     moveNumber: 1,
@@ -48,6 +48,33 @@ export function setPiece(board: Board, sq: number, piece: number): void {
     board.defendersCount++;
   } else if (piece === Piece.KING) {
     board.kingSq = sq;
+  }
+}
+
+export function clearPiece(board: Board, sq: number): void {
+  const piece = board.board[sq];
+  board.board[sq] = Piece.EMPTY;
+
+  const row = getRow(sq);
+  const col = getCol(sq);
+
+  board.rowOcc[row] &= ~(1 << row);
+  board.colOcc[col] &= ~(1 << col);
+
+  if (piece === Piece.ATTACKER) {
+    const index = board.attackers.findIndex(s => s === sq);
+    if (index !== -1) {
+      board.attackers[index] = HOLE;
+      board.attackersCount--;
+    }
+  } else if (piece === Piece.DEFENDER) {
+    const index = board.defenders.findIndex(s => s === sq);
+    if (index !== -1) {
+      board.defenders[index] = HOLE;
+      board.defendersCount--;
+    }
+  } else if (piece === Piece.KING) {
+    board.kingSq = HOLE;
   }
 }
 
