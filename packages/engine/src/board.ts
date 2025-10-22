@@ -78,7 +78,7 @@ export function clearPiece(board: Board, sq: number): void {
   }
 }
 
-function clearBoard(board: Board): void {
+export function clearBoard(board: Board): void {
   board.board.fill(Piece.EMPTY);
   board.attackers.fill(HOLE);
   board.defenders.fill(HOLE);
