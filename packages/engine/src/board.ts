@@ -117,10 +117,10 @@ export function setInitialPosition(board: Board): void {
     setPiece(board, sq, Piece.KING);
   }
 
-  setAttackers(["d1", "e1", "f1", "g1", "h1",])
-  setAttackers(["a4", "a5", "a6", "a7", "a8",])
-  setAttackers(["d11", "e11", "f11", "g11", "h11",])
-  setAttackers(["k4", "k5", "k6", "k7", "k8",])
+  setAttackers(["d1", "e1", "f1", "g1", "h1"])
+  setAttackers(["a4", "a5", "a6", "a7", "a8"])
+  setAttackers(["d11", "e11", "f11", "g11", "h11"])
+  setAttackers(["k4", "k5", "k6", "k7", "k8"])
   setAttackers(["b6", "f10", "j6", "f2"]);
 
   setDefenders(["e6", "f5", "f7", "g6"]);
