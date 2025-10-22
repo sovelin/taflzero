@@ -21,3 +21,7 @@ export function getCol(sq: number): number {
 export function getBinary(num: number, digits: number) {
   return num.toString(2).padStart(digits, '0');
 }
+
+export function ctz(x: number){
+  return Math.clz32(x & -x) ^ 31;
+}

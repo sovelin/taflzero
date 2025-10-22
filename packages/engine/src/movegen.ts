@@ -1,7 +1,7 @@
 import {Board} from "./model/Board";
 import {Side} from "./types";
 import {createMove} from "./move";
-import {getBinary, getCol, getRow, getSquare} from "./utils";
+import {ctz, getBinary, getCol, getRow, getSquare} from "./utils";
 import {LINE_MOVES} from "./attackers";
 import {BOARD_SIZE} from "./constants";
 
@@ -21,7 +21,7 @@ export const createMoveGenerator = () => {
   const generateHorizontalMoves = (board: Board, fromSq: number) => {
     const row = getRow(fromSq);
     const rowOcc = board.rowOcc[row];
-    let horizontalMoves = LINE_MOVES[row][rowOcc];
+    let horizontalMoves = LINE_MOVES[row][rowOcc] & ~(1 << getCol(fromSq));
     //printLineMaskExamples(rowOcc, row);
     // TODO: check disable fields
 
@@ -33,7 +33,7 @@ export const createMoveGenerator = () => {
         combined: getBinary(cur & horizontalMoves, BOARD_SIZE),
       });
       if (cur & horizontalMoves) {
-        const toSq = getSquare(row, cur)
+        const toSq = getSquare(row, ctz(cur));
         addMove(fromSq, toSq);
       }
       horizontalMoves &= ~cur;
@@ -44,13 +44,13 @@ export const createMoveGenerator = () => {
   const generateVerticalMoves = (board: Board, fromSq: number) => {
     const col = getCol(fromSq);
     const colOcc = board.colOcc[col];
-    let verticalMoves = LINE_MOVES[col][colOcc];
+    let verticalMoves = LINE_MOVES[col][colOcc] & ~(1 << getRow(fromSq));
     // TODO: check disable fields
 
     let cur = 1;
     while (verticalMoves) {
       if (cur & verticalMoves) {
-        const toSq = getSquare(cur, col)
+        const toSq = getSquare(ctz(cur), col)
         addMove(fromSq, toSq);
       }
       verticalMoves &= ~cur;
