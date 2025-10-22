@@ -1,0 +1,26 @@
+{
+  "name": "@zevratafl/engine-node",
+  "version": "0.1.0",
+  "description": "Node.js bindings for the Zevratafl engine",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist",
+    "dev": "tsx src/index.ts",
+    "lint": "echo 'No lint step configured'"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "tsx": "^4.20.6"
+  }
+}
