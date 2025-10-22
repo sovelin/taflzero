@@ -12,7 +12,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "clean": "rm -rf dist",
-    "dev": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
     "lint": "echo 'No lint step configured'"
   },
   "devDependencies": {
