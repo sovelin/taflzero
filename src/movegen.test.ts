@@ -114,4 +114,32 @@ describe('Move Generation Tests', () => {
       "a2b2", "a2c2", "a2d2", "a2e2", "a2f2", "a2g2", "a2h2", "a2i2", "a2j2", "a2k2" // horizontal only
     ]);
   })
+
+  it('piece should not move onto throne (f6)', () => {
+    const {board, generator, expectIsMovesNotExists} = prepare();
+    board.sideToMove = Side.DEFENDERS;
+    setPiece(board, getSquareFromAlgebraic("f5"), Piece.DEFENDER);
+    generator.movegen(board);
+
+    expectIsMovesNotExists(["f5f6"]);
+  })
+
+  it('king could move onto throne (f6)', () => {
+    const {board, generator, expectIsMovesExists} = prepare();
+    board.sideToMove = Side.DEFENDERS;
+    setPiece(board, getSquareFromAlgebraic("f5"), Piece.KING);
+    generator.movegen(board);
+
+    expectIsMovesExists(["f5f6"]);
+  })
+
+  it('king could move onto corner (a1)', () => {
+    const {board, generator, expectIsMovesExists, expectMovesCount} = prepare();
+    board.sideToMove = Side.DEFENDERS;
+    setPiece(board, getSquareFromAlgebraic("a2"), Piece.KING);
+    generator.movegen(board);
+
+    expectMovesCount(20);
+    expectIsMovesExists(["a2a1"]);
+  })
 })

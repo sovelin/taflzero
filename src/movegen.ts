@@ -89,6 +89,8 @@ export const createMoveGenerator = () => {
 
 
   const generateMovesForPiece = (board: Board, fromSq: number) => {
+    if (fromSq === -1) return;
+
     generateHorizontalMoves(board, fromSq);
     generateVerticalMoves(board, fromSq);
   }
