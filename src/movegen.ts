@@ -1,9 +1,8 @@
 import {Board} from "./model/Board";
 import {Side} from "./types";
 import {createMove} from "./move";
-import {ctz, getBinary, getCol, getRow, getSquare} from "./utils";
+import {ctz, getCol, getRow, getSquare} from "./utils";
 import {LINE_MOVES} from "./attackers";
-import {BOARD_SIZE} from "./constants";
 
 export const createMoveGenerator = () => {
   const MAX_MOVES = 1024;
