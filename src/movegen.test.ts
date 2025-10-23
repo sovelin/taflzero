@@ -7,11 +7,15 @@ import {initLineMoves} from "./attackers";
 import {beforeAll, describe, expect, it} from "vitest";
 
 describe('Move Generation Tests', () => {
-  const createGenerator = () => {
+  const prepare = () => {
+    const board = createBoard();
+    clearBoard();
+
     const generator = createMoveGenerator();
 
     return {
       generator,
+      board,
       printMoves: () => {
         for(let i = 0; i < generator.movesCount; ++i) {
           console.log(`${i + 1}. ${getMoveAlg(generator.moves[i])}`);
@@ -57,22 +61,19 @@ describe('Move Generation Tests', () => {
   })
 
   it('clear board: no moves', () => {
-    const generator = createMoveGenerator();
-    const board = createBoard();
+    const {board, generator, expectMovesCount} = prepare();
     generator.movegen(board);
-    expect(generator.movesCount).toBe(0);
+
+    expectMovesCount(0);
   })
 
-  it('1 piece on the board', () => {
-    const {generator, expectMovesCount, expectIsMovesExists, expectIsMovesNotExists, printMoves} = createGenerator();
-    const board = createBoard();
-
+  it('1 piece on b1', () => {
+    const {board, generator, expectMovesCount, expectIsMovesExists, expectIsMovesNotExists} = prepare();
     board.sideToMove = Side.ATTACKERS;
     setPiece(board, getSquareFromAlgebraic("b1"), Piece.ATTACKER);
     generator.movegen(board);
-    expectMovesCount(18);
 
-    printMoves()
+    expectMovesCount(18);
 
     // Valid moves
     expectIsMovesExists([
