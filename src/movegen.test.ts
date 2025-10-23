@@ -77,8 +77,8 @@ describe('Move Generation Tests', () => {
 
     // Valid moves
     expectIsMovesExists([
-      "b1c1", "b1d1", "b1e1", "b1f1", "b1g1", "b1h1", "b1i1", // horizontal
-      "b1b2", "b1b3", "b1b4", "b1b5", "b1b6", "b1b7", "b1b8", "b1b9"  // vertical
+      "b1c1", "b1d1", "b1e1", "b1f1", "b1g1", "b1h1", "b1i1", "b1j1", // horizontal
+      "b1b2", "b1b3", "b1b4", "b1b5", "b1b6", "b1b7", "b1b8", "b1b9", "b1b10", "b1b11"  // vertical
     ]);
 
     // Out of bounds
@@ -92,11 +92,11 @@ describe('Move Generation Tests', () => {
     setPiece(board, getSquareFromAlgebraic("c1"), Piece.DEFENDER);
     generator.movegen(board);
 
-    expectMovesCount(8);
+    expectMovesCount(10);
 
     // Valid moves
     expectIsMovesExists([
-      "b1b2", "b1b3", "b1b4", "b1b5", "b1b6", "b1b7", "b1b8", "b1b9"  // vertical only
+      "b1b2", "b1b3", "b1b4", "b1b5", "b1b6", "b1b7", "b1b8", "b1b9", "b1b10", "b1b11"  // vertical only
     ]);
   })
 })
