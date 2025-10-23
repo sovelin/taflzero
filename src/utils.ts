@@ -18,8 +18,10 @@ export function getCol(sq: number): number {
   return sq % BOARD_SIZE;
 }
 
-export function getBinary(num: number, digits: number) {
-  return num.toString(2).padStart(digits, '0');
+export function getBinary(num: number, digits = BOARD_SIZE, reverse = true) {
+  const masked = num & ((1 << digits) - 1);
+  const res = masked.toString(2).padStart(digits, '0');
+  return reverse ? res.split('').reverse().join('') : res;
 }
 
 export function ctz(x: number){

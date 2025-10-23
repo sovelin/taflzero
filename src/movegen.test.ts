@@ -2,15 +2,9 @@ import {clearBoard, createBoard, setPiece} from "./board";
 import {createMoveGenerator} from "./movegen";
 import {Piece, Side} from "./types";
 import {getSquareFromAlgebraic} from "./utils";
-import {getMoveAlg, printBoard} from "./print";
+import {getMoveAlg} from "./print";
 import {initLineMoves} from "./attackers";
 import {beforeAll, describe, expect, it} from "vitest";
-
-const printMoves = (moves: Uint32Array, count: number) => {
-  for(let i = 0; i < count; ++i) {
-    console.log(`${i}. ${getMoveAlg(moves[i])}`);
-  }
-}
 
 describe('Move Generation Tests', () => {
   const createGenerator = () => {
@@ -20,7 +14,7 @@ describe('Move Generation Tests', () => {
       generator,
       printMoves: () => {
         for(let i = 0; i < generator.movesCount; ++i) {
-          console.log(`${i}. ${getMoveAlg(generator.moves[i])}`);
+          console.log(`${i + 1}. ${getMoveAlg(generator.moves[i])}`);
         }
       },
       expectMovesCount: (expectedCount: number) => {
@@ -32,7 +26,12 @@ describe('Move Generation Tests', () => {
           actualMoves.add(getMoveAlg(generator.moves[i]));
         }
         for (const move of expectedMoves) {
-          expect(actualMoves.has(move)).toBe(true);
+          try {
+            expect(actualMoves.has(move)).toBe(true);
+          } catch (e) {
+            console.log(`Expected move not found: ${move}`);
+            throw e;
+          }
         }
       },
       expectIsMovesNotExists: (notExpectedMoves: string[]) => {
@@ -65,17 +64,23 @@ describe('Move Generation Tests', () => {
   })
 
   it('1 piece on the board', () => {
-    const {generator, expectMovesCount, expectIsMovesExists, expectIsMovesNotExists} = createGenerator();
+    const {generator, expectMovesCount, expectIsMovesExists, expectIsMovesNotExists, printMoves} = createGenerator();
     const board = createBoard();
 
     board.sideToMove = Side.ATTACKERS;
-    setPiece(board, getSquareFromAlgebraic("a1"), Piece.ATTACKER);
+    setPiece(board, getSquareFromAlgebraic("b1"), Piece.ATTACKER);
     generator.movegen(board);
-    expectMovesCount(20);
+    expectMovesCount(18);
 
-    expectIsMovesExists(["a1a2", "a1a3", "a1a4", "a1a5", "a1a6", "a1a7", "a1a8", "a1a9", "a1a10"]);
-    expectIsMovesExists(["a1b1", "a1c1", "a1d1", "a1e1", "a1f1", "a1g1", "a1h1", "a1i1", "a1j1"]);
+    printMoves()
+
+    // Valid moves
+    expectIsMovesExists([
+      "b1c1", "b1d1", "b1e1", "b1f1", "b1g1", "b1h1", "b1i1", // horizontal
+      "b1b2", "b1b3", "b1b4", "b1b5", "b1b6", "b1b7", "b1b8", "b1b9"  // vertical
+    ]);
+
     // Out of bounds
-    expectIsMovesNotExists(["a1a1", "a1a10", "a1j1"]);
+    expectIsMovesNotExists(["b1a1", "b1a10"]);
   })
 })

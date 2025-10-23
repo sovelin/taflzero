@@ -3,7 +3,7 @@ import {moveFrom, moveTo} from "./move";
 import {Board} from "./model/Board";
 import {Piece} from "./types";
 
-export function printBoard (b: Board) {
+export function printBoard(b: Board) {
   const size = 11;
   const cols = "abcdefghijk".split("");
   const color = (txt: string, code: number) => `\x1b[${code}m${txt}\x1b[0m`;
@@ -41,7 +41,7 @@ export function printBoard (b: Board) {
   console.log(top);
 }
 
-function getSquareAlg(sq) {
+function getSquareAlg(sq: number) {
   const cols = "abcdefghijk";
   const row = getRow(sq)
   const col = getCol(sq)

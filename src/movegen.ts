@@ -1,8 +1,23 @@
 import {Board} from "./model/Board";
-import {Side} from "./types";
+import {Piece, Side} from "./types";
 import {createMove} from "./move";
-import {ctz, getCol, getRow, getSquare} from "./utils";
+import {ctz, getBinary, getCol, getRow, getSquare} from "./utils";
 import {LINE_MOVES} from "./attackers";
+
+const THRONE_MASK = 1 << 5;
+const BOUNDARY_MASK = 1 | (1 << 10);
+
+const disableBlockedSquares = (beam: number, piece: Piece, rowOrColIndex: number): number => {
+  if (piece === Piece.ATTACKER || piece === Piece.DEFENDER) {
+    if (rowOrColIndex === 5) {
+      beam &= ~THRONE_MASK;
+    } else if (rowOrColIndex === 0 || rowOrColIndex === 10) {
+      beam &= ~BOUNDARY_MASK;
+    }
+  }
+
+  return beam;
+}
 
 export const createMoveGenerator = () => {
   const MAX_MOVES = 1024;
@@ -19,10 +34,11 @@ export const createMoveGenerator = () => {
 
   const generateHorizontalMoves = (board: Board, fromSq: number) => {
     const row = getRow(fromSq);
-    const rowOcc = board.rowOcc[row];
-    let horizontalMoves = LINE_MOVES[row][rowOcc] & ~(1 << getCol(fromSq));
-    //printLineMaskExamples(rowOcc, row);
-    // TODO: check disable fields
+    const col = getCol(fromSq);
+    const rowOcc = board.rowOcc[col];
+
+    let horizontalMoves = LINE_MOVES[col][rowOcc] & ~(1 << col);
+    horizontalMoves = disableBlockedSquares(horizontalMoves, board.board[fromSq], row);
 
     let cur = 1;
     while (horizontalMoves) {
@@ -37,9 +53,15 @@ export const createMoveGenerator = () => {
 
   const generateVerticalMoves = (board: Board, fromSq: number) => {
     const col = getCol(fromSq);
-    const colOcc = board.colOcc[col];
-    let verticalMoves = LINE_MOVES[col][colOcc] & ~(1 << getRow(fromSq));
-    // TODO: check disable fields
+    const row = getRow(fromSq);
+    const colOcc = board.colOcc[row];
+
+    let verticalMoves = LINE_MOVES[row][colOcc] & ~(1 << row);
+    // print
+    console.log({col})
+    console.log(getBinary(LINE_MOVES[col][colOcc]))
+    verticalMoves = disableBlockedSquares(verticalMoves, board.board[fromSq], col);
+    console.log(getBinary(verticalMoves))
 
     let cur = 1;
     while (verticalMoves) {
