@@ -84,4 +84,19 @@ describe('Move Generation Tests', () => {
     // Out of bounds
     expectIsMovesNotExists(["b1a1", "b1a10"]);
   })
+
+  it('1 piece on b1 and enemy piece on c1', () => {
+    const {board, generator, expectMovesCount, expectIsMovesExists, expectIsMovesNotExists} = prepare();
+    board.sideToMove = Side.ATTACKERS;
+    setPiece(board, getSquareFromAlgebraic("b1"), Piece.ATTACKER);
+    setPiece(board, getSquareFromAlgebraic("c1"), Piece.DEFENDER);
+    generator.movegen(board);
+
+    expectMovesCount(8);
+
+    // Valid moves
+    expectIsMovesExists([
+      "b1b2", "b1b3", "b1b4", "b1b5", "b1b6", "b1b7", "b1b8", "b1b9"  // vertical only
+    ]);
+  })
 })

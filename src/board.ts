@@ -37,15 +37,17 @@ export function setPiece(board: Board, sq: number, piece: number): void {
   const row = getRow(sq);
   const col = getCol(sq);
 
-  board.rowOcc[row] |= (1 << row);
-  board.colOcc[col] |= (1 << col);
+  board.rowOcc[row] |= (1 << col);
+  board.colOcc[col] |= (1 << row);
 
   if (piece === Piece.ATTACKER) {
     board.attackers[board.attackersCount] = sq;
     board.attackersCount++;
+    board.pieceIndexBySquare[sq] = board.attackersCount - 1;
   } else if (piece === Piece.DEFENDER) {
     board.defenders[board.defendersCount] = sq;
     board.defendersCount++;
+    board.pieceIndexBySquare[sq] = board.defendersCount - 1;
   } else if (piece === Piece.KING) {
     board.kingSq = sq;
   }
@@ -58,19 +60,19 @@ export function clearPiece(board: Board, sq: number): void {
   const row = getRow(sq);
   const col = getCol(sq);
 
-  board.rowOcc[row] &= ~(1 << row);
-  board.colOcc[col] &= ~(1 << col);
+  board.rowOcc[row] &= ~(1 << col);
+  board.colOcc[col] &= ~(1 << row);
 
   if (piece === Piece.ATTACKER) {
-    const index = board.attackers.findIndex(s => s === sq);
+    const index = board.pieceIndexBySquare[sq];
     if (index !== -1) {
-      board.attackers[index] = HOLE;
+      board.attackers[index] = board.attackers[board.attackersCount - 1];
       board.attackersCount--;
     }
   } else if (piece === Piece.DEFENDER) {
-    const index = board.defenders.findIndex(s => s === sq);
+    const index = board.pieceIndexBySquare[sq];
     if (index !== -1) {
-      board.defenders[index] = HOLE;
+      board.defenders[index] = board.defenders[board.defendersCount - 1];
       board.defendersCount--;
     }
   } else if (piece === Piece.KING) {
