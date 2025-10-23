@@ -36,7 +36,10 @@ export const createMoveGenerator = () => {
   const generateHorizontalMoves = (board: Board, fromSq: number) => {
     const row = getRow(fromSq);
     const col = getCol(fromSq);
-    const rowOcc = board.rowOcc[col];
+    const rowOcc = board.rowOcc[row];
+    console.log({
+      row, col
+    })
 
     for(let i = 0; i < BOARD_SIZE; i++) {
       console.log({
@@ -44,6 +47,11 @@ export const createMoveGenerator = () => {
         rowOcc: getBinary(board.rowOcc[i]),
       })
     }
+
+    console.log({
+      currentRowOcc: getBinary(rowOcc),
+      col,
+    })
 
 
     let horizontalMoves = LINE_MOVES[col][rowOcc] & ~(1 << col);
@@ -63,7 +71,7 @@ export const createMoveGenerator = () => {
   const generateVerticalMoves = (board: Board, fromSq: number) => {
     const col = getCol(fromSq);
     const row = getRow(fromSq);
-    const colOcc = board.colOcc[row];
+    const colOcc = board.colOcc[col];
 
     let verticalMoves = LINE_MOVES[row][colOcc] & ~(1 << row);
     verticalMoves = disableBlockedSquares(verticalMoves, board.board[fromSq], col);

@@ -86,7 +86,7 @@ describe('Move Generation Tests', () => {
   })
 
   it('1 piece on b1 and enemy piece on c1', () => {
-    const {board, generator, expectMovesCount, expectIsMovesExists, expectIsMovesNotExists} = prepare();
+    const {board, generator, expectMovesCount, expectIsMovesExists} = prepare();
     board.sideToMove = Side.ATTACKERS;
     setPiece(board, getSquareFromAlgebraic("b1"), Piece.ATTACKER);
     setPiece(board, getSquareFromAlgebraic("c1"), Piece.DEFENDER);
@@ -97,6 +97,21 @@ describe('Move Generation Tests', () => {
     // Valid moves
     expectIsMovesExists([
       "b1b2", "b1b3", "b1b4", "b1b5", "b1b6", "b1b7", "b1b8", "b1b9", "b1b10", "b1b11"  // vertical only
+    ]);
+  })
+
+  it('1 piece on a2 and enemy piece on a3', () => {
+    const {board, generator, expectMovesCount, expectIsMovesExists} = prepare();
+    board.sideToMove = Side.ATTACKERS;
+    setPiece(board, getSquareFromAlgebraic("a2"), Piece.ATTACKER);
+    setPiece(board, getSquareFromAlgebraic("a3"), Piece.DEFENDER);
+    generator.movegen(board);
+
+    expectMovesCount(10);
+
+    // Valid moves
+    expectIsMovesExists([
+      "a2b2", "a2c2", "a2d2", "a2e2", "a2f2", "a2g2", "a2h2", "a2i2", "a2j2", "a2k2" // horizontal only
     ]);
   })
 })
