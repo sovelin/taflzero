@@ -27,11 +27,6 @@ export const createMoveGenerator = () => {
 
     let cur = 1;
     while (horizontalMoves) {
-      console.log({
-        map: getBinary(horizontalMoves, BOARD_SIZE),
-        index: getBinary(cur, BOARD_SIZE),
-        combined: getBinary(cur & horizontalMoves, BOARD_SIZE),
-      });
       if (cur & horizontalMoves) {
         const toSq = getSquare(row, ctz(cur));
         addMove(fromSq, toSq);

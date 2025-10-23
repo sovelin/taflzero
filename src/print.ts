@@ -49,5 +49,5 @@ function getSquareAlg(sq) {
 }
 
 export function getMoveAlg(move: number) {
-  return `${getSquareAlg(moveFrom(move))}-${getSquareAlg(moveTo(move))}`;
+  return `${getSquareAlg(moveFrom(move))}${getSquareAlg(moveTo(move))}`;
 }
