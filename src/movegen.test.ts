@@ -32,6 +32,6 @@ describe('Move Generation Tests', () => {
     generator.movegen(board);
     printBoard(board)
     console.log(`Generated ${generator.movesCount} moves`);
-    //expect(generator.movesCount).toBe(7);
+    expect(generator.movesCount).toBe(7);
   })
 })

@@ -13,12 +13,14 @@
     "build": "tsc -p tsconfig.json",
     "clean": "rm -rf dist",
     "dev": "tsx watch src/index.ts",
-    "lint": "echo 'No lint step configured'"
+    "lint": "echo 'No lint step configured'",
+    "test": "vitest"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
     "ts-node": "^10.9.2",
-    "typescript": "^5.3.0"
+    "typescript": "^5.3.0",
+    "vitest": "^4.0.2"
   },
   "dependencies": {
     "tsx": "^4.20.6"

@@ -1,11 +1,15 @@
-import {createBoard, setInitialPosition} from "../../engine/src/board";
-import {getMoveAlg, printBoard} from "./print";
-import {initLineMoves, printLineMaskExamples} from "../../engine/src/attackers";
-import {createMoveGenerator} from "../../engine/src/movegen";
-
+import {createMoveGenerator} from "./movegen";
+import {initLineMoves, printLineMaskExamples} from "./attackers";
+import {createBoard, setInitialPosition} from "./board";
+import {getMoveAlg} from "./print";
 
 const board = createBoard();
 setInitialPosition(board);
+
+function printBoard(board: any) {
+
+}
+
 printBoard(board);
 
 initLineMoves();

@@ -1,7 +1,7 @@
-import {Board} from "../../engine/src/model/Board";
-import {Piece} from "../../engine/src/types";
-import {moveFrom, moveTo} from "../../engine/src/move";
-import {getCol, getRow} from "../../engine/src/utils";
+import {getCol, getRow} from "./utils";
+import {moveFrom, moveTo} from "./move";
+import {Board} from "./model/Board";
+import {Piece} from "./types";
 
 export function printBoard (b: Board) {
   const size = 11;
