@@ -142,4 +142,17 @@ describe('Move Generation Tests', () => {
     expectMovesCount(20);
     expectIsMovesExists(["a2a1"]);
   })
+
+  it('king have zero moves in blockade', () => {
+    const {board, generator, expectMovesCount} = prepare();
+    board.sideToMove = Side.DEFENDERS;
+    setPiece(board, getSquareFromAlgebraic("e5"), Piece.KING);
+    setPiece(board, getSquareFromAlgebraic("e4"), Piece.ATTACKER);
+    setPiece(board, getSquareFromAlgebraic("e6"), Piece.ATTACKER);
+    setPiece(board, getSquareFromAlgebraic("d5"), Piece.ATTACKER);
+    setPiece(board, getSquareFromAlgebraic("f5"), Piece.ATTACKER);
+    generator.movegen(board);
+
+    expectMovesCount(0);
+  })
 })
