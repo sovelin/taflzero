@@ -1,9 +1,8 @@
 import {Board} from "./model/Board";
 import {Piece, Side} from "./types";
 import {createMove} from "./move";
-import {ctz, getBinary, getCol, getRow, getSquare} from "./utils";
+import {ctz, getCol, getRow, getSquare} from "./utils";
 import {LINE_MOVES} from "./attackers";
-import {BOARD_SIZE} from "./constants";
 
 const THRONE_MASK = 1 << 5;
 const BOUNDARY_MASK = 1 | (1 << 10);
@@ -37,22 +36,6 @@ export const createMoveGenerator = () => {
     const row = getRow(fromSq);
     const col = getCol(fromSq);
     const rowOcc = board.rowOcc[row];
-    console.log({
-      row, col
-    })
-
-    for(let i = 0; i < BOARD_SIZE; i++) {
-      console.log({
-        index: i,
-        rowOcc: getBinary(board.rowOcc[i]),
-      })
-    }
-
-    console.log({
-      currentRowOcc: getBinary(rowOcc),
-      col,
-    })
-
 
     let horizontalMoves = LINE_MOVES[col][rowOcc] & ~(1 << col);
     horizontalMoves = disableBlockedSquares(horizontalMoves, board.board[fromSq], row);
