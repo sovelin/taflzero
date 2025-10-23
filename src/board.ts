@@ -36,7 +36,6 @@ export function setPiece(board: Board, sq: number, piece: number): void {
 
   const row = getRow(sq);
   const col = getCol(sq);
-  console.log({row, col})
 
   board.rowOcc[row] |= (1 << col);
   board.colOcc[col] |= (1 << row);

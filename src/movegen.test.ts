@@ -56,7 +56,6 @@ describe('Move Generation Tests', () => {
   }
 
   beforeAll(() => {
-    console.log('lol')
     initLineMoves()
   })
 
