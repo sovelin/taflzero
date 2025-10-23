@@ -9,7 +9,7 @@ import {beforeAll, describe, expect, it} from "vitest";
 describe('Move Generation Tests', () => {
   const prepare = () => {
     const board = createBoard();
-    clearBoard();
+    clearBoard(board);
 
     const generator = createMoveGenerator();
 
