@@ -1,6 +1,5 @@
 import {createMoveGenerator} from "@/moves";
-import {Piece, Side, clearBoard, createBoard, setPiece} from "@/board";
-import {getSquareFromAlgebraic} from "@/board/utils";
+import {Piece, Side, clearBoard, createBoard, setPiece, getSquareFromAlgebraic} from "@/board";
 import {getMoveAlg} from "../utils";
 import {initLineMoves} from "../attackers";
 import {beforeAll, describe, expect, it} from "vitest";

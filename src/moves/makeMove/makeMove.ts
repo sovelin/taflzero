@@ -1,10 +1,11 @@
 import {
   Board, clearPiece, setPiece, Piece, Side,
   getCol, getCornersSq, getRow, getSideByPiece, getSquare, getThroneSq,
-  BOARD_SIZE
+  BOARD_SIZE, getOppositeSide
 } from "@/board";
 import {printBoard} from "@/board/print";
 import {moveFrom, moveTo} from "../move";
+import {CapturedPiece, UndoMove} from "@/moves/model/UndoMove";
 
 const getSquareByPath = (sq: number, right: number, top: number) => {
   const row = getRow(sq);
@@ -95,7 +96,7 @@ const isCapturePossible = (
   return false;
 }
 
-export const makeMove = (board: Board, move: number) => {
+export const makeMove = (board: Board, move: number): UndoMove => {
   const fromSq = moveFrom(move)
   const toSq = moveTo(move)
   const piece = board.board[fromSq];
@@ -106,6 +107,8 @@ export const makeMove = (board: Board, move: number) => {
   // Captures check
   const potentialPairs = getPotentialPairs(toSq);
   printBoard(board)
+  const captured: CapturedPiece[] = [];
+
   for (const pairSq of potentialPairs) {
     const betweenSq = getBetweenSquare(toSq, pairSq);
 
@@ -115,9 +118,20 @@ export const makeMove = (board: Board, move: number) => {
 
     // Check if between piece is opponent and pair piece is ally
     if (isCapturePossible(board, betweenSq, toSq, pairSq)) {
+      captured.push({
+        sq: betweenSq,
+        piece: board.board[betweenSq],
+      })
       clearPiece(board, betweenSq);
     }
   }
 
-  board.sideToMove = board.sideToMove === Side.ATTACKERS ? Side.DEFENDERS : Side.ATTACKERS;
+  board.sideToMove = getOppositeSide(board.sideToMove);
+
+  return {
+    from: fromSq,
+    to: toSq,
+    captured,
+    movedPiece: piece,
+  }
 }

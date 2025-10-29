@@ -1,5 +1,5 @@
 import {expect} from "vitest";
-import {Piece} from "../types";
+import {Piece, Side} from "../types";
 import {Board} from "../model/Board";
 import {getSquareFromAlgebraic} from "../utils";
 
@@ -36,5 +36,8 @@ export const getBoardExpects = (board: Board) => {
     expectKingNotExists: () => {
       expect(board.kingSq).toBe(-1);
     },
+    expectSideToBe: (side: Side) => {
+      expect(board.sideToMove).toBe(side);
+    }
   }
 }

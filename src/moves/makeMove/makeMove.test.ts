@@ -17,6 +17,7 @@ describe('makeMove', () => {
 
   it('simple move', () => {
     const {board} = prepare();
+    const {expectSideToBe} = getBoardExpects(board)
     board.sideToMove = Side.ATTACKERS;
     setPiece(board, getSquareFromAlgebraic("a2"), Piece.ATTACKER);
     const move = createMoveFromAlgebraic("a2a4");
@@ -28,6 +29,7 @@ describe('makeMove', () => {
     boardExpects.expectNoPieceOn("a2");
     boardExpects.expectAttackersCount(1);
     boardExpects.expectDefendersCount(0);
+    expectSideToBe(Side.DEFENDERS);
   })
 
   it('capture defender in sandwich', () => {
@@ -73,5 +75,26 @@ describe('makeMove', () => {
     const move = createMoveFromAlgebraic("d1d2");
 
     expect(() => makeMove(board, move)).not.toThrowError();
+  })
+
+  it('should return Undo move structure', () => {
+    const FROM = `a2`;
+    const TO = `a4`;
+
+    const {board} = prepare();
+    board.sideToMove = Side.ATTACKERS;
+    setPiece(board, getSquareFromAlgebraic(FROM), Piece.ATTACKER);
+    setPiece(board, getSquareFromAlgebraic('a6'), Piece.ATTACKER);
+    setPiece(board, getSquareFromAlgebraic('a5'), Piece.DEFENDER);
+
+    const move = createMoveFromAlgebraic([FROM, TO].join(''));
+    const undo = makeMove(board, move);
+    expect(undo).toBeDefined();
+    expect(undo.from).toBe(getSquareFromAlgebraic(FROM));
+    expect(undo.to).toBe(getSquareFromAlgebraic(TO));
+    expect(undo.captured).toEqual([{
+      sq: getSquareFromAlgebraic('a5'),
+      piece: Piece.DEFENDER
+    }]);
   })
 })

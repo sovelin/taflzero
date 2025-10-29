@@ -61,3 +61,7 @@ export function getSquareAlg(sq: number) {
   const col = getCol(sq)
   return `${cols[col]}${row + 1}`;
 }
+
+export function getOppositeSide(side: Side): Side {
+  return side === Side.ATTACKERS ? Side.DEFENDERS : Side.ATTACKERS;
+}
