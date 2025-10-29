@@ -1,4 +1,4 @@
-import {BOARD_SIZE} from "./constants";
+import {BOARD_SIZE} from "@/board";
 
 export const LINE_MOVES: Uint16Array[] =
   Array.from({ length: BOARD_SIZE }, () => new Uint16Array(1 << BOARD_SIZE));
@@ -26,7 +26,7 @@ export function initLineMoves() {
   }
 }
 
-export function printLineMaskExamples(pos, occ) {
+export function printLineMaskExamples(pos: number, occ: number) {
   console.log(`Line moves example for position ${pos} with occupancy ${occ.toString(2).padStart(BOARD_SIZE, '0')}:`);
   const mask = LINE_MOVES[pos][occ];
   console.log(mask.toString(2).padStart(BOARD_SIZE, '0'));

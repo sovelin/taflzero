@@ -10,10 +10,14 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
-    "types": []
+    "types": [],
+    "paths": {
+      "@/*": ["*"]
+    },
+    "baseUrl": "src"
   },
   "include": [
-    "src",
+    "src"
   ],
   "exclude": ["dist",
     "node_modules"

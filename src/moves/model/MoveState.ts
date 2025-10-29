@@ -1,4 +1,4 @@
-import {Piece, Side} from "../types";
+import {Piece, Side} from "@/board";
 
 export interface MoveState {
   from: number;

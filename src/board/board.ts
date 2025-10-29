@@ -31,6 +31,27 @@ export function createBoard(): Board {
   };
 }
 
+
+function setAttacker(board: Board, sq: number): void {
+  if (board.attackersCount >= ATTACKERS_MAX) {
+    throw new Error("Exceeded maximum attackers capacity");
+  }
+
+  board.attackers[board.attackersCount] = sq;
+  board.attackersCount++;
+  board.pieceIndexBySquare[sq] = board.attackersCount - 1;
+}
+
+function setDefender(board: Board, sq: number): void {
+  if (board.defendersCount >= DEFENDERS_MAX) {
+    throw new Error("Exceeded maximum defenders capacity");
+  }
+
+  board.defenders[board.defendersCount] = sq;
+  board.defendersCount++;
+  board.pieceIndexBySquare[sq] = board.defendersCount - 1;
+}
+
 export function setPiece(board: Board, sq: number, piece: number): void {
   board.board[sq] = piece;
 
@@ -41,15 +62,55 @@ export function setPiece(board: Board, sq: number, piece: number): void {
   board.colOcc[col] |= (1 << row);
 
   if (piece === Piece.ATTACKER) {
-    board.attackers[board.attackersCount] = sq;
-    board.attackersCount++;
-    board.pieceIndexBySquare[sq] = board.attackersCount - 1;
+    setAttacker(board, sq);
   } else if (piece === Piece.DEFENDER) {
-    board.defenders[board.defendersCount] = sq;
-    board.defendersCount++;
-    board.pieceIndexBySquare[sq] = board.defendersCount - 1;
+    setDefender(board, sq);
   } else if (piece === Piece.KING) {
     board.kingSq = sq;
+  }
+}
+
+function clearAttacker(board: Board, sq: number): void {
+  const index = board.pieceIndexBySquare[sq];
+  if (index !== -1) {
+    if (board.attackersCount === 1) {
+      board.attackers[index] = HOLE;
+      board.pieceIndexBySquare[sq] = 0;
+    } else {
+      const lastSq = board.attackers[board.attackersCount - 1];
+      board.attackers[index] = lastSq;
+      board.attackers[board.attackersCount - 1] = HOLE;
+      board.pieceIndexBySquare[lastSq] = index;
+      board.pieceIndexBySquare[sq] = HOLE;
+    }
+
+    console.log('Clearing attacker at sq:', sq, 'index:', index);
+
+    console.log({
+      attackersCount: board.attackersCount,
+    })
+    board.attackersCount--;
+    console.log({
+      attackersCount: board.attackersCount,
+    })
+  }
+}
+
+function clearDefender(board: Board, sq: number): void {
+  const index = board.pieceIndexBySquare[sq];
+  if (index !== -1) {
+    if (board.defendersCount === 1) {
+      board.defenders[index] = HOLE;
+      board.pieceIndexBySquare[sq] = 0;
+    } else {
+      const lastSq = board.defenders[board.defendersCount - 1];
+      board.defenders[index] = lastSq;
+      board.defenders[board.defendersCount - 1] = HOLE;
+      board.pieceIndexBySquare[lastSq] = index;
+      board.pieceIndexBySquare[sq] = HOLE;
+    }
+
+    board.defendersCount--;
   }
 }
 
@@ -64,17 +125,9 @@ export function clearPiece(board: Board, sq: number): void {
   board.colOcc[col] &= ~(1 << row);
 
   if (piece === Piece.ATTACKER) {
-    const index = board.pieceIndexBySquare[sq];
-    if (index !== -1) {
-      board.attackers[index] = board.attackers[board.attackersCount - 1];
-      board.attackersCount--;
-    }
+    clearAttacker(board, sq);
   } else if (piece === Piece.DEFENDER) {
-    const index = board.pieceIndexBySquare[sq];
-    if (index !== -1) {
-      board.defenders[index] = board.defenders[board.defendersCount - 1];
-      board.defendersCount--;
-    }
+    clearDefender(board, sq);
   } else if (piece === Piece.KING) {
     board.kingSq = HOLE;
   }

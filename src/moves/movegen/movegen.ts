@@ -1,8 +1,7 @@
-import {Board} from "./model/Board";
-import {Piece, Side} from "./types";
-import {createMove} from "./move";
-import {ctz, getCol, getRow, getSquare} from "./utils";
-import {LINE_MOVES} from "./attackers";
+import {Board, Piece, Side, getCol, getRow, getSquare} from "@/board";
+import {createMove} from "../move";
+import {ctz} from "@/utils/utils";
+import {LINE_MOVES} from "../attackers";
 
 const THRONE_MASK = 1 << 5;
 const BOUNDARY_MASK = 1 | (1 << 10);
@@ -79,7 +78,7 @@ export const createMoveGenerator = () => {
   }
 
   const generateDefenderMoves = (board: Board) => {
-    for (let i = 0; i < board.defenders.length; i++) {
+    for (let i = 0; i < board.defendersCount; i++) {
       if (board.defenders[i] === -1) continue;
       generateMovesForPiece(board, board.defenders[i]);
     }
@@ -88,7 +87,7 @@ export const createMoveGenerator = () => {
   }
 
   const generateAttackerMoves = (board: Board) => {
-    for (let i = 0; i < board.attackers.length; i++) {
+    for (let i = 0; i < board.attackersCount; i++) {
       if (board.attackers[i] === -1) continue;
       generateMovesForPiece(board, board.attackers[i]);
     }

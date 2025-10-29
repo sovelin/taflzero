@@ -1,0 +1,5 @@
+export {createBoard, clearPiece, setPiece, clearBoard, setInitialPosition} from './board'
+export type {Board} from './model/Board'
+export {Piece, Side} from './types'
+export {getCol, getCornersSq, getRow, getSideByPiece, getSquare, getThroneSq} from './utils/utils'
+export {BOARD_SIZE} from './constants'

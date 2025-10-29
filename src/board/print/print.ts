@@ -1,7 +1,6 @@
-import {getCol, getRow} from "./utils";
-import {moveFrom, moveTo} from "./move";
-import {Board} from "./model/Board";
-import {Piece} from "./types";
+import {Piece} from "../types";
+import {Board} from "../model/Board";
+import {getCol, getRow} from "../utils/utils";
 
 export function printBoard(b: Board) {
   const size = 11;
@@ -39,15 +38,4 @@ export function printBoard(b: Board) {
 
   console.log(borderBottom);
   console.log(top);
-}
-
-function getSquareAlg(sq: number) {
-  const cols = "abcdefghijk";
-  const row = getRow(sq)
-  const col = getCol(sq)
-  return `${cols[col]}${row + 1}`;
-}
-
-export function getMoveAlg(move: number) {
-  return `${getSquareAlg(moveFrom(move))}${getSquareAlg(moveTo(move))}`;
 }

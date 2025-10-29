@@ -1,27 +1,34 @@
-import {createMoveGenerator} from "./movegen";
-import {initLineMoves, printLineMaskExamples} from "./attackers";
-import {createBoard, setInitialPosition} from "./board";
-import {getMoveAlg} from "./print";
+import {createMoveGenerator, initMovesModule, makeMove} from "@/moves";
+import {createBoard, setInitialPosition} from "@/board";
+import {printBoard} from "@/board/print";
 
-const board = createBoard();
-setInitialPosition(board);
+initMovesModule()
 
-function printBoard(board: any) {
+const runSimulator = () => {
+  const board = createBoard()
+  setInitialPosition(board);
+  const generator = createMoveGenerator()
 
+  const random = (from: number, to: number) => {
+    return Math.floor(Math.random() * (to - from)) + from;
+  }
+
+  const makeNextMove = () => {
+    generator.movegen(board);
+    console.log(`moves count: ${generator.movesCount}`);
+    console.log({board})
+    const nextMove = generator.moves[random(0, generator.movesCount)];
+    makeMove(board, nextMove);
+  }
+
+  const interval = setInterval(() => {
+    makeNextMove();
+    console.log('--- New Board ---')
+    printBoard(board);
+
+    if (generator.movesCount === 0) {
+      clearInterval(interval);
+    }
+  }, 100);
 }
-
-printBoard(board);
-
-initLineMoves();
-
-printLineMaskExamples(5, 0b00000111110);
-printLineMaskExamples(3, 0b00011001100);
-
-const moveGenerator = createMoveGenerator()
-
-moveGenerator.movegen(board);
-console.log(`Generated ${moveGenerator.movesCount} moves`)
-
-for (let i = 0; i < moveGenerator.movesCount; i++) {
-  console.log(`Move ${i + 1}: ${getMoveAlg(moveGenerator.moves[i])}`);
-}
+runSimulator();

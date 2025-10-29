@@ -1,9 +1,8 @@
-import {clearBoard, createBoard, setPiece} from "./board";
-import {createMoveGenerator} from "./movegen";
-import {Piece, Side} from "./types";
-import {getSquareFromAlgebraic} from "./utils";
-import {getMoveAlg} from "./print";
-import {initLineMoves} from "./attackers";
+import {createMoveGenerator} from "@/moves";
+import {Piece, Side, clearBoard, createBoard, setPiece} from "@/board";
+import {getSquareFromAlgebraic} from "@/board/utils";
+import {getMoveAlg} from "../utils";
+import {initLineMoves} from "../attackers";
 import {beforeAll, describe, expect, it} from "vitest";
 
 describe('Move Generation Tests', () => {
