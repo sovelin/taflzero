@@ -6,7 +6,7 @@ describe('BFS Tests', () => {
   it('empty board, all achievable', () => {
     const board = createBoard()
 
-    const res = bfs(board, {
+    const res = bfs({
       isAchievable: () => true,
       startSquares: [0],
     })
@@ -24,7 +24,7 @@ describe('BFS Tests', () => {
     setPiece(board, getSquareFromAlgebraic('b4'), Piece.ATTACKER)
     setPiece(board, getSquareFromAlgebraic('a4'), Piece.ATTACKER)
 
-    const res = bfs(board, {
+    const res = bfs({
       isAchievable: (sq) => board.board[sq] === Piece.EMPTY,
       startSquares: [getSquareFromAlgebraic('a1')],
     })
@@ -51,7 +51,7 @@ describe('BFS Tests', () => {
     setPiece(board, getSquareFromAlgebraic('b4'), Piece.ATTACKER)
     setPiece(board, getSquareFromAlgebraic('a4'), Piece.ATTACKER)
 
-    const res = bfs(board, {
+    const res = bfs({
       isAchievable: (sq) => board.board[sq] === Piece.EMPTY,
       startSquares: [
         getSquareFromAlgebraic('a1'),

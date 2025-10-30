@@ -1,4 +1,3 @@
-import {Board} from "@/board";
 import {createQueue} from "@/utils/queue/createQueue";
 import {getBottomSquare, getLeftSquare, getRightSquare, getTopSquare} from "@/board/utils";
 
@@ -8,7 +7,6 @@ interface Options {
 }
 
 export const bfs = (
-  board: Board,
   {isAchievable, startSquares}: Options
 ): Set<number> => {
   const queue = createQueue(startSquares);
