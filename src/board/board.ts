@@ -1,11 +1,10 @@
 import {Piece, Side} from "./types";
 import {Board} from "./model/Board";
 import {getCol, getRow, getSquareFromAlgebraic} from "./utils";
-import {BOARD_SIZE, SQS} from "./constants";
+import {BOARD_SIZE, HOLE, SQS} from "./constants";
 
 const ATTACKERS_MAX = 24;
 const DEFENDERS_MAX = 12;
-const HOLE = -1;
 
 export function createBoard(): Board {
   return {

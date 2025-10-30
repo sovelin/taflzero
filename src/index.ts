@@ -62,6 +62,15 @@ const setMoreDifficultPosition = (board: Board) => { // best should be c8c11
   board.sideToMove = Side.DEFENDERS;
 }
 
+const setWinningPositionForAttackers = (board: Board) => {
+  setPiece(board, getSquareFromAlgebraic("b10"), Piece.KING);
+  setPiece(board, getSquareFromAlgebraic("a10"), Piece.ATTACKER);
+  setPiece(board, getSquareFromAlgebraic("c10"), Piece.ATTACKER);
+  setPiece(board, getSquareFromAlgebraic("h11"), Piece.ATTACKER);
+  setPiece(board, getSquareFromAlgebraic("b9"), Piece.ATTACKER);
+  board.sideToMove = Side.ATTACKERS;
+}
+
 const runAlphaBetaTest = () => {
   const board = createBoard()
   //setInitialPosition(board);
@@ -81,6 +90,7 @@ const runAlphaBetaTest = () => {
 const runSelfPlayTest = () => {
   const board = createBoard()
   setInitialPosition(board);
+  //setWinningPositionForAttackers(board)
   printBoard(board);
 
   const maxDepth = 5;
@@ -89,14 +99,13 @@ const runSelfPlayTest = () => {
     const res = search(board, maxDepth);
 
     makeMove(board, bestMove.move);
-    const terminal = checkTerminal(board);
 
     console.log(`Evaluation: ${getScoreText(res)}`);
     console.log(`Searched nodes: ${statistics.nodes}`);
     console.log(`Best move: ${getMoveAlg(bestMove.move)}`);
     printBoard(board);
 
-    if (checkTerminal(board)) {
+    if (checkTerminal(board, true) !== null) {
       console.log(`Game over`);
       break;
     }

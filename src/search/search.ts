@@ -17,8 +17,8 @@ const moveGenAtDepth = (depth: number) => {
 export const search = (
   board: Board,
   depth: number,
-  alpha: number = -Infinity,
-  beta: number = Infinity
+  alpha: number = -MATE_SCORE,
+  beta: number = MATE_SCORE
   , height = 0
 ) => {
   if (height === 0) {
@@ -27,7 +27,7 @@ export const search = (
 
   const terminal = checkTerminal(board);
 
-  if (terminal) {
+  if (terminal !== null) {
     return sidedEval(board, (terminal as Side) === Side.DEFENDERS ? MATE_SCORE - height : -MATE_SCORE + height);
   }
 

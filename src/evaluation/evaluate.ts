@@ -1,6 +1,4 @@
 import {Board, Side} from "@/board";
-import {checkTerminal} from "@/evaluation/terminal";
-import {MATE_SCORE} from "@/evaluation/constants";
 
 export const sidedEval = (board: Board, score: number): number => {
   return board.sideToMove === Side.DEFENDERS

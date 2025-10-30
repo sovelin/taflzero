@@ -81,3 +81,27 @@ export function getTopRightSquare(): number {
 export function getBottomLeftSquare(): number {
   return getSquare(0, 0);
 }
+
+export function getRightSquare(sq: number): number | null {
+  const col = getCol(sq);
+  if (col === BOARD_SIZE - 1) return null;
+  return sq + 1;
+}
+
+export function getLeftSquare(sq: number): number | null {
+  const col = getCol(sq);
+  if (col === 0) return null;
+  return sq - 1;
+}
+
+export function getTopSquare(sq: number): number | null {
+  const row = getRow(sq);
+  if (row === BOARD_SIZE - 1) return null;
+  return sq + BOARD_SIZE;
+}
+
+export function getBottomSquare(sq: number): number | null {
+  const row = getRow(sq);
+  if (row === 0) return null;
+  return sq - BOARD_SIZE;
+}

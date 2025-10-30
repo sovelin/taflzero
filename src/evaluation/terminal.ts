@@ -1,4 +1,6 @@
 import {Board, getBottomLeftSquare, getBottomRightSquare, getTopLeftSquare, getTopRightSquare, Side} from "@/board";
+import {kingIsSurrounded} from "@/evaluation/kingIsSurrounded/kingIsSurrounded";
+import {printBoard} from "@/board/print";
 
 const cornersSquares = [
   getTopRightSquare(),
@@ -7,14 +9,18 @@ const cornersSquares = [
   getBottomRightSquare(),
 ];
 
-export const checkTerminal = (board: Board): Side | null => {
+export const checkTerminal = (board: Board, shouldPrint = false): Side | null => {
   if (cornersSquares.includes(board.kingSq) || board.attackersCount < 2) {
-    return Side.DEFENDERS
+    return Side.DEFENDERS;
   }
 
   if (board.attackersCount < 2) {
-    return Side.DEFENDERS
+    return Side.DEFENDERS;
   }
 
-  return null
+  if (kingIsSurrounded(board)) {
+    return Side.ATTACKERS;
+  }
+
+  return null;
 }
