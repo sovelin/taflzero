@@ -1,11 +1,11 @@
 import {
-  Board, clearPiece, setPiece, Piece, Side,
-  getCol, getCornersSq, getRow, getSideByPiece, getSquare, getThroneSq,
+  Board, clearPiece, setPiece,
+  getCol, getRow, getSquare,
   BOARD_SIZE, getOppositeSide
 } from "@/board";
-import {printBoard} from "@/board/print";
 import {moveFrom, moveTo} from "../move";
-import {CapturedPiece, UndoMove} from "@/moves/model/UndoMove";
+import {CapturedPiece, UndoMove} from "../model/UndoMove";
+import {isCapturePossible} from "./isCapturePossible";
 
 const getSquareByPath = (sq: number, right: number, top: number) => {
   const row = getRow(sq);
@@ -50,51 +50,6 @@ const getBetweenSquare = (sq1: number, sq2: number) => {
   return -1;
 }
 
-const enemySquares = [...getCornersSq(), getThroneSq()]
-
-// TODO: Separate to module + tests
-const isCapturePossible = (
-  board: Board,
-  targetSq: number,
-  enemySq1: number,
-  enemySq2: number
-) => {
-  const targetPiece = board.board[targetSq];
-  const enemyPiece1 = board.board[enemySq1];
-  const enemyPiece2 = board.board[enemySq2];
-
-  if (!enemyPiece1 || !enemyPiece2 || !targetPiece) {
-    return false;
-  }
-
-  if (targetPiece === Piece.KING) {
-    return false;
-  }
-
-  const enemySq1Side = getSideByPiece(enemyPiece1);
-  const enemySq2Side = getSideByPiece(enemyPiece2);
-  const targetSide = getSideByPiece(targetPiece);
-
-  // Both enemy squares must belong to the same side, which is different from the target side
-  if (enemySq1Side === enemySq2Side && enemySq1Side !== targetSide && enemySq1Side !== null) {
-    return true;
-  }
-
-  // At least one square is same side -> no capture
-  if (enemySq1Side === targetSide || enemySq2Side === targetSide) {
-    return false;
-  }
-
-  // One of the enemy squares is special square
-  if (enemySquares.includes(enemySq1)) {
-    return enemySq2Side !== null && enemySq2Side !== targetSide;
-  }
-  if (enemySquares.includes(enemySq2)) {
-    return enemySq1Side !== null && enemySq1Side !== targetSide;
-  }
-
-  return false;
-}
 
 export const makeMove = (board: Board, move: number): UndoMove => {
   const fromSq = moveFrom(move)
@@ -106,7 +61,6 @@ export const makeMove = (board: Board, move: number): UndoMove => {
 
   // Captures check
   const potentialPairs = getPotentialPairs(toSq);
-  printBoard(board)
   const captured: CapturedPiece[] = [];
 
   for (const pairSq of potentialPairs) {

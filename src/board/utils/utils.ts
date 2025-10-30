@@ -32,26 +32,26 @@ export function getSideByPiece(piece: number) {
 }
 
 export const getThroneSq = () => getSquare(
-  getRow(5),
-  getCol(5)
+  5,
+  5
 )
 
 export const getCornersSq = () =>[
   getSquare(
-    getRow(0),
-    getCol(0)
+    0,
+   0
   ),
   getSquare(
-    getRow(0),
-    getCol(BOARD_SIZE - 1)
+   0,
+   BOARD_SIZE - 1
   ),
   getSquare(
-    getRow(BOARD_SIZE - 1),
-    getCol(0)
+    BOARD_SIZE - 1,
+    0
   ),
   getSquare(
-    getRow(BOARD_SIZE - 1),
-    getCol(BOARD_SIZE - 1)
+    BOARD_SIZE - 1,
+    BOARD_SIZE - 1
   ),
 ]
 
@@ -64,4 +64,20 @@ export function getSquareAlg(sq: number) {
 
 export function getOppositeSide(side: Side): Side {
   return side === Side.ATTACKERS ? Side.DEFENDERS : Side.ATTACKERS;
+}
+
+export function getTopLeftSquare(): number {
+  return getSquare(BOARD_SIZE - 1, 0);
+}
+
+export function getBottomRightSquare(): number {
+  return getSquare(0, BOARD_SIZE - 1);
+}
+
+export function getTopRightSquare(): number {
+  return getSquare(BOARD_SIZE - 1, BOARD_SIZE - 1);
+}
+
+export function getBottomLeftSquare(): number {
+  return getSquare(0, 0);
 }

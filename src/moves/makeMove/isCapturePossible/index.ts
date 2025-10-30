@@ -1,0 +1,1 @@
+export {isCapturePossible} from './isCapturePossible'

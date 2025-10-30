@@ -84,15 +84,7 @@ function clearAttacker(board: Board, sq: number): void {
       board.pieceIndexBySquare[sq] = HOLE;
     }
 
-    console.log('Clearing attacker at sq:', sq, 'index:', index);
-
-    console.log({
-      attackersCount: board.attackersCount,
-    })
     board.attackersCount--;
-    console.log({
-      attackersCount: board.attackersCount,
-    })
   }
 }
 
