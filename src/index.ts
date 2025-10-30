@@ -78,29 +78,32 @@ const runAlphaBetaTest = () => {
   printBoard(board)
 }
 
-//runSimulator();
-runAlphaBetaTest();
+const runSelfPlayTest = () => {
+  const board = createBoard()
+  setInitialPosition(board);
+  printBoard(board);
 
-/*
-*
-*
-* Search result at depth 7: mate in 5
-Searched nodes: 2671850
-Best move: c8c9 // incorrect! could be faster with c8c11
-    a  b  c  d  e  f  g  h  i  j  k
-  ┌────────────────────────────────┐
-11│ .  A  .  .  A  .  .  .  .  .  .│11
-10│ .  .  .  .  .  .  .  .  .  .  .│10
- 9│ .  .  .  .  .  .  .  .  .  .  .│ 9
- 8│ .  A  K  .  A  .  .  .  .  .  .│ 8
- 7│ .  .  A  .  .  .  .  .  .  .  .│ 7
- 6│ .  .  .  .  .  .  .  .  .  .  .│ 6
- 5│ .  .  .  .  .  .  .  .  .  .  .│ 5
- 4│ .  .  .  .  .  .  .  .  .  .  .│ 4
- 3│ .  .  .  .  .  .  .  .  .  .  .│ 3
- 2│ .  .  .  .  .  .  .  .  .  .  .│ 2
- 1│ .  .  .  .  .  .  .  .  .  .  .│ 1
-  └────────────────────────────────┘
-    a  b  c  d  e  f  g  h  i  j  k
-*
-* */
+  const maxDepth = 5;
+
+  while (true) {
+    const res = search(board, maxDepth);
+
+    makeMove(board, bestMove.move);
+    const terminal = checkTerminal(board);
+
+    console.log(`Evaluation: ${getScoreText(res)}`);
+    console.log(`Searched nodes: ${statistics.nodes}`);
+    console.log(`Best move: ${getMoveAlg(bestMove.move)}`);
+    printBoard(board);
+
+    if (checkTerminal(board)) {
+      console.log(`Game over`);
+      break;
+    }
+  }
+}
+
+//runAlphaBetaTest();
+runSelfPlayTest();
+
+
