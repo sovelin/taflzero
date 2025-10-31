@@ -10,17 +10,19 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsup",
     "clean": "rm -rf dist",
     "dev": "tsx watch src/index.ts",
     "lint": "echo 'No lint step configured'",
     "test": "vitest",
-    "test:ui": "vitest --ui"
+    "test:ui": "vitest --ui",
+    "run:inspect": "node --inspect --enable-source-maps dist/index.js"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
     "@vitest/ui": "3.2.4",
     "ts-node": "^10.9.2",
+    "tsup": "^8.5.0",
     "typescript": "^5.3.0",
     "vitest": "^3.2.4"
   },

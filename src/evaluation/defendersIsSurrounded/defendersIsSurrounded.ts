@@ -1,4 +1,4 @@
-import {Board, getCornersSq, Piece} from "@/board";
+import {Board, getCornersSq, Piece, SQS} from "@/board";
 import {bfs} from "@/utils";
 import {isEdgeSquare} from "@/board/utils";
 
@@ -10,8 +10,12 @@ export const defendersIsSurrounded = (board: Board) => {
     startSquares: corners,
   })
 
-  for(const sq of [...visited]) {
-    if(board.board[sq] === Piece.DEFENDER || board.board[sq] === Piece.KING) {
+  for(let i = 0; i < SQS; i++) {
+    if (!visited[i]) {
+      continue;
+    }
+
+    if(board.board[i] === Piece.DEFENDER || board.board[i] === Piece.KING) {
       return false;
     }
   }
@@ -21,10 +25,8 @@ export const defendersIsSurrounded = (board: Board) => {
     startSquares: [board.kingSq],
   })
 
-  for(const sq of [...innerSquares]) {
-
-
-    if (isEdgeSquare(sq)) {
+  for(let i = 0; i < SQS; i++) {
+    if (innerSquares[i] && isEdgeSquare(i)) {
       return false;
     }
   }

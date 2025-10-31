@@ -1,5 +1,6 @@
 import {createQueue} from "@/utils/queue/createQueue";
 import {getBottomSquare, getLeftSquare, getRightSquare, getTopSquare} from "@/board/utils";
+import {SQS} from "@/board";
 
 interface Options {
   isAchievable: (sq: number) => boolean;
@@ -8,9 +9,10 @@ interface Options {
 
 export const bfs = (
   {isAchievable, startSquares}: Options
-): Set<number> => {
+) => {
   const queue = createQueue(startSquares);
-  const visited = new Set<number>(startSquares);
+  //const visited = new Set<number>(startSquares);
+  const visitedFlags = new Uint8Array(SQS);
 
   while (!queue.isEmpty()) {
     const currentSq = queue.dequeue()!;
@@ -22,13 +24,14 @@ export const bfs = (
       getRightSquare(currentSq),
     ].filter((sq) => sq !== null);
 
-    for (const neighbor of neighbors) {
-      if (visited.has(neighbor)) continue;
+    for (let i = 0; i < neighbors.length; i++) {
+      const neighbor = neighbors[i]!;
+      if (visitedFlags[neighbor]) continue;
       if (!isAchievable(neighbor)) continue;
-      visited.add(neighbor);
+      visitedFlags[neighbor] = 1;
       queue.enqueue(neighbor);
     }
   }
 
-  return visited;
+  return visitedFlags;
 }

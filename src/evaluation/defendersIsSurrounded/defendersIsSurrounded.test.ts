@@ -49,6 +49,25 @@ describe('Defenders Is Surrounded Evaluation Tests', () => {
     expect(isSurrounded).toBeTruthy()
   })
 
+  it('surrounded corners and edges, one piece available out of surrounding -> not surrounded', () => {
+    const board = createBoard()
+
+    setPiece(board, getSquareFromAlgebraic('a10'), Piece.ATTACKER)
+    setPiece(board, getSquareFromAlgebraic('b11'), Piece.ATTACKER)
+    setPiece(board, getSquareFromAlgebraic('c11'), Piece.ATTACKER)
+    setPiece(board, getSquareFromAlgebraic('d10'), Piece.ATTACKER)
+    setPiece(board, getSquareFromAlgebraic('c9'), Piece.ATTACKER)
+    setPiece(board, getSquareFromAlgebraic('b9'), Piece.ATTACKER)
+
+    setPiece(board, getSquareFromAlgebraic('b10'), Piece.KING)
+    setPiece(board, getSquareFromAlgebraic("j1"), Piece.DEFENDER)
+    printBoard(board)
+
+    const isSurrounded = defendersIsSurrounded(board)
+
+    expect(isSurrounded).toBeFalsy()
+  })
+
   it('surrounded corners and edges plus (but defender also in chain) -> not surrounded', () => {
     const board = createBoard()
 

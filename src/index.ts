@@ -103,14 +103,16 @@ const runAlphaBetaTest = () => {
 
 const runSelfPlayTest = () => {
   const board = createBoard()
-  //setInitialPosition(board);
+  setInitialPosition(board);
   //setWinningPositionForAttackers(board)
-  setCloseToSurroundedPosition(board)
+  //setCloseToSurroundedPosition(board)
   printBoard(board);
 
-  const maxDepth = 4;
+  const maxDepth = 5;
 
+  let movesCount = 0
   while (true) {
+    movesCount++;
     const res = search(board, maxDepth);
 
     makeMove(board, bestMove.move);

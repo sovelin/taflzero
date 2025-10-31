@@ -3,13 +3,23 @@ import {createBoard, getSquareFromAlgebraic, Piece, setPiece, SQS} from "@/board
 import {bfs, } from "../bfs";
 
 describe('BFS Tests', () => {
+  const convertUintToSet = (arr: Uint8Array): Set<number> => {
+    const res = new Set<number>()
+    for(let i = 0; i < arr.length; i++) {
+      if(arr[i]) {
+        res.add(i)
+      }
+    }
+    return res
+  }
+
   it('empty board, all achievable', () => {
     const board = createBoard()
 
-    const res = bfs({
+    const res = convertUintToSet(bfs({
       isAchievable: () => true,
       startSquares: [0],
-    })
+    }))
 
     expect(res.size).toBe(SQS)
   })
@@ -24,10 +34,10 @@ describe('BFS Tests', () => {
     setPiece(board, getSquareFromAlgebraic('b4'), Piece.ATTACKER)
     setPiece(board, getSquareFromAlgebraic('a4'), Piece.ATTACKER)
 
-    const res = bfs({
+    const res = convertUintToSet(bfs({
       isAchievable: (sq) => board.board[sq] === Piece.EMPTY,
       startSquares: [getSquareFromAlgebraic('a1')],
-    })
+    }))
 
     expect(res.size).toBe(9)
     expect(res.has(getSquareFromAlgebraic('a1'))).toBe(true)
@@ -51,13 +61,13 @@ describe('BFS Tests', () => {
     setPiece(board, getSquareFromAlgebraic('b4'), Piece.ATTACKER)
     setPiece(board, getSquareFromAlgebraic('a4'), Piece.ATTACKER)
 
-    const res = bfs({
+    const res = convertUintToSet(bfs({
       isAchievable: (sq) => board.board[sq] === Piece.EMPTY,
       startSquares: [
         getSquareFromAlgebraic('a1'),
         getSquareFromAlgebraic('k1'),
       ],
-    })
+    }))
 
     expect(res.size).toBe(SQS - 7)
   })
