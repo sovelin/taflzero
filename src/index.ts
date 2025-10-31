@@ -71,14 +71,28 @@ const setWinningPositionForAttackers = (board: Board) => {
   board.sideToMove = Side.ATTACKERS;
 }
 
+const setCloseToSurroundedPosition = (board: Board) => {
+  setPiece(board, getSquareFromAlgebraic('a10'), Piece.ATTACKER)
+  setPiece(board, getSquareFromAlgebraic('b11'), Piece.ATTACKER)
+  setPiece(board, getSquareFromAlgebraic('c11'), Piece.ATTACKER)
+  setPiece(board, getSquareFromAlgebraic('d8'), Piece.ATTACKER)
+  setPiece(board, getSquareFromAlgebraic('c9'), Piece.ATTACKER)
+  setPiece(board, getSquareFromAlgebraic('b9'), Piece.ATTACKER)
+
+  setPiece(board, getSquareFromAlgebraic('b10'), Piece.KING)
+
+  board.sideToMove = Side.ATTACKERS;
+}
+
 const runAlphaBetaTest = () => {
   const board = createBoard()
   //setInitialPosition(board);
   //setLostPosition(board)
   //setNotFullyLostPosition(board)
-  setMoreDifficultPosition(board)
+  //setMoreDifficultPosition(board)
+  setCloseToSurroundedPosition(board)
 
-  const depth = 7;
+  const depth = 4;
   const res = search(board, depth);
 
   console.log(`Search result at depth ${depth}: ${getScoreText(res)}`);
@@ -89,8 +103,9 @@ const runAlphaBetaTest = () => {
 
 const runSelfPlayTest = () => {
   const board = createBoard()
-  setInitialPosition(board);
+  //setInitialPosition(board);
   //setWinningPositionForAttackers(board)
+  setCloseToSurroundedPosition(board)
   printBoard(board);
 
   const maxDepth = 4;
