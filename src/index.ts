@@ -93,7 +93,7 @@ const runSelfPlayTest = () => {
   //setWinningPositionForAttackers(board)
   printBoard(board);
 
-  const maxDepth = 5;
+  const maxDepth = 4;
 
   while (true) {
     const res = search(board, maxDepth);

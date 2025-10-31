@@ -1,6 +1,6 @@
 import {Board, getBottomLeftSquare, getBottomRightSquare, getTopLeftSquare, getTopRightSquare, Side} from "@/board";
 import {kingIsSurrounded} from "@/evaluation/kingIsSurrounded/kingIsSurrounded";
-import {printBoard} from "@/board/print";
+import {defendersIsSurrounded} from "@/evaluation/defendersIsSurrounded";
 
 const cornersSquares = [
   getTopRightSquare(),
@@ -19,6 +19,10 @@ export const checkTerminal = (board: Board, shouldPrint = false): Side | null =>
   }
 
   if (kingIsSurrounded(board)) {
+    return Side.ATTACKERS;
+  }
+
+  if (defendersIsSurrounded(board)) {
     return Side.ATTACKERS;
   }
 
