@@ -105,3 +105,9 @@ export function getBottomSquare(sq: number): number | null {
   if (row === 0) return null;
   return sq - BOARD_SIZE;
 }
+
+export function isEdgeSquare(sq: number): boolean {
+  const row = getRow(sq);
+  const col = getCol(sq);
+  return row === 0 || row === BOARD_SIZE - 1 || col === 0 || col === BOARD_SIZE - 1;
+}
