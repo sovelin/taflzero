@@ -11,6 +11,7 @@
   ],
   "scripts": {
     "build": "tsup",
+    "prepare": "tsup --config tsup.config.lib.ts",
     "clean": "rm -rf dist",
     "dev": "tsx watch src/index.ts",
     "lint": "echo 'No lint step configured'",
