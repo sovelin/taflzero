@@ -1,11 +1,12 @@
 import {
   Board, clearPiece, setPiece,
   getCol, getRow, getSquare,
-  BOARD_SIZE, getOppositeSide
+  BOARD_SIZE, getOppositeSide, Side
 } from "@/board";
 import {moveFrom, moveTo} from "../move";
 import {CapturedPiece, UndoMove} from "../model/UndoMove";
 import {isCapturePossible} from "./isCapturePossible";
+import {makeShieldWallCaptures} from "./makeShieldCaptures";
 
 const getSquareByPath = (sq: number, right: number, top: number) => {
   const row = getRow(sq);
@@ -81,13 +82,15 @@ export const makeMove = (board: Board, move: number): UndoMove => {
     }
   }
 
+  const shieldWallCaptures = makeShieldWallCaptures(board, toSq, board.sideToMove);
   board.sideToMove = getOppositeSide(board.sideToMove);
   board.lastMoveTo = toSq;
+
 
   return {
     from: fromSq,
     to: toSq,
-    captured,
+    captured: shieldWallCaptures.length > 0 ? [...captured, ...shieldWallCaptures] : captured,
     movedPiece: piece,
     lastMoveTo,
   }

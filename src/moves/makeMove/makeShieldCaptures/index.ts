@@ -1,0 +1,1 @@
+export {makeShieldWallCaptures} from './makeShieldCaptures'

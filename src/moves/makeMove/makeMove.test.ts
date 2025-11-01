@@ -4,6 +4,8 @@ import {getSquareFromAlgebraic} from "@/board/utils";
 import {getBoardExpects} from "@/board/tests";
 import {makeMove} from "./makeMove";
 import {createMoveFromAlgebraic} from "../move";
+import {printBoard} from "@/board/print";
+import {UndoMove} from "@/moves/model/UndoMove";
 
 describe('makeMove', () => {
   const prepare = () => {
@@ -13,6 +15,12 @@ describe('makeMove', () => {
     return {
       board
     }
+  }
+
+  const expectUndoHasCapturedPiece = (undo: UndoMove, sqAlgebraic: string, piece: Piece) => {
+    const sq = getSquareFromAlgebraic(sqAlgebraic);
+    const captured = undo.captured.find(c => c.sq === sq && c.piece === piece);
+    expect(captured).toBeDefined();
   }
 
   it('simple move', () => {
@@ -97,5 +105,149 @@ describe('makeMove', () => {
       piece: Piece.DEFENDER
     }]);
     expect(undo.lastMoveTo).toBe(HOLE);
+  })
+
+  describe('shieldwall rule', () => {
+    it('if there are 2 rounded pieces on edge, it could be captured', () => {
+      const {board} = prepare();
+      board.sideToMove = Side.ATTACKERS;
+      setPiece(board, getSquareFromAlgebraic("c1"), Piece.ATTACKER);
+      setPiece(board, getSquareFromAlgebraic("e2"), Piece.ATTACKER);
+      setPiece(board, getSquareFromAlgebraic("f2"), Piece.ATTACKER);
+      setPiece(board, getSquareFromAlgebraic("g1"), Piece.ATTACKER);
+      setPiece(board, getSquareFromAlgebraic("e1"), Piece.DEFENDER);
+      setPiece(board, getSquareFromAlgebraic("f1"), Piece.DEFENDER);
+      printBoard(board)
+
+      const move = createMoveFromAlgebraic("c1d1");
+      const undo = makeMove(board, move);
+
+      expectUndoHasCapturedPiece(undo, "e1", Piece.DEFENDER);
+      expectUndoHasCapturedPiece(undo, "f1", Piece.DEFENDER);
+      expect(board.board[getSquareFromAlgebraic("e1")]).toBe(Piece.EMPTY);
+      expect(board.board[getSquareFromAlgebraic("f1")]).toBe(Piece.EMPTY);
+      expect(undo.captured).toHaveLength(2);
+    })
+
+    it('if there are 2 not fully rounded pieces on edge (without e2)-> not captured', () => {
+      const {board} = prepare();
+      board.sideToMove = Side.ATTACKERS;
+      setPiece(board, getSquareFromAlgebraic("c1"), Piece.ATTACKER);
+      setPiece(board, getSquareFromAlgebraic("f2"), Piece.ATTACKER);
+      setPiece(board, getSquareFromAlgebraic("g1"), Piece.ATTACKER);
+      setPiece(board, getSquareFromAlgebraic("e1"), Piece.DEFENDER);
+      setPiece(board, getSquareFromAlgebraic("f1"), Piece.DEFENDER);
+      printBoard(board)
+
+      const move = createMoveFromAlgebraic("c1d1");
+      const undo = makeMove(board, move);
+
+      expect(undo.captured).toHaveLength(0);
+      expect(board.board[getSquareFromAlgebraic("e1")]).toBe(Piece.DEFENDER);
+      expect(board.board[getSquareFromAlgebraic("f1")]).toBe(Piece.DEFENDER);
+    })
+
+    it('one piece surrounded -> no capture', () => {
+      const {board} = prepare();
+      board.sideToMove = Side.ATTACKERS;
+      setPiece(board, getSquareFromAlgebraic("c1"), Piece.ATTACKER);
+      setPiece(board, getSquareFromAlgebraic("d3"), Piece.ATTACKER);
+      setPiece(board, getSquareFromAlgebraic("e1"), Piece.ATTACKER);
+      setPiece(board, getSquareFromAlgebraic("d1"), Piece.DEFENDER);
+      printBoard(board)
+
+      const move = createMoveFromAlgebraic("d3d2");
+      const undo = makeMove(board, move);
+
+      expect(undo.captured).toHaveLength(0);
+      expect(board.board[getSquareFromAlgebraic("d1")]).toBe(Piece.DEFENDER);
+    })
+
+    it('if there are 2 rounded pieces on edge, it could be captured (but king not captured)', () => {
+      const {board} = prepare();
+      board.sideToMove = Side.ATTACKERS;
+      setPiece(board, getSquareFromAlgebraic("c1"), Piece.ATTACKER);
+      setPiece(board, getSquareFromAlgebraic("e2"), Piece.ATTACKER);
+      setPiece(board, getSquareFromAlgebraic("f2"), Piece.ATTACKER);
+      setPiece(board, getSquareFromAlgebraic("g1"), Piece.ATTACKER);
+      setPiece(board, getSquareFromAlgebraic("e1"), Piece.DEFENDER);
+      setPiece(board, getSquareFromAlgebraic("f1"), Piece.KING);
+      printBoard(board)
+
+      const move = createMoveFromAlgebraic("c1d1");
+      const undo = makeMove(board, move);
+
+      expectUndoHasCapturedPiece(undo, "e1", Piece.DEFENDER);
+      expect(board.board[getSquareFromAlgebraic("e1")]).toBe(Piece.EMPTY);
+      expect(board.board[getSquareFromAlgebraic("f1")]).toBe(Piece.KING);
+      expect(undo.captured).toHaveLength(1);
+    })
+
+    it('defenders also could capture', () => {
+      const {board} = prepare();
+      board.sideToMove = Side.DEFENDERS;
+      setPiece(board, getSquareFromAlgebraic("c1"), Piece.DEFENDER);
+      setPiece(board, getSquareFromAlgebraic("e2"), Piece.KING);
+      setPiece(board, getSquareFromAlgebraic("f2"), Piece.DEFENDER);
+      setPiece(board, getSquareFromAlgebraic("g1"), Piece.DEFENDER);
+      setPiece(board, getSquareFromAlgebraic("e1"), Piece.ATTACKER);
+      setPiece(board, getSquareFromAlgebraic("f1"), Piece.ATTACKER);
+      printBoard(board)
+
+      const move = createMoveFromAlgebraic("c1d1");
+      const undo = makeMove(board, move);
+
+      expectUndoHasCapturedPiece(undo, "e1", Piece.ATTACKER);
+      expectUndoHasCapturedPiece(undo, "f1", Piece.ATTACKER);
+      expect(board.board[getSquareFromAlgebraic("e1")]).toBe(Piece.EMPTY);
+      expect(board.board[getSquareFromAlgebraic("f1")]).toBe(Piece.EMPTY);
+      expect(undo.captured).toHaveLength(2);
+    })
+
+    it('capture on corner with shieldwall', () => {
+      const {board} = prepare();
+      board.sideToMove = Side.DEFENDERS;
+      setPiece(board, getSquareFromAlgebraic("b2"), Piece.DEFENDER);
+      setPiece(board, getSquareFromAlgebraic("c2"), Piece.DEFENDER);
+      setPiece(board, getSquareFromAlgebraic("e1"), Piece.DEFENDER);
+      setPiece(board, getSquareFromAlgebraic("b1"), Piece.ATTACKER);
+      setPiece(board, getSquareFromAlgebraic("c1"), Piece.ATTACKER);
+      printBoard(board)
+
+      const move = createMoveFromAlgebraic("e1d1");
+      const undo = makeMove(board, move);
+
+      expectUndoHasCapturedPiece(undo, "b1", Piece.ATTACKER);
+      expectUndoHasCapturedPiece(undo, "c1", Piece.ATTACKER);
+      expect(board.board[getSquareFromAlgebraic("b1")]).toBe(Piece.EMPTY);
+      expect(board.board[getSquareFromAlgebraic("c1")]).toBe(Piece.EMPTY);
+      expect(undo.captured).toHaveLength(2);
+    })
+
+    it('standard captures should works too. more complex test', () => {
+      const {board} = prepare();
+      board.sideToMove = Side.ATTACKERS;
+      setPiece(board, getSquareFromAlgebraic("b2"), Piece.ATTACKER);
+      setPiece(board, getSquareFromAlgebraic("c2"), Piece.ATTACKER);
+      setPiece(board, getSquareFromAlgebraic("f2"), Piece.ATTACKER);
+      setPiece(board, getSquareFromAlgebraic("e1"), Piece.ATTACKER);
+      setPiece(board, getSquareFromAlgebraic("d1"), Piece.DEFENDER);
+      setPiece(board, getSquareFromAlgebraic("b1"), Piece.DEFENDER);
+      setPiece(board, getSquareFromAlgebraic("c1"), Piece.KING);
+      setPiece(board, getSquareFromAlgebraic("d3"), Piece.DEFENDER);
+      setPiece(board, getSquareFromAlgebraic("d4"), Piece.ATTACKER);
+      printBoard(board)
+
+      const move = createMoveFromAlgebraic("f2d2");
+      const undo = makeMove(board, move);
+
+      expectUndoHasCapturedPiece(undo, "b1", Piece.DEFENDER);
+      expectUndoHasCapturedPiece(undo, "d1", Piece.DEFENDER);
+      expectUndoHasCapturedPiece(undo, "d3", Piece.DEFENDER);
+      expect(board.board[getSquareFromAlgebraic("b1")]).toBe(Piece.EMPTY);
+      expect(board.board[getSquareFromAlgebraic("d1")]).toBe(Piece.EMPTY);
+      expect(board.board[getSquareFromAlgebraic("d3")]).toBe(Piece.EMPTY);
+      expect(undo.captured).toHaveLength(3);
+    })
   })
 })

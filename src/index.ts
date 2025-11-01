@@ -121,10 +121,10 @@ const runAlphaBetaTest = () => {
 
 const runSelfPlayTest = () => {
   const board = createBoard()
-  //setInitialPosition(board);
+  setInitialPosition(board);
   //setWinningPositionForAttackers(board)
   //setCloseToSurroundedPosition(board)
-  sertNearToFortPosition(board)
+  //sertNearToFortPosition(board)
   printBoard(board);
 
   const maxDepth = 5;
