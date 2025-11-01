@@ -2,6 +2,7 @@ import {Piece, Side} from "./types";
 import {Board} from "./model/Board";
 import {getCol, getRow, getSquareFromAlgebraic} from "./utils";
 import {BOARD_SIZE, HOLE, SQS} from "./constants";
+import {sideZobrist, zobrist} from "@/board/zobrist/zobrist";
 
 const ATTACKERS_MAX = 24;
 const DEFENDERS_MAX = 12;
@@ -54,6 +55,7 @@ function setDefender(board: Board, sq: number): void {
 
 export function setPiece(board: Board, sq: number, piece: number): void {
   board.board[sq] = piece;
+  board.zobrist ^= zobrist[piece - 1][sq];
 
   const row = getRow(sq);
   const col = getCol(sq);
@@ -108,6 +110,7 @@ function clearDefender(board: Board, sq: number): void {
 
 export function clearPiece(board: Board, sq: number): void {
   const piece = board.board[sq];
+  board.zobrist ^= zobrist[piece - 1][sq];
   board.board[sq] = Piece.EMPTY;
 
   const row = getRow(sq);
@@ -123,6 +126,11 @@ export function clearPiece(board: Board, sq: number): void {
   } else if (piece === Piece.KING) {
     board.kingSq = HOLE;
   }
+}
+
+export function flipSide(board: Board): void {
+  board.sideToMove = board.sideToMove === Side.ATTACKERS ? Side.DEFENDERS : Side.ATTACKERS;
+  board.zobrist ^= sideZobrist;
 }
 
 export function clearBoard(board: Board): void {

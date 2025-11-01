@@ -16,4 +16,4 @@ export {
   getTopRightSquare,
   getBottomLeftSquare,
 } from './utils/utils'
-export {BOARD_SIZE, HOLE, SQS} from './constants'
+export {BOARD_SIZE, HOLE, SQS, NUM_PIECE_KINDS} from './constants'

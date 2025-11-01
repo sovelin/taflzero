@@ -38,4 +38,5 @@ export function printBoard(b: Board) {
 
   console.log(borderBottom);
   console.log(top);
+  console.log(`zobrist: ${b.zobrist}`);
 }

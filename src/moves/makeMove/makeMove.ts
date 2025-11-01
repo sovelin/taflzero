@@ -1,12 +1,13 @@
 import {
   Board, clearPiece, setPiece,
   getCol, getRow, getSquare,
-  BOARD_SIZE, getOppositeSide, Side
+  BOARD_SIZE,
 } from "@/board";
 import {moveFrom, moveTo} from "../move";
 import {CapturedPiece, UndoMove} from "../model/UndoMove";
 import {isCapturePossible} from "./isCapturePossible";
 import {makeShieldWallCaptures} from "./makeShieldCaptures";
+import {flipSide} from "@/board/board";
 
 const getSquareByPath = (sq: number, right: number, top: number) => {
   const row = getRow(sq);
@@ -51,6 +52,14 @@ const getBetweenSquare = (sq1: number, sq2: number) => {
   return -1;
 }
 
+const addPositionToRepTable = (board: Board) => {
+  if (board.repTable.has(board.zobrist)) {
+    board.repTable.set(board.zobrist, board.repTable.get(board.zobrist)! + 1);
+  } else {
+    board.repTable.set(board.zobrist, 1);
+  }
+}
+
 
 export const makeMove = (board: Board, move: number): UndoMove => {
   const fromSq = moveFrom(move)
@@ -83,9 +92,10 @@ export const makeMove = (board: Board, move: number): UndoMove => {
   }
 
   const shieldWallCaptures = makeShieldWallCaptures(board, toSq, board.sideToMove);
-  board.sideToMove = getOppositeSide(board.sideToMove);
+  flipSide(board);
   board.lastMoveTo = toSq;
 
+  addPositionToRepTable(board);
 
   return {
     from: fromSq,

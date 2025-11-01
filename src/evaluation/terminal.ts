@@ -21,6 +21,10 @@ const cornersSquares = [
 ];
 
 export const checkTerminal = (board: Board): Side | null => {
+  if (board.repTable.get(board.zobrist)! >= 3) {
+    return Side.ATTACKERS;
+  }
+
   if (cornersSquares.includes(board.kingSq) || board.attackersCount < 2) {
     return Side.DEFENDERS;
   }

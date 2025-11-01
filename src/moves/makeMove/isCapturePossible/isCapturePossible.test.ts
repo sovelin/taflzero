@@ -213,7 +213,6 @@ describe('isCapturePossible', () => {
     const board = createBoard()
     setPiece(board, getSquareFromAlgebraic("c2"), Piece.ATTACKER)
     setPiece(board, getSquareFromAlgebraic("c4"), Piece.ATTACKER)
-    setPiece(board, getSquareFromAlgebraic("c3"), Piece.EMPTY)
 
     const isPossible = isCapturePossible(
       board,

@@ -104,11 +104,11 @@ const sertNearToFortPosition = (board: Board) => {
 
 const runAlphaBetaTest = () => {
   const board = createBoard()
-  //setInitialPosition(board);
+  setInitialPosition(board);
+  printBoard(board)
   //setLostPosition(board)
   //setNotFullyLostPosition(board)
   //setMoreDifficultPosition(board)
-  setCloseToSurroundedPosition(board)
 
   const depth = 4;
   const res = search(board, depth);
@@ -142,12 +142,14 @@ const runSelfPlayTest = () => {
     printBoard(board);
 
     if (checkTerminal(board) !== null) {
+      console.log(board.repTable)
       console.log('--- Game Over ---');
       break;
     }
   }
 }
 
-
 runSelfPlayTest();
+//runAlphaBetaTest()
 setInterval(() => {}, 1e9);
+

@@ -1,7 +1,15 @@
-import {Board, clearPiece, getOppositeSide, setPiece, Side} from "@/board";
+import {Board, clearPiece, setPiece} from "@/board";
 import {UndoMove} from "@/moves/model/UndoMove";
+import {flipSide} from "@/board/board";
+
+function removePositionFromRepTable(board: Board) {
+  if (board.repTable.has(board.zobrist)) {
+    board.repTable.set(board.zobrist, board.repTable.get(board.zobrist)! - 1);
+  }
+}
 
 export function unmakeMove(board: Board, undo: UndoMove) {
+  removePositionFromRepTable(board);
   clearPiece(board, undo.to);
   setPiece(board, undo.from, undo.movedPiece);
 
@@ -9,6 +17,6 @@ export function unmakeMove(board: Board, undo: UndoMove) {
     setPiece(board, captured.sq, captured.piece);
   }
 
-  board.sideToMove = getOppositeSide(board.sideToMove);
+  flipSide(board);
   board.lastMoveTo = undo.lastMoveTo;
 }
