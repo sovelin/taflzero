@@ -223,4 +223,34 @@ describe('isCapturePossible', () => {
     )
     expect(isPossible).toBe(false)
   })
+
+  it('no capture when king on throne and try to capture defender', () => {
+    const board = createBoard()
+    setPiece(board, getSquareFromAlgebraic("f6"), Piece.KING)
+    setPiece(board, getSquareFromAlgebraic("f5"), Piece.DEFENDER)
+    setPiece(board, getSquareFromAlgebraic("f4"), Piece.ATTACKER)
+
+    const isPossible = isCapturePossible(
+      board,
+      getSquareFromAlgebraic("f5"),
+      getSquareFromAlgebraic("f6"),
+      getSquareFromAlgebraic("f4")
+    )
+    expect(isPossible).toBe(false)
+  })
+
+  it('capture when king on throne and try to capture attacker', () => {
+    const board = createBoard()
+    setPiece(board, getSquareFromAlgebraic("f6"), Piece.KING)
+    setPiece(board, getSquareFromAlgebraic("f5"), Piece.ATTACKER)
+    setPiece(board, getSquareFromAlgebraic("f4"), Piece.DEFENDER)
+
+    const isPossible = isCapturePossible(
+      board,
+      getSquareFromAlgebraic("f5"),
+      getSquareFromAlgebraic("f6"),
+      getSquareFromAlgebraic("f4")
+    )
+    expect(isPossible).toBe(false)
+  })
 })

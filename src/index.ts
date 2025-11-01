@@ -6,7 +6,6 @@ import {statistics} from "@/search";
 import {checkTerminal, getScoreText} from "@/evaluation";
 import {bestMove} from "@/search/model/BestMove";
 import {getMoveAlg} from "@/moves/utils";
-import {createMoveFromAlgebraic} from "@/moves/move";
 
 initMovesModule()
 
@@ -84,6 +83,25 @@ const setCloseToSurroundedPosition = (board: Board) => {
   board.sideToMove = Side.ATTACKERS;
 }
 
+const sertNearToFortPosition = (board: Board) => {
+  board.sideToMove = Side.ATTACKERS;
+  setPiece(board, getSquareFromAlgebraic('f2'), Piece.KING)
+  setPiece(board, getSquareFromAlgebraic('b1'), Piece.DEFENDER)
+  setPiece(board, getSquareFromAlgebraic('b6'), Piece.ATTACKER)
+  setPiece(board, getSquareFromAlgebraic('a5'), Piece.ATTACKER)
+  setPiece(board, getSquareFromAlgebraic('e1'), Piece.DEFENDER)
+  setPiece(board, getSquareFromAlgebraic('e2'), Piece.DEFENDER)
+  setPiece(board, getSquareFromAlgebraic('e3'), Piece.DEFENDER)
+  setPiece(board, getSquareFromAlgebraic('f4'), Piece.DEFENDER)
+  setPiece(board, getSquareFromAlgebraic('g3'), Piece.DEFENDER)
+  setPiece(board, getSquareFromAlgebraic('d2'), Piece.DEFENDER)
+  setPiece(board, getSquareFromAlgebraic('h2'), Piece.DEFENDER)
+  setPiece(board, getSquareFromAlgebraic('i2'), Piece.DEFENDER)
+  setPiece(board, getSquareFromAlgebraic('c2'), Piece.DEFENDER)
+  board.lastMoveTo = getSquareFromAlgebraic('b1');
+  printBoard(board)
+}
+
 const runAlphaBetaTest = () => {
   const board = createBoard()
   //setInitialPosition(board);
@@ -103,9 +121,10 @@ const runAlphaBetaTest = () => {
 
 const runSelfPlayTest = () => {
   const board = createBoard()
-  setInitialPosition(board);
+  //setInitialPosition(board);
   //setWinningPositionForAttackers(board)
   //setCloseToSurroundedPosition(board)
+  sertNearToFortPosition(board)
   printBoard(board);
 
   const maxDepth = 5;
@@ -122,14 +141,13 @@ const runSelfPlayTest = () => {
     console.log(`Best move: ${getMoveAlg(bestMove.move)}`);
     printBoard(board);
 
-    if (checkTerminal(board, true) !== null) {
-      console.log(`Game over`);
+    if (checkTerminal(board) !== null) {
+      console.log('--- Game Over ---');
       break;
     }
   }
 }
 
-//runAlphaBetaTest();
+
 runSelfPlayTest();
-
-
+setInterval(() => {}, 1e9);

@@ -82,28 +82,89 @@ export function getBottomLeftSquare(): number {
   return getSquare(0, 0);
 }
 
-export function getRightSquare(sq: number): number | null {
+export function getRightNeighbor(sq: number): number | null {
   const col = getCol(sq);
   if (col === BOARD_SIZE - 1) return null;
   return sq + 1;
 }
 
-export function getLeftSquare(sq: number): number | null {
+export function getLeftNeighbor(sq: number): number | null {
   const col = getCol(sq);
   if (col === 0) return null;
   return sq - 1;
 }
 
-export function getTopSquare(sq: number): number | null {
+export function getTopNeighbor(sq: number): number | null {
   const row = getRow(sq);
   if (row === BOARD_SIZE - 1) return null;
   return sq + BOARD_SIZE;
 }
 
-export function getBottomSquare(sq: number): number | null {
+export function getBottomNeighbor(sq: number): number | null {
   const row = getRow(sq);
   if (row === 0) return null;
   return sq - BOARD_SIZE;
+}
+
+export function getTopLeftNeighbor(sq: number): number | null {
+  const row = getRow(sq);
+  const col = getCol(sq);
+  if (row === BOARD_SIZE - 1 || col === 0) return null;
+  return sq + BOARD_SIZE - 1;
+}
+
+export function getTopRightNeighbor(sq: number): number | null {
+  const row = getRow(sq);
+  const col = getCol(sq);
+  if (row === BOARD_SIZE - 1 || col === BOARD_SIZE - 1) return null;
+  return sq + BOARD_SIZE + 1;
+}
+
+export function getBottomLeftNeighbor(sq: number): number | null {
+  const row = getRow(sq);
+  const col = getCol(sq);
+  if (row === 0 || col === 0) return null;
+  return sq - BOARD_SIZE - 1;
+}
+
+export function getBottomRightNeighbor(sq: number): number | null {
+  const row = getRow(sq);
+  const col = getCol(sq);
+  if (row === 0 || col === BOARD_SIZE - 1) return null;
+  return sq - BOARD_SIZE + 1;
+}
+
+export function getVerticalHorizontalNeighbors(sq: number): number[] {
+  const siblings: number[] = [];
+  const top = getTopNeighbor(sq);
+  const bottom = getBottomNeighbor(sq);
+  const left = getLeftNeighbor(sq);
+  const right = getRightNeighbor(sq);
+
+  if (top !== null) siblings.push(top);
+  if (bottom !== null) siblings.push(bottom);
+  if (left !== null) siblings.push(left);
+  if (right !== null) siblings.push(right);
+
+  return siblings;
+}
+
+export function getAllNeighbors(sq: number): number[] {
+  const siblings: number[] = [];
+  const verticalHorizontal = getVerticalHorizontalNeighbors(sq);
+  siblings.push(...verticalHorizontal);
+
+  const topLeft = getTopLeftNeighbor(sq);
+  const topRight = getTopRightNeighbor(sq);
+  const bottomLeft = getBottomLeftNeighbor(sq);
+  const bottomRight = getBottomRightNeighbor(sq);
+
+  if (topLeft !== null) siblings.push(topLeft);
+  if (topRight !== null) siblings.push(topRight);
+  if (bottomLeft !== null) siblings.push(bottomLeft);
+  if (bottomRight !== null) siblings.push(bottomRight);
+
+  return siblings;
 }
 
 export function isEdgeSquare(sq: number): boolean {

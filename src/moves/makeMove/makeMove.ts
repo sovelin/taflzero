@@ -55,6 +55,7 @@ export const makeMove = (board: Board, move: number): UndoMove => {
   const fromSq = moveFrom(move)
   const toSq = moveTo(move)
   const piece = board.board[fromSq];
+  const lastMoveTo = board.lastMoveTo
 
   clearPiece(board, fromSq);
   setPiece(board, toSq, piece);
@@ -81,11 +82,13 @@ export const makeMove = (board: Board, move: number): UndoMove => {
   }
 
   board.sideToMove = getOppositeSide(board.sideToMove);
+  board.lastMoveTo = toSq;
 
   return {
     from: fromSq,
     to: toSq,
     captured,
     movedPiece: piece,
+    lastMoveTo,
   }
 }

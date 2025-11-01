@@ -10,4 +10,5 @@ export interface UndoMove {
   to: number;
   captured: CapturedPiece[];
   movedPiece: Piece;
+  lastMoveTo: number;
 }

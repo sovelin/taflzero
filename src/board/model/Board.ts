@@ -27,4 +27,7 @@ export interface Board {
 
   // 6) Rules
   passThroughThrone: boolean; // can the king pass through the throne (Copenhagen rules)?
+
+  // 7) Last move made
+  lastMoveTo: number;
 }

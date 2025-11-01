@@ -10,4 +10,5 @@ export function unmakeMove(board: Board, undo: UndoMove) {
   }
 
   board.sideToMove = getOppositeSide(board.sideToMove);
+  board.lastMoveTo = undo.lastMoveTo;
 }

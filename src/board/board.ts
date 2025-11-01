@@ -27,6 +27,7 @@ export function createBoard(): Board {
     repTable: new Map(),
 
     passThroughThrone: true,
+    lastMoveTo: HOLE,
   };
 }
 
@@ -138,6 +139,7 @@ export function clearBoard(board: Board): void {
   board.moveNumber = 1;
   board.zobrist = 0n;
   board.repTable.clear();
+  board.lastMoveTo = HOLE;
 }
 
 export function setInitialPosition(board: Board): void {

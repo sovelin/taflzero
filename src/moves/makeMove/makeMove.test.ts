@@ -1,5 +1,5 @@
 import {describe, it, expect} from "vitest";
-import {clearBoard, createBoard, setInitialPosition, setPiece, Piece, Side} from "@/board";
+import {clearBoard, createBoard, setInitialPosition, setPiece, Piece, Side, HOLE} from "@/board";
 import {getSquareFromAlgebraic} from "@/board/utils";
 import {getBoardExpects} from "@/board/tests";
 import {makeMove} from "./makeMove";
@@ -96,5 +96,6 @@ describe('makeMove', () => {
       sq: getSquareFromAlgebraic('a5'),
       piece: Piece.DEFENDER
     }]);
+    expect(undo.lastMoveTo).toBe(HOLE);
   })
 })

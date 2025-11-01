@@ -1,6 +1,17 @@
-import {Board, getBottomLeftSquare, getBottomRightSquare, getTopLeftSquare, getTopRightSquare, Side} from "@/board";
+import {
+  Board,
+  getBottomLeftSquare,
+  getBottomRightSquare,
+  getSquareAlg,
+  getTopLeftSquare,
+  getTopRightSquare,
+  Side
+} from "@/board";
 import {kingIsSurrounded} from "@/evaluation/kingIsSurrounded/kingIsSurrounded";
 import {defendersIsSurrounded} from "@/evaluation/defendersIsSurrounded";
+import {checkFort} from "@/evaluation/checkFort";
+import {Stats} from "@/evaluation/checkFort/checkFort";
+import {printBoard} from "@/board/print";
 
 const cornersSquares = [
   getTopRightSquare(),
@@ -9,7 +20,7 @@ const cornersSquares = [
   getBottomRightSquare(),
 ];
 
-export const checkTerminal = (board: Board, shouldPrint = false): Side | null => {
+export const checkTerminal = (board: Board): Side | null => {
   if (cornersSquares.includes(board.kingSq) || board.attackersCount < 2) {
     return Side.DEFENDERS;
   }
@@ -24,6 +35,10 @@ export const checkTerminal = (board: Board, shouldPrint = false): Side | null =>
 
   if (defendersIsSurrounded(board)) {
     return Side.ATTACKERS;
+  }
+
+  if (checkFort(board)) {
+    return Side.DEFENDERS;
   }
 
   return null;

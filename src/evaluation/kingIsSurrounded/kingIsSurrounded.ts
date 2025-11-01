@@ -1,5 +1,5 @@
 import {Board, getThroneSq, Piece} from "@/board";
-import {getBottomSquare, getLeftSquare, getRightSquare, getTopSquare} from "@/board/utils";
+import {getBottomNeighbor, getLeftNeighbor, getRightNeighbor, getTopNeighbor} from "@/board/utils";
 
 const THRONE_SQ = getThroneSq();
 
@@ -11,10 +11,10 @@ export const kingIsSurrounded = (board: Board) => {
   }
 
   return [
-    getLeftSquare(kingSq),
-    getTopSquare(kingSq),
-    getRightSquare(kingSq),
-    getBottomSquare(kingSq)
+    getLeftNeighbor(kingSq),
+    getTopNeighbor(kingSq),
+    getRightNeighbor(kingSq),
+    getBottomNeighbor(kingSq)
   ].filter((sq) => {
     if (sq === Piece.EMPTY) {
       return false;

@@ -19,7 +19,7 @@
     "run:inspect": "node --inspect --enable-source-maps dist/index.js"
   },
   "devDependencies": {
-    "@types/node": "^20.11.0",
+    "@types/node": "^24.9.2",
     "@vitest/ui": "3.2.4",
     "ts-node": "^10.9.2",
     "tsup": "^8.5.0",
