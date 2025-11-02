@@ -12,8 +12,6 @@
   "scripts": {
     "build:playground": "tsup",
     "build": "tsup --config tsup.config.lib.ts",
-    "prepare": "npm run build",
-    "postinstall": "npm run build",
     "clean": "rm -rf dist",
     "dev": "tsx watch src/index.ts",
     "lint": "echo 'No lint step configured'",
