@@ -63,9 +63,6 @@ const setRowFromFEN = (rowFEN: string, rowIndex: number, board: Board) => {
 
     // Set piece on board
     const sq = getSquare(rowIndex, colIndex)
-    console.log({
-      piece: charToPiece[char]
-    })
     setPiece(board, sq, charToPiece[char])
     colIndex++
   }
@@ -85,8 +82,6 @@ export const setFEN = (board: Board, fen: string) => {
     .forEach((rowFEN, rowIndex) => {
       setRowFromFEN(rowFEN, BOARD_SIZE - 1 - rowIndex, board)
     })
-
-  console.log({splittedRows, side})
 
   const sideToSet = charToSide[side]
   if (board.sideToMove !== sideToSet) {
