@@ -1,7 +1,10 @@
 import { defineConfig } from 'tsup';
 
+
 export default defineConfig({
-  entry: ['src/lib.ts'],
+  entry: {
+    index: 'src/lib.ts'
+  },
   outDir: 'dist',
   format: ['esm', 'cjs'],
   target: 'esnext',

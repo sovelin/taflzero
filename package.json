@@ -1,8 +1,8 @@
 {
-  "name": "@zevratafl/engine-node",
-  "version": "0.1.0",
-  "description": "Node.js bindings for the Zevratafl engine",
-  "private": true,
+  "name": "zevratafl",
+  "version": "0.0.1",
+  "description": "Zevratafl engine for Hnefatafl game (Copenhagen variant initially)",
+  "private": false,
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -10,8 +10,8 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsup",
-    "prepare": "tsup --config tsup.config.lib.ts",
+    "build:classic": "tsup",
+    "build": "tsup --config tsup.config.lib.ts",
     "clean": "rm -rf dist",
     "dev": "tsx watch src/index.ts",
     "lint": "echo 'No lint step configured'",
