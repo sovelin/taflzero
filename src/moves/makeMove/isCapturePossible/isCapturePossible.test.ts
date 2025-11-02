@@ -1,6 +1,7 @@
 import {describe, expect, it} from "vitest";
 import {isCapturePossible} from "./isCapturePossible";
 import {createBoard, getSquareFromAlgebraic, getThroneSq, Piece, setPiece} from "@/board";
+import {printBoard} from "@/board/print";
 
 describe('isCapturePossible', () => {
   it('attacker capture defender in the simple cell', () => {
@@ -21,6 +22,21 @@ describe('isCapturePossible', () => {
     const board = createBoard()
     setPiece(board, getSquareFromAlgebraic("c2"), Piece.DEFENDER)
     setPiece(board, getSquareFromAlgebraic("c4"), Piece.DEFENDER)
+    setPiece(board, getSquareFromAlgebraic("c3"), Piece.ATTACKER)
+
+    const isPossible = isCapturePossible(
+      board,
+      getSquareFromAlgebraic("c3"),
+      getSquareFromAlgebraic("c2"),
+      getSquareFromAlgebraic("c4")
+    )
+    expect(isPossible).toBe(true)
+  })
+
+  it('king can eat attacker in the simple cell', () => {
+    const board = createBoard()
+    setPiece(board, getSquareFromAlgebraic("c2"), Piece.DEFENDER)
+    setPiece(board, getSquareFromAlgebraic("c4"), Piece.KING)
     setPiece(board, getSquareFromAlgebraic("c3"), Piece.ATTACKER)
 
     const isPossible = isCapturePossible(
@@ -243,6 +259,7 @@ describe('isCapturePossible', () => {
     setPiece(board, getSquareFromAlgebraic("f6"), Piece.KING)
     setPiece(board, getSquareFromAlgebraic("f5"), Piece.ATTACKER)
     setPiece(board, getSquareFromAlgebraic("f4"), Piece.DEFENDER)
+    printBoard(board)
 
     const isPossible = isCapturePossible(
       board,
@@ -250,6 +267,6 @@ describe('isCapturePossible', () => {
       getSquareFromAlgebraic("f6"),
       getSquareFromAlgebraic("f4")
     )
-    expect(isPossible).toBe(false)
+    expect(isPossible).toBe(true)
   })
 })

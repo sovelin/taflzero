@@ -561,7 +561,8 @@ var isCapturePossible = (board, targetSq, enemySq1, enemySq2) => {
   const attackerPiece2 = board.board[enemySq2];
   const attackerPiece = attackerPiece1 || attackerPiece2;
   const targetPieceForAttackers = board.board[targetSq];
-  if (attackerPiece1 && attackerPiece2 && attackerPiece1 !== attackerPiece2) {
+  console.log({ attackerPiece1, attackerPiece2 });
+  if (attackerPiece1 && attackerPiece2 && (attackerPiece1 !== attackerPiece2 && !(attackerPiece1 === 3 /* KING */ && attackerPiece2 === 2 /* DEFENDER */) && !(attackerPiece2 === 3 /* KING */ && attackerPiece1 === 2 /* DEFENDER */))) {
     return false;
   }
   if (targetPieceForAttackers === 0 /* EMPTY */ || targetPieceForAttackers === 3 /* KING */) {
