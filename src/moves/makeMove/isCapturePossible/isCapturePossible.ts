@@ -13,8 +13,6 @@ export const isCapturePossible = (
 
   const attackerPiece = attackerPiece1 || attackerPiece2;
   const targetPieceForAttackers = board.board[targetSq];
-  console.log({attackerPiece1, attackerPiece2})
-
 
   if (attackerPiece1
     && attackerPiece2
