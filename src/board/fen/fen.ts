@@ -1,4 +1,4 @@
-import {Board} from "../board";
+import {Board} from "../model/Board";
 import {BOARD_SIZE} from "../constants";
 import {clearBoard} from "../board";
 import {getSquare} from "../utils/utils";
