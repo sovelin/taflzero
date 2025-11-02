@@ -5,7 +5,7 @@ import {search} from "@/search/search";
 import {statistics} from "@/search";
 import {checkTerminal, getScoreText} from "@/evaluation";
 import {bestMove} from "@/search/model/BestMove";
-import {getMoveAlg} from "@/moves/utils";
+import {getMoveAlg} from "@/moves";
 
 initMovesModule()
 
