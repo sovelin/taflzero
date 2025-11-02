@@ -1,8 +1,9 @@
 import {Piece, Side} from "./types";
 import {Board} from "./model/Board";
 import {getCol, getRow, getSquareFromAlgebraic} from "./utils";
-import {BOARD_SIZE, HOLE, SQS} from "./constants";
+import {BOARD_SIZE, HOLE, INITIAL_FEN, SQS} from "./constants";
 import {sideZobrist, zobrist} from "@/board/zobrist/zobrist";
+import {setFEN} from "@/board/fen/fen";
 
 const ATTACKERS_MAX = 24;
 const DEFENDERS_MAX = 12;
@@ -151,37 +152,5 @@ export function clearBoard(board: Board): void {
 }
 
 export function setInitialPosition(board: Board): void {
-  clearBoard(board);
-
-  const setPieces = (positions: string[], piece: Piece) => {
-    for (const pos of positions) {
-      const sq = getSquareFromAlgebraic(pos);
-      setPiece(board, sq, piece);
-    }
-  }
-
-  const setAttackers = (positions: string[]) => {
-    setPieces(positions, Piece.ATTACKER);
-  }
-
-  const setDefenders = (positions: string[]) => {
-    setPieces(positions, Piece.DEFENDER);
-  }
-
-  const setKing = (position: string) => {
-    const sq = getSquareFromAlgebraic(position);
-    setPiece(board, sq, Piece.KING);
-  }
-
-  setAttackers(["d1", "e1", "f1", "g1", "h1"])
-  setAttackers(["a4", "a5", "a6", "a7", "a8"])
-  setAttackers(["d11", "e11", "f11", "g11", "h11"])
-  setAttackers(["k4", "k5", "k6", "k7", "k8"])
-  setAttackers(["b6", "f10", "j6", "f2"]);
-
-  setDefenders(["e6", "f5", "f7", "g6"]);
-  setDefenders(["d6", "f4", "f8", "h6"]);
-  setDefenders(["e5", "e7", "g5", "g7"]);
-
-  setKing("f6");
+  setFEN(board, INITIAL_FEN);
 }
