@@ -1,11 +1,11 @@
-export const enum Piece {
+export enum Piece {
   EMPTY = 0,
   ATTACKER = 1,
   DEFENDER = 2,
   KING = 3
 }
 
-export const enum Side {
+export enum Side {
   ATTACKERS = 0,
   DEFENDERS = 1
 }
