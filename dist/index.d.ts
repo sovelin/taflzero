@@ -63,6 +63,8 @@ declare const INITIAL_FEN = "3aaaaa3/5a5/11/a4d4a/a3ddd3a/aa1ddkdd1aa/a3ddd3a/a4
 declare const setFEN: (board: Board, fen: string) => void;
 declare const getFEN: (board: Board) => string;
 
+declare function printBoard(b: Board): void;
+
 declare const search: (board: Board, depth: number, alpha?: number, beta?: number, height?: number) => number;
 
 declare class BestMove {
@@ -136,4 +138,4 @@ declare function initMovesModule(): void;
 
 declare function getMoveAlg(move: number): string;
 
-export { BOARD_SIZE, type Board, HOLE, INITIAL_FEN, MATE_SCORE, NUM_PIECE_KINDS, Piece, SQS, Side, bestMove, bfs, checkTerminal, clearBoard, clearPiece, createBoard, createMove, createMoveFromAlgebraic, createMoveGenerator, ctz, evaluateBoard, getBinary, getBottomLeftSquare, getBottomRightSquare, getCol, getCornersSq, getFEN, getMoveAlg, getOppositeSide, getRow, getScoreText, getSideByPiece, getSquare, getSquareAlg, getSquareFromAlgebraic, getThroneSq, getTopLeftSquare, getTopRightSquare, initMovesModule, isMateScore, makeMove, moveFrom, moveTo, search, searchRoot, setFEN, setInitialPosition, setMoves, setPiece, sidedEval, statistics, unmakeMove };
+export { BOARD_SIZE, type Board, HOLE, INITIAL_FEN, MATE_SCORE, NUM_PIECE_KINDS, Piece, SQS, Side, bestMove, bfs, checkTerminal, clearBoard, clearPiece, createBoard, createMove, createMoveFromAlgebraic, createMoveGenerator, ctz, evaluateBoard, getBinary, getBottomLeftSquare, getBottomRightSquare, getCol, getCornersSq, getFEN, getMoveAlg, getOppositeSide, getRow, getScoreText, getSideByPiece, getSquare, getSquareAlg, getSquareFromAlgebraic, getThroneSq, getTopLeftSquare, getTopRightSquare, initMovesModule, isMateScore, makeMove, moveFrom, moveTo, printBoard, search, searchRoot, setFEN, setInitialPosition, setMoves, setPiece, sidedEval, statistics, unmakeMove };

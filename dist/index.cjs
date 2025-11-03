@@ -61,6 +61,7 @@ __export(lib_exports, {
   makeMove: () => makeMove,
   moveFrom: () => moveFrom,
   moveTo: () => moveTo,
+  printBoard: () => printBoard,
   search: () => search,
   searchRoot: () => searchRoot,
   setFEN: () => setFEN,
@@ -480,6 +481,47 @@ function clearBoard(board) {
 }
 function setInitialPosition(board) {
   setFEN(board, INITIAL_FEN);
+}
+
+// src/board/print/print.ts
+function printBoard(b) {
+  const size = 11;
+  const cols = "abcdefghijk".split("");
+  const color = (txt, code) => `\x1B[${code}m${txt}\x1B[0m`;
+  const sym = (p) => {
+    switch (p) {
+      case 1 /* ATTACKER */:
+        return color("A", 31);
+      // красный
+      case 2 /* DEFENDER */:
+        return color("D", 34);
+      // синий
+      case 3 /* KING */:
+        return color("K", 33);
+      // жёлтый
+      default:
+        return ".";
+    }
+  };
+  const top = "    " + cols.map((c) => `${c.padEnd(2)}`).join(" ") + "\n";
+  const borderTop = "  \u250C" + "\u2500".repeat(size * 3 - 1) + "\u2510";
+  const borderBottom = "  \u2514" + "\u2500".repeat(size * 3 - 1) + "\u2518";
+  console.log(top + borderTop);
+  for (let r = size - 1; r >= 0; r--) {
+    let row = `${(r + 1).toString().padStart(2)}\u2502 `;
+    for (let c = 0; c < size; c++) {
+      const sq = r * size + c;
+      row += sym(b.board[sq]);
+      if (c < size - 1) {
+        row += "  ";
+      }
+    }
+    row += `\u2502${(r + 1).toString().padStart(2)}`;
+    console.log(row);
+  }
+  console.log(borderBottom);
+  console.log(top);
+  console.log(`zobrist: ${b.zobrist}`);
 }
 
 // src/moves/move/move.ts
@@ -1424,6 +1466,7 @@ var searchRoot = function(board, { onIteration, time }) {
   makeMove,
   moveFrom,
   moveTo,
+  printBoard,
   search,
   searchRoot,
   setFEN,

@@ -18,3 +18,4 @@ export {
 } from './utils/utils'
 export {BOARD_SIZE, HOLE, SQS, NUM_PIECE_KINDS, INITIAL_FEN} from './constants'
 export {getFEN, setFEN} from './fen/fen'
+export {printBoard} from './print'
