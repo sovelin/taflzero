@@ -1,4 +1,5 @@
-import {BOARD_SIZE} from "@/board";
+import {Board, BOARD_SIZE} from "@/board";
+import {makeMove} from "@/moves";
 
 export function getBinary(num: number, digits = BOARD_SIZE, reverse = true) {
   const masked = num & ((1 << digits) - 1);
@@ -8,4 +9,10 @@ export function getBinary(num: number, digits = BOARD_SIZE, reverse = true) {
 
 export function ctz(x: number) {
   return Math.clz32(x & -x) ^ 31;
+}
+
+export function setMoves(board: Board, moves: number[]) {
+  moves.forEach(move => {
+    makeMove(board, move);
+  })
 }
