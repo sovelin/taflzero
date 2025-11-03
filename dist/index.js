@@ -441,6 +441,11 @@ function getBinary(num, digits = BOARD_SIZE, reverse = true) {
 function ctz(x) {
   return Math.clz32(x & -x) ^ 31;
 }
+function setMoves(board, moves) {
+  moves.forEach((move) => {
+    makeMove(board, move);
+  });
+}
 
 // src/moves/attackers.ts
 var LINE_MOVES = Array.from({ length: BOARD_SIZE }, () => new Uint16Array(1 << BOARD_SIZE));
@@ -1347,6 +1352,7 @@ export {
   searchRoot,
   setFEN,
   setInitialPosition,
+  setMoves,
   setPiece,
   sidedEval,
   statistics,

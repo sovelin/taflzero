@@ -82,6 +82,7 @@ declare const searchRoot: (board: Board, { onIteration, time }: Params) => {
 
 declare function getBinary(num: number, digits?: number, reverse?: boolean): string;
 declare function ctz(x: number): number;
+declare function setMoves(board: Board, moves: number[]): void;
 
 interface Options {
     isAchievable: (sq: number) => boolean;
@@ -135,4 +136,4 @@ declare function initMovesModule(): void;
 
 declare function getMoveAlg(move: number): string;
 
-export { BOARD_SIZE, type Board, HOLE, INITIAL_FEN, MATE_SCORE, NUM_PIECE_KINDS, Piece, SQS, Side, bestMove, bfs, checkTerminal, clearBoard, clearPiece, createBoard, createMove, createMoveFromAlgebraic, createMoveGenerator, ctz, evaluateBoard, getBinary, getBottomLeftSquare, getBottomRightSquare, getCol, getCornersSq, getFEN, getMoveAlg, getOppositeSide, getRow, getScoreText, getSideByPiece, getSquare, getSquareAlg, getSquareFromAlgebraic, getThroneSq, getTopLeftSquare, getTopRightSquare, initMovesModule, isMateScore, makeMove, moveFrom, moveTo, search, searchRoot, setFEN, setInitialPosition, setPiece, sidedEval, statistics, unmakeMove };
+export { BOARD_SIZE, type Board, HOLE, INITIAL_FEN, MATE_SCORE, NUM_PIECE_KINDS, Piece, SQS, Side, bestMove, bfs, checkTerminal, clearBoard, clearPiece, createBoard, createMove, createMoveFromAlgebraic, createMoveGenerator, ctz, evaluateBoard, getBinary, getBottomLeftSquare, getBottomRightSquare, getCol, getCornersSq, getFEN, getMoveAlg, getOppositeSide, getRow, getScoreText, getSideByPiece, getSquare, getSquareAlg, getSquareFromAlgebraic, getThroneSq, getTopLeftSquare, getTopRightSquare, initMovesModule, isMateScore, makeMove, moveFrom, moveTo, search, searchRoot, setFEN, setInitialPosition, setMoves, setPiece, sidedEval, statistics, unmakeMove };
