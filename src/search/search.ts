@@ -1,5 +1,5 @@
 import {Board, Side} from "@/board";
-import {createMoveGenerator, makeMove, unmakeMove} from "@/moves";
+import {createMoveGenerator, getMoveAlg, makeMove, unmakeMove} from "@/moves";
 import {statistics} from "@/search/model/Statistics";
 import {MATE_SCORE, checkTerminal, evaluateBoard, sidedEval} from "@/evaluation";
 import {bestMove} from "@/search/model/BestMove";
@@ -20,9 +20,6 @@ const moveGenAtDepth = (depth: number) => {
 const isTTMoveValid = (moveGen: MoveGenerator, ttMove: number | null) => {
   for(let i = 0; i < moveGen.movesCount; i++) {
     if (moveGen.moves[i] === ttMove) {
-      console.log({
-        move: moveGen.moves[i]
-      })
       return true;
     }
   }
@@ -76,10 +73,10 @@ export const search = (
   let ttMove: number | null = null;
 
   for (let i = -1; i < moveGen.movesCount; i++) {
-    const move: number =  i === -1 ? (ttMove || 0) : moveGen.moves[i];
+    const move: number =  i === -1 ? (ttEntry?.move || 0) : moveGen.moves[i];
 
     if (i === -1) {
-      if (!isTTMoveValid(moveGen, ttMove || null)) {
+      if (!isTTMoveValid(moveGen, ttEntry?.move || null)) {
         continue;
       }
     }
@@ -88,6 +85,10 @@ export const search = (
 
     // Make the move
     const undo = makeMove(board, move);
+
+    if (height === 0) {
+      console.log(`Move number: ${i}; Move: ${getMoveAlg(move)}`);
+    }
 
     // Recursively search
     const score = -search(
