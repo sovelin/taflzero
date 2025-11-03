@@ -134,8 +134,8 @@ const runSelfPlayTest = () => {
     movesCount++;
     const {bestMove, bestScore} = searchRoot(board, {
       time: 1000,
-      onIteration: (depth, move, score, nodes: number, speed: number) => {
-        console.log(`Depth: ${depth}, Move: ${getMoveAlg(move)}, Score: ${getScoreText(score)}, Nodes: ${nodes}, Speed (knps): ${Math.floor(speed / 1000)}`);
+      onIteration: (depth, move, score, nodes: number, speed: number, time: number) => {
+        console.log(`Depth: ${depth}, Move: ${getMoveAlg(move)}, Score: ${getScoreText(score)}, Nodes: ${nodes}, Speed (knps): ${Math.floor(speed / 1000)}, Time (ms): ${time}`);
       }
     });
 

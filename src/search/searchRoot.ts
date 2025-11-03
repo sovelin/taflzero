@@ -5,7 +5,7 @@ import {bestMove} from "@/search/model/BestMove";
 import {statistics} from "@/search/model/Statistics";
 
 interface Params {
-  onIteration?: (depth: number, move: number, score: number, nodes: number, speed: number) => void;
+  onIteration?: (depth: number, move: number, score: number, nodes: number, speed: number, time: number) => void;
   time: number;
 }
 
@@ -22,7 +22,7 @@ export const searchRoot = function (board: Board, {onIteration, time}: Params) {
       bestScore = res;
       bestMoveRes = bestMove.move;
       const speed = statistics.nodes / timer.getTimeElapsed() * 1000;
-      onIteration?.(depth, bestMoveRes, bestScore, statistics.nodes, speed);
+      onIteration?.(depth, bestMoveRes, bestScore, statistics.nodes, speed, timer.getTimeElapsed());
     }
   }
 

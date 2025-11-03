@@ -72,7 +72,7 @@ declare class BestMove {
 declare const bestMove: BestMove;
 
 interface Params {
-    onIteration?: (depth: number, move: number, score: number, nodes: number, speed: number) => void;
+    onIteration?: (depth: number, move: number, score: number, nodes: number, speed: number, time: number) => void;
     time: number;
 }
 declare const searchRoot: (board: Board, { onIteration, time }: Params) => {

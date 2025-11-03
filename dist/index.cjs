@@ -1378,7 +1378,7 @@ var searchRoot = function(board, { onIteration, time }) {
       bestScore = res;
       bestMoveRes = bestMove.move;
       const speed = statistics.nodes / timer.getTimeElapsed() * 1e3;
-      onIteration?.(depth, bestMoveRes, bestScore, statistics.nodes, speed);
+      onIteration?.(depth, bestMoveRes, bestScore, statistics.nodes, speed, timer.getTimeElapsed());
     }
   }
   return { bestMove: bestMoveRes, bestScore };
