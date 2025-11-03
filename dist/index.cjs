@@ -636,32 +636,24 @@ var createMoveGenerator = () => {
 
 // src/moves/makeMove/isCapturePossible/isCapturePossible.ts
 var enemySquares = [...getCornersSq(), getThroneSq()];
+var isPotentialThreat = (board, targetSq, enemySq) => {
+  if (board.board[enemySq] === 0 /* EMPTY */ && enemySquares.includes(enemySq)) {
+    return true;
+  }
+  if (board.board[enemySq] === 0 /* EMPTY */) {
+    return false;
+  }
+  const targetSide = getSideByPiece(board.board[targetSq]);
+  const enemySide = getSideByPiece(board.board[enemySq]);
+  return targetSide !== enemySide;
+};
 var isCapturePossible = (board, targetSq, enemySq1, enemySq2) => {
-  const attackerPiece1 = board.board[enemySq1];
-  const attackerPiece2 = board.board[enemySq2];
-  const attackerPiece = attackerPiece1 || attackerPiece2;
-  const targetPieceForAttackers = board.board[targetSq];
-  if (attackerPiece1 && attackerPiece2 && (attackerPiece1 !== attackerPiece2 && !(attackerPiece1 === 3 /* KING */ && attackerPiece2 === 2 /* DEFENDER */) && !(attackerPiece2 === 3 /* KING */ && attackerPiece1 === 2 /* DEFENDER */))) {
+  if (board.board[targetSq] === 3 /* KING */ || board.board[targetSq] === 0 /* EMPTY */) {
     return false;
   }
-  if (targetPieceForAttackers === 0 /* EMPTY */ || targetPieceForAttackers === 3 /* KING */) {
-    return false;
-  }
-  const attackerSide = getSideByPiece(attackerPiece);
-  const targetPieceSide = getSideByPiece(targetPieceForAttackers);
-  if (attackerPiece1 && attackerPiece2) {
-    return attackerSide !== targetPieceSide;
-  }
-  if (!targetPieceForAttackers || targetPieceForAttackers === 3 /* KING */) {
-    return false;
-  }
-  if (enemySquares.includes(enemySq1)) {
-    return attackerSide !== targetPieceSide;
-  }
-  if (enemySquares.includes(enemySq2)) {
-    return attackerSide !== targetPieceSide;
-  }
-  return false;
+  const isThreat1 = isPotentialThreat(board, targetSq, enemySq1);
+  const isThreat2 = isPotentialThreat(board, targetSq, enemySq2);
+  return isThreat1 && isThreat2;
 };
 
 // src/moves/makeMove/makeShieldCaptures/makeShieldCaptures.ts

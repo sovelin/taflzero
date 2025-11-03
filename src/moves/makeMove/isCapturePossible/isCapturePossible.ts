@@ -2,53 +2,35 @@ import {Board, getCornersSq, getSideByPiece, getThroneSq, Piece} from "@/board";
 
 const enemySquares = [...getCornersSq(), getThroneSq()]
 
+const isPotentialThreat = (board: Board,
+                           targetSq: number,
+                           enemySq: number) => {
+  if (board.board[enemySq] === Piece.EMPTY && enemySquares.includes(enemySq)) {
+    return true;
+  }
+
+  if (board.board[enemySq] === Piece.EMPTY) {
+    return false;
+  }
+
+  const targetSide = getSideByPiece(board.board[targetSq]);
+  const enemySide = getSideByPiece(board.board[enemySq]);
+
+  return targetSide !== enemySide
+}
+
 export const isCapturePossible = (
   board: Board,
   targetSq: number,
   enemySq1: number,
   enemySq2: number
 ) => {
-  const attackerPiece1 = board.board[enemySq1];
-  const attackerPiece2 = board.board[enemySq2];
-
-  const attackerPiece = attackerPiece1 || attackerPiece2;
-  const targetPieceForAttackers = board.board[targetSq];
-
-  if (attackerPiece1
-    && attackerPiece2
-    && ((attackerPiece1 !== attackerPiece2)
-      && !(attackerPiece1 === Piece.KING && attackerPiece2 === Piece.DEFENDER)
-      && !(attackerPiece2 === Piece.KING && attackerPiece1 === Piece.DEFENDER)
-    )
-  ) {
+  if (board.board[targetSq] === Piece.KING || board.board[targetSq] === Piece.EMPTY) {
     return false;
   }
 
+  const isThreat1 = isPotentialThreat(board, targetSq, enemySq1);
+  const isThreat2 = isPotentialThreat(board, targetSq, enemySq2);
 
-  if (targetPieceForAttackers === Piece.EMPTY || targetPieceForAttackers === Piece.KING) {
-    return false;
-  }
-
-  const attackerSide = getSideByPiece(attackerPiece)
-  const targetPieceSide = getSideByPiece(targetPieceForAttackers);
-  // no corners -> simple check
-  if (attackerPiece1 && attackerPiece2) {
-    return attackerSide !== targetPieceSide;
-  }
-
-
-
-  if (!targetPieceForAttackers || targetPieceForAttackers === Piece.KING) {
-    return false;
-  }
-
-  if (enemySquares.includes(enemySq1)) {
-    return attackerSide !== targetPieceSide
-  }
-
-  if (enemySquares.includes(enemySq2)) {
-    return attackerSide !== targetPieceSide
-  }
-
-  return  false
+  return isThreat1 && isThreat2;
 }
