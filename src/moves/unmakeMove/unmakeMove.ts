@@ -5,6 +5,10 @@ import {flipSide} from "@/board/board";
 function removePositionFromRepTable(board: Board) {
   if (board.repTable.has(board.zobrist)) {
     board.repTable.set(board.zobrist, board.repTable.get(board.zobrist)! - 1);
+
+    if (board.repTable.get(board.zobrist)! <= 0) {
+      board.repTable.delete(board.zobrist);
+    }
   }
 }
 

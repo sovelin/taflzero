@@ -550,6 +550,12 @@ var createMoveGenerator = () => {
     moves,
     get movesCount() {
       return moveCount;
+    },
+    MAX_MOVES,
+    decreaseCount: () => {
+      if (moveCount > 0) {
+        moveCount--;
+      }
     }
   };
 };
@@ -789,6 +795,9 @@ var makeMove = (board, move) => {
 function removePositionFromRepTable(board) {
   if (board.repTable.has(board.zobrist)) {
     board.repTable.set(board.zobrist, board.repTable.get(board.zobrist) - 1);
+    if (board.repTable.get(board.zobrist) <= 0) {
+      board.repTable.delete(board.zobrist);
+    }
   }
 }
 function unmakeMove(board, undo) {
@@ -1153,16 +1162,70 @@ var BestMove = class {
 };
 var bestMove = new BestMove();
 
+// src/transposition/createTT.ts
+function createTranspositionTable(sizeMB = 32) {
+  const entrySize = 8 + 1 + 2 + 1 + 4;
+  const TT_SIZE = sizeMB * 1024 * 1024 / entrySize | 0;
+  const MASK = TT_SIZE - 1;
+  const ttZobrist = new BigUint64Array(TT_SIZE);
+  const ttDepth = new Int8Array(TT_SIZE);
+  const ttScore = new Int16Array(TT_SIZE);
+  const ttFlag = new Uint8Array(TT_SIZE);
+  const ttMove = new Uint32Array(TT_SIZE);
+  return {
+    store(z, depth, score, flag, move) {
+      const i = Number(z & BigInt(MASK));
+      ttZobrist[i] = z;
+      ttDepth[i] = depth;
+      ttScore[i] = score;
+      ttFlag[i] = flag;
+      ttMove[i] = move;
+    },
+    probe(z) {
+      const i = Number(z & BigInt(MASK));
+      if (ttZobrist[i] === z)
+        return { depth: ttDepth[i], score: ttScore[i], flag: ttFlag[i], move: ttMove[i] };
+      return null;
+    }
+  };
+}
+
+// src/search/model/Timer.ts
+var Timer = class {
+  startTime = 0;
+  limit = 0;
+  startSearch(ms) {
+    this.startTime = performance.now();
+    this.limit = ms;
+  }
+  isTimeUp() {
+    return performance.now() - this.startTime >= this.limit;
+  }
+  getTimeElapsed() {
+    return performance.now() - this.startTime;
+  }
+};
+var timer = new Timer();
+
 // src/search/search.ts
 var MAX_DEPTH = 256;
 var moveGens = Array.from({ length: MAX_DEPTH }, () => createMoveGenerator());
+var tt = createTranspositionTable();
 var moveGenAtDepth = (depth) => {
   return moveGens[depth];
 };
-var search = (board, depth, alpha = -MATE_SCORE, beta = MATE_SCORE, height = 0) => {
-  if (height === 0) {
-    statistics.reset();
+var isTTMoveValid = (moveGen, ttMove) => {
+  for (let i = 0; i < moveGen.movesCount; i++) {
+    if (moveGen.moves[i] === ttMove) {
+      console.log({
+        move: moveGen.moves[i]
+      });
+      return true;
+    }
   }
+  return false;
+};
+var search = (board, depth, alpha = -MATE_SCORE, beta = MATE_SCORE, height = 0) => {
   const terminal = checkTerminal(board);
   if (terminal !== null) {
     return sidedEval(board, terminal === 1 /* DEFENDERS */ ? MATE_SCORE - height : -MATE_SCORE + height);
@@ -1170,10 +1233,35 @@ var search = (board, depth, alpha = -MATE_SCORE, beta = MATE_SCORE, height = 0) 
   if (depth === 0) {
     return evaluateBoard(board);
   }
-  const moveGen = moveGenAtDepth(depth);
+  const zobrist2 = board.zobrist;
+  const ttEntry = tt.probe(zobrist2);
+  if (ttEntry && ttEntry.depth >= depth && height > 0) {
+    if (ttEntry.flag === 0 /* EXACT */) {
+      return ttEntry.score;
+    }
+    if (ttEntry.flag === 1 /* LOWERBOUND */) {
+      alpha = Math.max(alpha, ttEntry.score);
+    } else if (ttEntry.flag === 2 /* UPPERBOUND */) {
+      beta = Math.min(beta, ttEntry.score);
+    }
+    if (alpha >= beta) {
+      return ttEntry.score;
+    }
+  }
+  if (timer.isTimeUp()) {
+    return 0;
+  }
+  const moveGen = moveGenAtDepth(height);
   moveGen.movegen(board);
-  for (let i = 0; i < moveGen.movesCount; i++) {
-    const move = moveGen.moves[i];
+  let ttType = 2 /* UPPERBOUND */;
+  let ttMove = null;
+  for (let i = -1; i < moveGen.movesCount; i++) {
+    const move = i === -1 ? ttMove || 0 : moveGen.moves[i];
+    if (i === -1) {
+      if (!isTTMoveValid(moveGen, ttMove || null)) {
+        continue;
+      }
+    }
     statistics.incrementNodes();
     const undo = makeMove(board, move);
     const score = -search(
@@ -1184,17 +1272,42 @@ var search = (board, depth, alpha = -MATE_SCORE, beta = MATE_SCORE, height = 0) 
       height + 1
     );
     unmakeMove(board, undo);
+    if (timer.isTimeUp()) {
+      break;
+    }
     if (score > alpha) {
       alpha = score;
       if (height === 0) {
         bestMove.setBestMove(move);
       }
+      ttType = 0 /* EXACT */;
+      ttMove = move;
     }
     if (alpha >= beta) {
+      ttType = 1 /* LOWERBOUND */;
       break;
     }
   }
+  tt.store(zobrist2, depth, alpha, ttType, ttMove || 0);
   return alpha;
+};
+
+// src/search/searchRoot.ts
+var searchRoot = function(board, { onIteration, time }) {
+  let bestScore = -Infinity;
+  let bestMoveRes = 0;
+  timer.startSearch(time);
+  statistics.reset();
+  for (let depth = 1; depth <= 128; depth++) {
+    const res = search(board, depth);
+    if (!timer.isTimeUp()) {
+      bestScore = res;
+      bestMoveRes = bestMove.move;
+      const speed = statistics.nodes / timer.getTimeElapsed() * 1e3;
+      onIteration?.(depth, bestMoveRes, bestScore, statistics.nodes, speed);
+    }
+  }
+  return { bestMove: bestMoveRes, bestScore };
 };
 export {
   BOARD_SIZE,
@@ -1239,6 +1352,7 @@ export {
   moveFrom,
   moveTo,
   search,
+  searchRoot,
   setFEN,
   setInitialPosition,
   setPiece,

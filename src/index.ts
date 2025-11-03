@@ -2,7 +2,7 @@ import {createMoveGenerator, initMovesModule, makeMove} from "@/moves";
 import {Board, createBoard, getSquareFromAlgebraic, Piece, setInitialPosition, setPiece, Side} from "@/board";
 import {printBoard} from "@/board/print";
 import {search} from "@/search/search";
-import {statistics} from "@/search";
+import {searchRoot, statistics} from "@/search";
 import {checkTerminal, getScoreText} from "@/evaluation";
 import {bestMove} from "@/search/model/BestMove";
 import {getMoveAlg} from "@/moves";
@@ -110,7 +110,7 @@ const runAlphaBetaTest = () => {
   //setNotFullyLostPosition(board)
   //setMoreDifficultPosition(board)
 
-  const depth = 4;
+  const depth = 5;
   const res = search(board, depth);
 
   console.log(`Search result at depth ${depth}: ${getScoreText(res)}`);
@@ -132,13 +132,16 @@ const runSelfPlayTest = () => {
   let movesCount = 0
   while (true) {
     movesCount++;
-    const res = search(board, maxDepth);
+    const {bestMove, bestScore} = searchRoot(board, {
+      time: 1000,
+      onIteration: (depth, move, score, nodes: number, speed: number) => {
+        console.log(`Depth: ${depth}, Move: ${getMoveAlg(move)}, Score: ${getScoreText(score)}, Nodes: ${nodes}, Speed (knps): ${Math.floor(speed / 1000)}`);
+      }
+    });
 
-    makeMove(board, bestMove.move);
+    makeMove(board, bestMove);
 
-    console.log(`Evaluation: ${getScoreText(res)}`);
-    console.log(`Searched nodes: ${statistics.nodes}`);
-    console.log(`Best move: ${getMoveAlg(bestMove.move)}`);
+    console.log(`Best move: ${getMoveAlg(bestMove)}`);
     printBoard(board);
 
     if (checkTerminal(board) !== null) {

@@ -71,6 +71,15 @@ declare class BestMove {
 }
 declare const bestMove: BestMove;
 
+interface Params {
+    onIteration?: (depth: number, move: number, score: number, nodes: number, speed: number) => void;
+    time: number;
+}
+declare const searchRoot: (board: Board, { onIteration, time }: Params) => {
+    bestMove: number;
+    bestScore: number;
+};
+
 declare function getBinary(num: number, digits?: number, reverse?: boolean): string;
 declare function ctz(x: number): number;
 
@@ -97,11 +106,14 @@ declare function moveFrom(move: number): number;
 declare function moveTo(move: number): number;
 declare function createMoveFromAlgebraic(move: string): number;
 
-declare const createMoveGenerator: () => {
+interface MoveGenerator {
     movegen: (board: Board) => void;
-    moves: Uint32Array<ArrayBuffer>;
-    readonly movesCount: number;
-};
+    moves: Uint32Array;
+    movesCount: number;
+    MAX_MOVES: number;
+    decreaseCount: () => void;
+}
+declare const createMoveGenerator: () => MoveGenerator;
 
 interface CapturedPiece {
     sq: number;
@@ -123,4 +135,4 @@ declare function initMovesModule(): void;
 
 declare function getMoveAlg(move: number): string;
 
-export { BOARD_SIZE, type Board, HOLE, INITIAL_FEN, MATE_SCORE, NUM_PIECE_KINDS, Piece, SQS, Side, bestMove, bfs, checkTerminal, clearBoard, clearPiece, createBoard, createMove, createMoveFromAlgebraic, createMoveGenerator, ctz, evaluateBoard, getBinary, getBottomLeftSquare, getBottomRightSquare, getCol, getCornersSq, getFEN, getMoveAlg, getOppositeSide, getRow, getScoreText, getSideByPiece, getSquare, getSquareAlg, getSquareFromAlgebraic, getThroneSq, getTopLeftSquare, getTopRightSquare, initMovesModule, isMateScore, makeMove, moveFrom, moveTo, search, setFEN, setInitialPosition, setPiece, sidedEval, statistics, unmakeMove };
+export { BOARD_SIZE, type Board, HOLE, INITIAL_FEN, MATE_SCORE, NUM_PIECE_KINDS, Piece, SQS, Side, bestMove, bfs, checkTerminal, clearBoard, clearPiece, createBoard, createMove, createMoveFromAlgebraic, createMoveGenerator, ctz, evaluateBoard, getBinary, getBottomLeftSquare, getBottomRightSquare, getCol, getCornersSq, getFEN, getMoveAlg, getOppositeSide, getRow, getScoreText, getSideByPiece, getSquare, getSquareAlg, getSquareFromAlgebraic, getThroneSq, getTopLeftSquare, getTopRightSquare, initMovesModule, isMateScore, makeMove, moveFrom, moveTo, search, searchRoot, setFEN, setInitialPosition, setPiece, sidedEval, statistics, unmakeMove };

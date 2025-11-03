@@ -18,7 +18,15 @@ const disableBlockedSquares = (beam: number, piece: Piece, rowOrColIndex: number
   return beam;
 }
 
-export const createMoveGenerator = () => {
+export interface MoveGenerator {
+  movegen: (board: Board) => void;
+  moves: Uint32Array;
+  movesCount: number;
+  MAX_MOVES: number;
+  decreaseCount: () => void;
+}
+
+export const createMoveGenerator = (): MoveGenerator => {
   const MAX_MOVES = 1024;
   const moves = new Uint32Array(MAX_MOVES);
   let moveCount = 0;
@@ -108,6 +116,12 @@ export const createMoveGenerator = () => {
     moves,
     get movesCount() {
       return moveCount;
+    },
+    MAX_MOVES,
+    decreaseCount: () => {
+      if (moveCount > 0) {
+        moveCount--;
+      }
     }
   }
 }
