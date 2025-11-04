@@ -50,4 +50,4 @@ export const PieceWeights = {
   [Piece.ATTACKER]: 50,
 }
 
-export const kingSurroundingBonuses = [0, 20, 50, 90, 100];
+export const KING_SURROUNDING_BONUSES = [0, 20, 50, 90, 100];

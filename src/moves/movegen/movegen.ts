@@ -24,6 +24,7 @@ export interface MoveGenerator {
   movesCount: number;
   MAX_MOVES: number;
   decreaseCount: () => void;
+  setMovesCount: (newCount: number) => void;
 }
 
 export const createMoveGenerator = (): MoveGenerator => {
@@ -122,6 +123,9 @@ export const createMoveGenerator = (): MoveGenerator => {
       if (moveCount > 0) {
         moveCount--;
       }
+    },
+    setMovesCount: (newCount: number) => {
+      moveCount = newCount;
     }
   }
 }

@@ -135,6 +135,7 @@ interface MoveGenerator {
     movesCount: number;
     MAX_MOVES: number;
     decreaseCount: () => void;
+    setMovesCount: (newCount: number) => void;
 }
 declare const createMoveGenerator: () => MoveGenerator;
 

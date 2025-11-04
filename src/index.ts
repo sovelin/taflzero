@@ -1,5 +1,5 @@
 import {createMoveGenerator, initMovesModule, makeMove} from "@/moves";
-import {Board, createBoard, getSquareFromAlgebraic, Piece, setInitialPosition, setPiece, Side} from "@/board";
+import {Board, createBoard, getSquareFromAlgebraic, Piece, setFEN, setInitialPosition, setPiece, Side} from "@/board";
 import {printBoard} from "@/board/print";
 import {search, tt} from "@/search/search";
 import {searchRoot, statistics} from "@/search";
@@ -123,7 +123,8 @@ const runAlphaBetaTest = () => {
 
 const runSelfPlayTest = () => {
   const board = createBoard()
-  setInitialPosition(board);
+  //setInitialPosition(board);
+  setFEN(board, "3a1a1a3/11/4aa5/3adda3a/3a1dda3/a1ad1kd1a1a/2ad1dda3/2a1dda3a/5a5/3a7/4aa1a3 a")
   //setWinningPositionForAttackers(board)
   //setCloseToSurroundedPosition(board)
   //sertNearToFortPosition(board)

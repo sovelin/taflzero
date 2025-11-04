@@ -1,12 +1,11 @@
 import {Board, Side} from "@/board";
 import {createMoveGenerator, makeMove, unmakeMove} from "@/moves";
 import {statistics} from "@/search/model/Statistics";
-import {MATE_SCORE, checkTerminal, evaluateBoard, sidedEval, isMateScore} from "@/evaluation";
+import {MATE_SCORE, checkTerminal, evaluateBoard, sidedEval} from "@/evaluation";
 import {bestMove} from "@/search/model/BestMove";
 import {createTranspositionTable} from "@/transposition/createTT";
 import {TTFlag} from "@/transposition";
 import {timer} from "@/search/model/Timer";
-import {MoveGenerator} from "@/moves/movegen/movegen";
 import {estimateMoves, MoveScores, pickMove} from "@/search/movesOrdering";
 import {readScore} from "@/transposition/utils";
 
@@ -19,21 +18,11 @@ const moveGenAtDepth = (depth: number) => {
   return moveGens[depth];
 }
 
-const isTTMoveValid = (moveGen: MoveGenerator, ttMove: number | null) => {
-  for(let i = 0; i < moveGen.movesCount; i++) {
-    if (moveGen.moves[i] === ttMove) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
 export const search = (
   board: Board,
   depth: number,
-  alpha: number = -MATE_SCORE,
-  beta: number = MATE_SCORE
+  alpha: number = -MATE_SCORE * 2,
+  beta: number = MATE_SCORE * 2
   , height = 0
 ) => {
   const terminal = checkTerminal(board);
@@ -48,7 +37,11 @@ export const search = (
 
   const zobrist = board.zobrist;
   const ttEntry = tt.probe(zobrist);
-  if (ttEntry && ttEntry.zobrist === zobrist && ttEntry.depth >= depth && height > 0) {
+  const isValidTT = ttEntry?.zobrist === zobrist
+
+  const isPvNode = alpha !== beta - 1;
+
+  if (!isPvNode && height > 0 && ttEntry && isValidTT && ttEntry.depth >= depth && height > 0) {
     let readedScore = readScore(ttEntry.score, height);
 
     if (ttEntry.flag === TTFlag.EXACT) {
@@ -62,7 +55,7 @@ export const search = (
     }
 
     if (alpha >= beta) {
-      return readedScore;
+      return alpha;
     }
   }
 
@@ -72,28 +65,51 @@ export const search = (
 
   const moveGen = moveGenAtDepth(height);
   moveGen.movegen(board);
+  estimateMoves(moveGen, MoveScores[height], moveGen.movesCount, isValidTT ? (ttEntry?.move || null) : null);
 
-  estimateMoves(moveGen, MoveScores[height], moveGen.movesCount, ttEntry?.move || null);
-
-  let move;
 
   let ttType = TTFlag.UPPERBOUND;
   let ttMove: number | null = null;
 
-  while (move = pickMove(moveGen, MoveScores[height])) {
+  let i = 0;
+
+  while (moveGen.movesCount > 0) {
+    i += 1
+    const move = pickMove(moveGen, MoveScores[height])
     statistics.incrementNodes();
 
     // Make the move
     const undo = makeMove(board, move);
 
     // Recursively search
-    const score = -search(
-      board,
-      depth - 1,
-      -beta,
-      -alpha,
-      height + 1
-    );
+    let score;
+    if (i === 1) {
+      score = -search(
+        board,
+        depth - 1,
+        -beta,
+        -alpha,
+        height + 1
+      );
+    } else {
+      score = -search(
+        board,
+        depth - 1,
+        -alpha - 1,
+        -alpha,
+        height + 1
+      );
+
+      if (score > alpha && score < beta) {
+        score = -search(
+          board,
+          depth - 1,
+          -beta,
+          -alpha,
+          height + 1
+        );
+      }
+    }
 
     // Undo the move
     unmakeMove(board, undo);

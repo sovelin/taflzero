@@ -734,6 +734,9 @@ var createMoveGenerator = () => {
       if (moveCount > 0) {
         moveCount--;
       }
+    },
+    setMovesCount: (newCount) => {
+      moveCount = newCount;
     }
   };
 };
@@ -1370,6 +1373,7 @@ var PieceWeights = {
   [2 /* DEFENDER */]: 100,
   [1 /* ATTACKER */]: 50
 };
+var KING_SURROUNDING_BONUSES = [0, 20, 50, 90, 100];
 
 // src/evaluation/utils.ts
 var MATE_SCORE_THRESHOLD = MATE_SCORE - 256;
@@ -1696,15 +1700,15 @@ var evaluateBoard = (board) => {
     const sq = board.attackers[i];
     score -= PSQT_ATK[sq];
   }
-  let surroundingBonus = 0;
+  let surroundings = 0;
   VERTICAL_HORIZONTAL_NEIGHBORS[board.kingSq].forEach((sq) => {
     if (!sq) return;
     const piece = board.board[sq];
     if (piece === 1 /* ATTACKER */) {
-      surroundingBonus += 1;
+      surroundings += 1;
     }
   });
-  return sidedEval(board, score + surroundingBonus);
+  return sidedEval(board, score + KING_SURROUNDING_BONUSES[surroundings]);
 };
 
 // src/search/model/BestMove.ts
@@ -1720,9 +1724,9 @@ var bestMove = new BestMove();
 var readScore = (score, height) => {
   if (isMateScore(score)) {
     if (score > 0) {
-      return score + height;
-    } else {
       return score - height;
+    } else {
+      return score + height;
     }
   }
   return score;
@@ -1730,9 +1734,9 @@ var readScore = (score, height) => {
 var writeScore = (score, height) => {
   if (isMateScore(score)) {
     if (score > 0) {
-      return score - height;
-    } else {
       return score + height;
+    } else {
+      return score - height;
     }
   }
   return score;
@@ -1796,10 +1800,13 @@ var timer = new Timer();
 var MAX_MOVES = 1024;
 var MoveScores = Array.from({ length: 256 }, () => new Int32Array(MAX_MOVES));
 var estimateMoves = (moveGen, moveScores, movesCount, ttMove) => {
+  for (let i = 0; i < MAX_MOVES; i++) {
+    moveScores[i] = 0;
+  }
   for (let i = 0; i < movesCount; i++) {
     moveScores[i] = 0;
     if (moveGen.moves[i] === ttMove) {
-      moveScores[i] += 1e6;
+      moveScores[i] = 1e6;
     }
   }
 };
@@ -1816,8 +1823,8 @@ var pickMove = (moveGen, moveScores) => {
     }
   }
   const bestMove2 = moveGen.moves[bestIndex];
-  [moveGen.moves[moveGen.movesCount - 1], moveGen.moves[bestIndex]] = [moveGen.moves[bestIndex], moveGen.moves[moveGen.movesCount - 1]];
-  [moveScores[moveGen.movesCount - 1], moveScores[bestIndex]] = [moveScores[bestIndex], moveScores[moveGen.movesCount - 1]];
+  moveGen.moves[bestIndex] = moveGen.moves[moveGen.movesCount - 1];
+  moveScores[bestIndex] = moveScores[moveGen.movesCount - 1];
   moveGen.decreaseCount();
   return bestMove2;
 };
@@ -1829,7 +1836,7 @@ var tt = createTranspositionTable();
 var moveGenAtDepth = (depth) => {
   return moveGens[depth];
 };
-var search = (board, depth, alpha = -MATE_SCORE, beta = MATE_SCORE, height = 0) => {
+var search = (board, depth, alpha = -MATE_SCORE * 2, beta = MATE_SCORE * 2, height = 0) => {
   const terminal = checkTerminal(board);
   if (terminal !== null) {
     return sidedEval(board, terminal === 1 /* DEFENDERS */ ? MATE_SCORE - height : -MATE_SCORE + height);
@@ -1839,7 +1846,9 @@ var search = (board, depth, alpha = -MATE_SCORE, beta = MATE_SCORE, height = 0) 
   }
   const zobrist2 = board.zobrist;
   const ttEntry = tt.probe(zobrist2);
-  if (ttEntry && ttEntry.zobrist === zobrist2 && ttEntry.depth >= depth && height > 0) {
+  const isValidTT = ttEntry?.zobrist === zobrist2;
+  const isPvNode = alpha !== beta - 1;
+  if (!isPvNode && height > 0 && ttEntry && isValidTT && ttEntry.depth >= depth && height > 0) {
     let readedScore = readScore(ttEntry.score, height);
     if (ttEntry.flag === 0 /* EXACT */) {
       return readedScore;
@@ -1850,7 +1859,7 @@ var search = (board, depth, alpha = -MATE_SCORE, beta = MATE_SCORE, height = 0) 
       beta = Math.min(beta, readedScore);
     }
     if (alpha >= beta) {
-      return readedScore;
+      return alpha;
     }
   }
   if (timer.isTimeUp()) {
@@ -1858,20 +1867,42 @@ var search = (board, depth, alpha = -MATE_SCORE, beta = MATE_SCORE, height = 0) 
   }
   const moveGen = moveGenAtDepth(height);
   moveGen.movegen(board);
-  estimateMoves(moveGen, MoveScores[height], moveGen.movesCount, ttEntry?.move || null);
-  let move;
+  estimateMoves(moveGen, MoveScores[height], moveGen.movesCount, isValidTT ? ttEntry?.move || null : null);
   let ttType = 2 /* UPPERBOUND */;
   let ttMove = null;
-  while (move = pickMove(moveGen, MoveScores[height])) {
+  let i = 0;
+  while (moveGen.movesCount > 0) {
+    i += 1;
+    const move = pickMove(moveGen, MoveScores[height]);
     statistics.incrementNodes();
     const undo = makeMove(board, move);
-    const score = -search(
-      board,
-      depth - 1,
-      -beta,
-      -alpha,
-      height + 1
-    );
+    let score;
+    if (i === 1) {
+      score = -search(
+        board,
+        depth - 1,
+        -beta,
+        -alpha,
+        height + 1
+      );
+    } else {
+      score = -search(
+        board,
+        depth - 1,
+        -alpha - 1,
+        -alpha,
+        height + 1
+      );
+      if (score > alpha && score < beta) {
+        score = -search(
+          board,
+          depth - 1,
+          -beta,
+          -alpha,
+          height + 1
+        );
+      }
+    }
     unmakeMove(board, undo);
     if (timer.isTimeUp()) {
       break;
