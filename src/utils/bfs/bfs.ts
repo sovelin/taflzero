@@ -1,25 +1,21 @@
 import {createQueue} from "@/utils/queue/createQueue";
-import {
-  getVerticalHorizontalNeighbors
-} from "@/board/utils";
-import {SQS} from "@/board";
+import {SQS, VERTICAL_HORIZONTAL_NEIGHBORS} from "@/board";
 
 interface Options {
   isAchievable: (sq: number) => boolean;
   startSquares: number[];
-  getNeighbors?: (sq: number) => number[];
+  neighbors?: number[][];
 }
 
 export const bfs = (
-  {isAchievable, startSquares, getNeighbors = getVerticalHorizontalNeighbors}: Options
+  {isAchievable, startSquares, neighbors: neighborsCached = VERTICAL_HORIZONTAL_NEIGHBORS}: Options
 ) => {
   const queue = createQueue(startSquares);
   const visitedFlags = new Uint8Array(SQS);
 
   while (!queue.isEmpty()) {
     const currentSq = queue.dequeue()!;
-
-    const neighbors = getNeighbors(currentSq)
+    const neighbors = neighborsCached[currentSq]
 
     for (let i = 0; i < neighbors.length; i++) {
       const neighbor = neighbors[i]!;

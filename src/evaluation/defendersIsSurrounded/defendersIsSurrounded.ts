@@ -1,8 +1,6 @@
-import {Board, getCornersSq, HOLE, Piece, SQS} from "@/board";
+import {ALL_NEIGHBORS, Board, CORNERS_SQ, HOLE, Piece, SQS} from "@/board";
 import {bfs} from "@/utils";
-import {getAllNeighbors, isEdgeSquare} from "@/board/utils";
-
-const corners = getCornersSq()
+import {isEdgeSquare} from "@/board/utils";
 
 const isCalculateNeeded = (board: Board) => {
   const lastMoveSq = board.lastMoveTo;
@@ -17,7 +15,7 @@ const isCalculateNeeded = (board: Board) => {
     return false;
   }
 
-  const allSiblings = getAllNeighbors(lastMoveSq)
+  const allSiblings = ALL_NEIGHBORS[lastMoveSq]
 
   let attackerNearbyCount = 0;
 
@@ -47,7 +45,7 @@ export const defendersIsSurrounded = (board: Board) => {
 
   const visited = bfs({
     isAchievable: (sq) => board.board[sq] !== Piece.ATTACKER,
-    startSquares: corners,
+    startSquares: CORNERS_SQ,
   })
 
   for(let i = 0; i < SQS; i++) {

@@ -1,8 +1,13 @@
-import {it, describe, expect} from 'vitest';
+import {it, describe, expect, beforeAll} from 'vitest';
 import {createBoard, getSquareFromAlgebraic, Piece, setPiece, SQS} from "@/board";
 import {bfs, } from "../bfs";
+import {initEngine} from "@/engine";
 
 describe('BFS Tests', () => {
+  beforeAll(() => {
+    initEngine()
+  })
+
   const convertUintToSet = (arr: Uint8Array): Set<number> => {
     const res = new Set<number>()
     for(let i = 0; i < arr.length; i++) {

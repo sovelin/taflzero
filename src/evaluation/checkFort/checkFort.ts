@@ -1,33 +1,26 @@
 import {
+  ALL_NEIGHBORS,
   Board,
-  BOARD_SIZE, clearPiece,
-  getBottomLeftSquare,
-  getBottomRightSquare,
-  getCol,
-  getRow, getThroneSq,
-  getTopLeftSquare,
-  getTopRightSquare, HOLE,
-  Piece, setPiece
+  BOARD_SIZE, BOTTOM_LEFT_SQ, BOTTOM_NEIGHBOR, BOTTOM_RIGHT_SQ, clearPiece, COL,
+  HOLE, LEFT_NEIGHBOR,
+  Piece,
+  RIGHT_NEIGHBOR, ROW, setPiece, THRONE_SQ, TOP_LEFT_SQ, TOP_NEIGHBOR, TOP_RIGHT_SQ, VERTICAL_HORIZONTAL_NEIGHBORS
 } from "@/board";
 import {bfs} from "@/utils";
 import {
-  getAllNeighbors, getBottomNeighbor,
-  getLeftNeighbor,
-  getRightNeighbor,
-  getTopNeighbor,
-  getVerticalHorizontalNeighbors, isEdgeSquare
+  isEdgeSquare
 } from "@/board/utils";
 import {getSetFromBinary} from "@/utils/getSetFromBinary";
 
 const isCornerSquare = (sq: number) => {
-  return sq === getTopLeftSquare()
-    || sq === getBottomLeftSquare()
-    || sq === getTopRightSquare()
-    || sq === getBottomRightSquare();
+  return sq === TOP_LEFT_SQ
+    || sq === BOTTOM_LEFT_SQ
+    || sq === TOP_RIGHT_SQ
+    || sq === BOTTOM_RIGHT_SQ
 }
 
 const kingHasMoves = (board: Board)=> {
-  const potentialMoves = getVerticalHorizontalNeighbors(board.kingSq)
+  const potentialMoves = VERTICAL_HORIZONTAL_NEIGHBORS[board.kingSq]
 
   let possibleMoves = 0
   for (let i = 0; i < potentialMoves.length; i++) {
@@ -41,8 +34,8 @@ const kingHasMoves = (board: Board)=> {
 
 const kingContactEdges = (board: Board) => {
   const {kingSq} = board;
-  const row = getRow(kingSq)
-  const col = getCol(kingSq)
+  const row = ROW[kingSq]
+  const col = COL[kingSq]
 
   return row === 0 || row === BOARD_SIZE - 1 || col === 0 || col === BOARD_SIZE - 1;
 }
@@ -92,7 +85,7 @@ const isFromOutside = (sq1: number, sq2: number, innerSpace: Uint8Array) => {
 }
 
 const couldHavePotentialAttacker = (board: Board, sq: number) => {
-  return board.board[sq] !== Piece.DEFENDER && sq !== getThroneSq()
+  return board.board[sq] !== Piece.DEFENDER && sq !== THRONE_SQ
 }
 
 const isCapturePossibleInEnemyArea = (
@@ -128,7 +121,7 @@ const isFortBreakable = (board: Board, fort: Set<number>, innerSpace: Uint8Array
   let fullSurroundedSquares = bfs({
     isAchievable: (sq: number) => board.board[sq] === Piece.DEFENDER,
     startSquares: [fortSq.value],
-    getNeighbors: getAllNeighbors,
+    neighbors: ALL_NEIGHBORS,
   })
 
 
@@ -145,8 +138,8 @@ const isFortBreakable = (board: Board, fort: Set<number>, innerSpace: Uint8Array
       break
     }
 
-    const [left, right] = [getLeftNeighbor(nextSquareToCheck.value), getRightNeighbor(nextSquareToCheck.value)];
-    const [top, bottom] = [getTopNeighbor(nextSquareToCheck.value), getBottomNeighbor(nextSquareToCheck.value)];
+    const [left, right] = [LEFT_NEIGHBOR[nextSquareToCheck.value], RIGHT_NEIGHBOR[nextSquareToCheck.value]];
+    const [top, bottom] = [TOP_NEIGHBOR[nextSquareToCheck.value], BOTTOM_NEIGHBOR[nextSquareToCheck.value]];
 
     if (isCapturePossibleInEnemyArea(
       board, left, right, innerSpace
@@ -196,7 +189,7 @@ const isCalculateNeeded = (board: Board) => {
   }
 
   const isEdge = isEdgeSquare(lastMoveTo);
-  const allNeighbors = getAllNeighbors(lastMoveTo);
+  const allNeighbors = ALL_NEIGHBORS[lastMoveTo];
 
   let defendersNearbyCount = 0;
 

@@ -11,7 +11,7 @@ import {MoveGenerator} from "@/moves/movegen/movegen";
 const MAX_DEPTH = 256;
 const moveGens = Array.from({length: MAX_DEPTH}, () => createMoveGenerator());
 
-const tt = createTranspositionTable()
+export const tt = createTranspositionTable()
 
 const moveGenAtDepth = (depth: number) => {
   return moveGens[depth];
@@ -85,10 +85,6 @@ export const search = (
 
     // Make the move
     const undo = makeMove(board, move);
-
-    if (height === 0) {
-      console.log(`Move number: ${i}; Move: ${getMoveAlg(move)}`);
-    }
 
     // Recursively search
     const score = -search(

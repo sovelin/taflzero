@@ -65,6 +65,26 @@ declare const getFEN: (board: Board) => string;
 
 declare function printBoard(b: Board): void;
 
+declare const ROW: Uint8Array<ArrayBuffer>;
+declare const COL: Uint8Array<ArrayBuffer>;
+declare const THRONE_SQ: number;
+declare const CORNERS_SQ: number[];
+declare const TOP_LEFT_SQ: number;
+declare const TOP_RIGHT_SQ: number;
+declare const BOTTOM_LEFT_SQ: number;
+declare const BOTTOM_RIGHT_SQ: number;
+declare const RIGHT_NEIGHBOR: (number | null)[];
+declare const LEFT_NEIGHBOR: (number | null)[];
+declare const TOP_NEIGHBOR: (number | null)[];
+declare const BOTTOM_NEIGHBOR: (number | null)[];
+declare const TOP_RIGHT_NEIGHBOR: (number | null)[];
+declare const TOP_LEFT_NEIGHBOR: (number | null)[];
+declare const BOTTOM_RIGHT_NEIGHBOR: (number | null)[];
+declare const BOTTOM_LEFT_NEIGHBOR: (number | null)[];
+declare const VERTICAL_HORIZONTAL_NEIGHBORS: number[][];
+declare const ALL_NEIGHBORS: number[][];
+declare const precomputeBoard: () => void;
+
 declare const search: (board: Board, depth: number, alpha?: number, beta?: number, height?: number) => number;
 
 declare class BestMove {
@@ -89,9 +109,9 @@ declare function setMoves(board: Board, moves: number[]): void;
 interface Options {
     isAchievable: (sq: number) => boolean;
     startSquares: number[];
-    getNeighbors?: (sq: number) => number[];
+    neighbors?: number[][];
 }
-declare const bfs: ({ isAchievable, startSquares, getNeighbors }: Options) => Uint8Array<ArrayBuffer>;
+declare const bfs: ({ isAchievable, startSquares, neighbors: neighborsCached }: Options) => Uint8Array<ArrayBuffer>;
 
 declare const MATE_SCORE = 10000;
 
@@ -138,4 +158,4 @@ declare function initMovesModule(): void;
 
 declare function getMoveAlg(move: number): string;
 
-export { BOARD_SIZE, type Board, HOLE, INITIAL_FEN, MATE_SCORE, NUM_PIECE_KINDS, Piece, SQS, Side, bestMove, bfs, checkTerminal, clearBoard, clearPiece, createBoard, createMove, createMoveFromAlgebraic, createMoveGenerator, ctz, evaluateBoard, getBinary, getBottomLeftSquare, getBottomRightSquare, getCol, getCornersSq, getFEN, getMoveAlg, getOppositeSide, getRow, getScoreText, getSideByPiece, getSquare, getSquareAlg, getSquareFromAlgebraic, getThroneSq, getTopLeftSquare, getTopRightSquare, initMovesModule, isMateScore, makeMove, moveFrom, moveTo, printBoard, search, searchRoot, setFEN, setInitialPosition, setMoves, setPiece, sidedEval, statistics, unmakeMove };
+export { ALL_NEIGHBORS, BOARD_SIZE, BOTTOM_LEFT_NEIGHBOR, BOTTOM_LEFT_SQ, BOTTOM_NEIGHBOR, BOTTOM_RIGHT_NEIGHBOR, BOTTOM_RIGHT_SQ, type Board, COL, CORNERS_SQ, HOLE, INITIAL_FEN, LEFT_NEIGHBOR, MATE_SCORE, NUM_PIECE_KINDS, Piece, RIGHT_NEIGHBOR, ROW, SQS, Side, THRONE_SQ, TOP_LEFT_NEIGHBOR, TOP_LEFT_SQ, TOP_NEIGHBOR, TOP_RIGHT_NEIGHBOR, TOP_RIGHT_SQ, VERTICAL_HORIZONTAL_NEIGHBORS, bestMove, bfs, checkTerminal, clearBoard, clearPiece, createBoard, createMove, createMoveFromAlgebraic, createMoveGenerator, ctz, evaluateBoard, getBinary, getBottomLeftSquare, getBottomRightSquare, getCol, getCornersSq, getFEN, getMoveAlg, getOppositeSide, getRow, getScoreText, getSideByPiece, getSquare, getSquareAlg, getSquareFromAlgebraic, getThroneSq, getTopLeftSquare, getTopRightSquare, initMovesModule, isMateScore, makeMove, moveFrom, moveTo, precomputeBoard, printBoard, search, searchRoot, setFEN, setInitialPosition, setMoves, setPiece, sidedEval, statistics, unmakeMove };

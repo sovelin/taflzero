@@ -1,8 +1,13 @@
-import {describe, it, expect} from 'vitest'
+import {describe, it, expect, beforeAll} from 'vitest'
 import {createBoard, getSquareFromAlgebraic, Piece, setPiece} from "@/board";
 import {kingIsSurrounded} from "./kingIsSurrounded";
+import {initEngine} from "@/engine";
 
 describe('King Is Surrounded Evaluation Tests', () => {
+  beforeAll(() => {
+    initEngine()
+  })
+
   it('king is not surrounded', () => {
     const board = createBoard()
     setPiece(board, getSquareFromAlgebraic("b2"), Piece.KING)

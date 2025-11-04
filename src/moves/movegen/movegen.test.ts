@@ -3,6 +3,7 @@ import {Piece, Side, clearBoard, createBoard, setPiece, getSquareFromAlgebraic} 
 import {getMoveAlg} from "../utils";
 import {initLineMoves} from "../attackers";
 import {beforeAll, describe, expect, it} from "vitest";
+import {initEngine} from "@/engine";
 
 describe('Move Generation Tests', () => {
   const prepare = () => {
@@ -54,7 +55,7 @@ describe('Move Generation Tests', () => {
   }
 
   beforeAll(() => {
-    initLineMoves()
+    initEngine()
   })
 
   it('clear board: no moves', () => {

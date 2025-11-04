@@ -25,5 +25,14 @@ export function createTranspositionTable(sizeMB = 32) {
         return { depth: ttDepth[i], score: ttScore[i], flag: ttFlag[i], move: ttMove[i] };
       return null;
     },
+    reset() {
+      for (let i = 0; i < TT_SIZE; i++) {
+        ttZobrist[i] = BigInt(0);
+        ttDepth[i] = 0;
+        ttScore[i] = 0;
+        ttFlag[i] = 0;
+        ttMove[i] = 0;
+      }
+    }
   };
 }

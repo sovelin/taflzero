@@ -20,14 +20,32 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // src/lib.ts
 var lib_exports = {};
 __export(lib_exports, {
+  ALL_NEIGHBORS: () => ALL_NEIGHBORS,
   BOARD_SIZE: () => BOARD_SIZE,
+  BOTTOM_LEFT_NEIGHBOR: () => BOTTOM_LEFT_NEIGHBOR,
+  BOTTOM_LEFT_SQ: () => BOTTOM_LEFT_SQ,
+  BOTTOM_NEIGHBOR: () => BOTTOM_NEIGHBOR,
+  BOTTOM_RIGHT_NEIGHBOR: () => BOTTOM_RIGHT_NEIGHBOR,
+  BOTTOM_RIGHT_SQ: () => BOTTOM_RIGHT_SQ,
+  COL: () => COL,
+  CORNERS_SQ: () => CORNERS_SQ,
   HOLE: () => HOLE,
   INITIAL_FEN: () => INITIAL_FEN,
+  LEFT_NEIGHBOR: () => LEFT_NEIGHBOR,
   MATE_SCORE: () => MATE_SCORE,
   NUM_PIECE_KINDS: () => NUM_PIECE_KINDS,
   Piece: () => Piece,
+  RIGHT_NEIGHBOR: () => RIGHT_NEIGHBOR,
+  ROW: () => ROW,
   SQS: () => SQS,
   Side: () => Side,
+  THRONE_SQ: () => THRONE_SQ,
+  TOP_LEFT_NEIGHBOR: () => TOP_LEFT_NEIGHBOR,
+  TOP_LEFT_SQ: () => TOP_LEFT_SQ,
+  TOP_NEIGHBOR: () => TOP_NEIGHBOR,
+  TOP_RIGHT_NEIGHBOR: () => TOP_RIGHT_NEIGHBOR,
+  TOP_RIGHT_SQ: () => TOP_RIGHT_SQ,
+  VERTICAL_HORIZONTAL_NEIGHBORS: () => VERTICAL_HORIZONTAL_NEIGHBORS,
   bestMove: () => bestMove,
   bfs: () => bfs,
   checkTerminal: () => checkTerminal,
@@ -61,6 +79,7 @@ __export(lib_exports, {
   makeMove: () => makeMove,
   moveFrom: () => moveFrom,
   moveTo: () => moveTo,
+  precomputeBoard: () => precomputeBoard,
   printBoard: () => printBoard,
   search: () => search,
   searchRoot: () => searchRoot,
@@ -524,6 +543,42 @@ function printBoard(b) {
   console.log(`zobrist: ${b.zobrist}`);
 }
 
+// src/board/precompute.ts
+var ROW = new Uint8Array(SQS);
+var COL = new Uint8Array(SQS);
+var THRONE_SQ = getThroneSq();
+var CORNERS_SQ = getCornersSq();
+var TOP_LEFT_SQ = getTopLeftSquare();
+var TOP_RIGHT_SQ = getTopRightSquare();
+var BOTTOM_LEFT_SQ = getBottomLeftSquare();
+var BOTTOM_RIGHT_SQ = getBottomRightSquare();
+var RIGHT_NEIGHBOR = Array.from({ length: SQS });
+var LEFT_NEIGHBOR = Array.from({ length: SQS });
+var TOP_NEIGHBOR = Array.from({ length: SQS });
+var BOTTOM_NEIGHBOR = Array.from({ length: SQS });
+var TOP_RIGHT_NEIGHBOR = Array.from({ length: SQS });
+var TOP_LEFT_NEIGHBOR = Array.from({ length: SQS });
+var BOTTOM_RIGHT_NEIGHBOR = Array.from({ length: SQS });
+var BOTTOM_LEFT_NEIGHBOR = Array.from({ length: SQS });
+var VERTICAL_HORIZONTAL_NEIGHBORS = Array.from({ length: SQS });
+var ALL_NEIGHBORS = Array.from({ length: SQS });
+var precomputeBoard = () => {
+  for (let i = 0; i < SQS; i++) {
+    ROW[i] = getRow(i);
+    COL[i] = getCol(i);
+    RIGHT_NEIGHBOR[i] = getRightNeighbor(i);
+    LEFT_NEIGHBOR[i] = getLeftNeighbor(i);
+    TOP_NEIGHBOR[i] = getTopNeighbor(i);
+    BOTTOM_NEIGHBOR[i] = getBottomNeighbor(i);
+    TOP_RIGHT_NEIGHBOR[i] = getTopRightNeighbor(i);
+    TOP_LEFT_NEIGHBOR[i] = getTopLeftNeighbor(i);
+    BOTTOM_RIGHT_NEIGHBOR[i] = getBottomRightNeighbor(i);
+    BOTTOM_LEFT_NEIGHBOR[i] = getBottomLeftNeighbor(i);
+    VERTICAL_HORIZONTAL_NEIGHBORS[i] = getVerticalHorizontalNeighbors(i);
+    ALL_NEIGHBORS[i] = getAllNeighbors(i);
+  }
+};
+
 // src/moves/move/move.ts
 function createMove(from, to) {
   return from << 16 | to;
@@ -705,41 +760,45 @@ var isCapturePossible = (board, targetSq, enemySq1, enemySq2) => {
 };
 
 // src/moves/makeMove/makeShieldCaptures/makeShieldCaptures.ts
+var getBottomNeighbor2 = (sq) => BOTTOM_NEIGHBOR[sq];
+var getTopNeighbor2 = (sq) => TOP_NEIGHBOR[sq];
+var getLeftNeighbor2 = (sq) => LEFT_NEIGHBOR[sq];
+var getRightNeighbor2 = (sq) => RIGHT_NEIGHBOR[sq];
 var shieldIterators = {
   [0 /* TOP */]: {
-    getRoofNeighbor: getBottomNeighbor,
-    next: getRightNeighbor,
+    getRoofNeighbor: getBottomNeighbor2,
+    next: getRightNeighbor2,
     isLast: (sq) => sq === getTopRightSquare(),
     getStart: getTopLeftSquare,
-    getNextNeighbor: getRightNeighbor,
-    getPrevNeighbor: getLeftNeighbor,
+    getNextNeighbor: getRightNeighbor2,
+    getPrevNeighbor: getLeftNeighbor2,
     isAlwaysFriendSq: (sq) => sq === getTopLeftSquare() || sq === getTopRightSquare()
   },
   [1 /* BOTTOM */]: {
-    getRoofNeighbor: getTopNeighbor,
-    next: getRightNeighbor,
+    getRoofNeighbor: getTopNeighbor2,
+    next: getRightNeighbor2,
     isLast: (sq) => sq === getBottomRightSquare(),
     getStart: getBottomLeftSquare,
-    getNextNeighbor: getRightNeighbor,
-    getPrevNeighbor: getLeftNeighbor,
+    getNextNeighbor: getRightNeighbor2,
+    getPrevNeighbor: getLeftNeighbor2,
     isAlwaysFriendSq: (sq) => sq === getBottomLeftSquare() || sq === getBottomRightSquare()
   },
   [2 /* LEFT */]: {
-    getRoofNeighbor: getRightNeighbor,
-    next: getBottomNeighbor,
+    getRoofNeighbor: getRightNeighbor2,
+    next: getBottomNeighbor2,
     isLast: (sq) => sq === getBottomLeftSquare(),
     getStart: getTopLeftSquare,
-    getNextNeighbor: getBottomNeighbor,
-    getPrevNeighbor: getTopNeighbor,
+    getNextNeighbor: getBottomNeighbor2,
+    getPrevNeighbor: getTopNeighbor2,
     isAlwaysFriendSq: (sq) => sq === getTopLeftSquare() || sq === getBottomLeftSquare()
   },
   [3 /* RIGHT */]: {
-    getRoofNeighbor: getLeftNeighbor,
-    next: getBottomNeighbor,
+    getRoofNeighbor: getLeftNeighbor2,
+    next: getBottomNeighbor2,
     isLast: (sq) => sq === getBottomRightSquare(),
     getStart: getTopRightSquare,
-    getNextNeighbor: getBottomNeighbor,
-    getPrevNeighbor: getTopNeighbor,
+    getNextNeighbor: getBottomNeighbor2,
+    getPrevNeighbor: getTopNeighbor2,
     isAlwaysFriendSq: (sq) => sq === getTopRightSquare() || sq === getBottomRightSquare()
   }
 };
@@ -1326,18 +1385,12 @@ var getScoreText = (score) => {
 };
 
 // src/evaluation/kingIsSurrounded/kingIsSurrounded.ts
-var THRONE_SQ = getThroneSq();
 var kingIsSurrounded = (board) => {
   const { kingSq } = board;
   if (board.kingSq === -1) {
     throw new Error("King square is not defined");
   }
-  return [
-    getLeftNeighbor(kingSq),
-    getTopNeighbor(kingSq),
-    getRightNeighbor(kingSq),
-    getBottomNeighbor(kingSq)
-  ].filter((sq) => {
+  return VERTICAL_HORIZONTAL_NEIGHBORS[kingSq].filter((sq) => {
     if (sq === 0 /* EMPTY */) {
       return false;
     }
@@ -1366,12 +1419,12 @@ var createQueue = (startSquares) => {
 };
 
 // src/utils/bfs/bfs.ts
-var bfs = ({ isAchievable, startSquares, getNeighbors = getVerticalHorizontalNeighbors }) => {
+var bfs = ({ isAchievable, startSquares, neighbors: neighborsCached = VERTICAL_HORIZONTAL_NEIGHBORS }) => {
   const queue = createQueue(startSquares);
   const visitedFlags = new Uint8Array(SQS);
   while (!queue.isEmpty()) {
     const currentSq = queue.dequeue();
-    const neighbors = getNeighbors(currentSq);
+    const neighbors = neighborsCached[currentSq];
     for (let i = 0; i < neighbors.length; i++) {
       const neighbor = neighbors[i];
       if (visitedFlags[neighbor]) continue;
@@ -1384,7 +1437,6 @@ var bfs = ({ isAchievable, startSquares, getNeighbors = getVerticalHorizontalNei
 };
 
 // src/evaluation/defendersIsSurrounded/defendersIsSurrounded.ts
-var corners = getCornersSq();
 var isCalculateNeeded = (board) => {
   const lastMoveSq = board.lastMoveTo;
   if (lastMoveSq === HOLE) {
@@ -1393,7 +1445,7 @@ var isCalculateNeeded = (board) => {
   if (board.board[lastMoveSq] !== 1 /* ATTACKER */) {
     return false;
   }
-  const allSiblings = getAllNeighbors(lastMoveSq);
+  const allSiblings = ALL_NEIGHBORS[lastMoveSq];
   let attackerNearbyCount = 0;
   for (let i = 0; i < allSiblings.length; i++) {
     const sq = allSiblings[i];
@@ -1412,7 +1464,7 @@ var defendersIsSurrounded = (board) => {
   }
   const visited = bfs({
     isAchievable: (sq) => board.board[sq] !== 1 /* ATTACKER */,
-    startSquares: corners
+    startSquares: CORNERS_SQ
   });
   for (let i = 0; i < SQS; i++) {
     if (!visited[i]) {
@@ -1447,10 +1499,10 @@ var getSetFromBinary = (array) => {
 
 // src/evaluation/checkFort/checkFort.ts
 var isCornerSquare = (sq) => {
-  return sq === getTopLeftSquare() || sq === getBottomLeftSquare() || sq === getTopRightSquare() || sq === getBottomRightSquare();
+  return sq === TOP_LEFT_SQ || sq === BOTTOM_LEFT_SQ || sq === TOP_RIGHT_SQ || sq === BOTTOM_RIGHT_SQ;
 };
 var kingHasMoves = (board) => {
-  const potentialMoves = getVerticalHorizontalNeighbors(board.kingSq);
+  const potentialMoves = VERTICAL_HORIZONTAL_NEIGHBORS[board.kingSq];
   let possibleMoves = 0;
   for (let i = 0; i < potentialMoves.length; i++) {
     if (board.board[potentialMoves[i]] === 0 /* EMPTY */) {
@@ -1461,8 +1513,8 @@ var kingHasMoves = (board) => {
 };
 var kingContactEdges = (board) => {
   const { kingSq } = board;
-  const row = getRow(kingSq);
-  const col = getCol(kingSq);
+  const row = ROW[kingSq];
+  const col = COL[kingSq];
   return row === 0 || row === BOARD_SIZE - 1 || col === 0 || col === BOARD_SIZE - 1;
 };
 var getFort = (board) => {
@@ -1500,7 +1552,7 @@ var isFromOutside = (sq1, sq2, innerSpace) => {
   return isSq1Outside && isSq2Outside;
 };
 var couldHavePotentialAttacker = (board, sq) => {
-  return board.board[sq] !== 2 /* DEFENDER */ && sq !== getThroneSq();
+  return board.board[sq] !== 2 /* DEFENDER */ && sq !== THRONE_SQ;
 };
 var isCapturePossibleInEnemyArea = (board, betweenA, betweenB, innerSpace) => {
   return betweenA !== null && betweenB !== null && isFromOutside(betweenA, betweenB, innerSpace) && couldHavePotentialAttacker(board, betweenA) && couldHavePotentialAttacker(board, betweenB);
@@ -1520,7 +1572,7 @@ var isFortBreakable = (board, fort, innerSpace, height = 0) => {
   let fullSurroundedSquares = bfs({
     isAchievable: (sq) => board.board[sq] === 2 /* DEFENDER */,
     startSquares: [fortSq.value],
-    getNeighbors: getAllNeighbors
+    neighbors: ALL_NEIGHBORS
   });
   const fullSurroundedSquaresSet = getSetFromBinary(fullSurroundedSquares);
   const iterator = fullSurroundedSquaresSet.values();
@@ -1529,8 +1581,8 @@ var isFortBreakable = (board, fort, innerSpace, height = 0) => {
     if (nextSquareToCheck.value === void 0) {
       break;
     }
-    const [left, right] = [getLeftNeighbor(nextSquareToCheck.value), getRightNeighbor(nextSquareToCheck.value)];
-    const [top, bottom] = [getTopNeighbor(nextSquareToCheck.value), getBottomNeighbor(nextSquareToCheck.value)];
+    const [left, right] = [LEFT_NEIGHBOR[nextSquareToCheck.value], RIGHT_NEIGHBOR[nextSquareToCheck.value]];
+    const [top, bottom] = [TOP_NEIGHBOR[nextSquareToCheck.value], BOTTOM_NEIGHBOR[nextSquareToCheck.value]];
     if (isCapturePossibleInEnemyArea(
       board,
       left,
@@ -1575,7 +1627,7 @@ var isCalculateNeeded2 = (board) => {
     return false;
   }
   const isEdge = isEdgeSquare(lastMoveTo);
-  const allNeighbors = getAllNeighbors(lastMoveTo);
+  const allNeighbors = ALL_NEIGHBORS[lastMoveTo];
   let defendersNearbyCount = 0;
   for (let i = 0; i < allNeighbors.length; i++) {
     const sq = allNeighbors[i];
@@ -1603,17 +1655,11 @@ var checkFort = (board) => {
 };
 
 // src/evaluation/terminal.ts
-var cornersSquares = [
-  getTopRightSquare(),
-  getTopLeftSquare(),
-  getBottomLeftSquare(),
-  getBottomRightSquare()
-];
 var checkTerminal = (board) => {
   if (board.repTable.get(board.zobrist) >= 3) {
     return 0 /* ATTACKERS */;
   }
-  if (cornersSquares.includes(board.kingSq) || board.attackersCount < 2) {
+  if (CORNERS_SQ.includes(board.kingSq) || board.attackersCount < 2) {
     return 1 /* DEFENDERS */;
   }
   if (board.attackersCount < 2) {
@@ -1649,7 +1695,15 @@ var evaluateBoard = (board) => {
     const sq = board.attackers[i];
     score -= PSQT_ATK[sq];
   }
-  return sidedEval(board, score);
+  let surroundingBonus = 0;
+  VERTICAL_HORIZONTAL_NEIGHBORS[board.kingSq].forEach((sq) => {
+    if (!sq) return;
+    const piece = board.board[sq];
+    if (piece === 1 /* ATTACKER */) {
+      surroundingBonus += 1;
+    }
+  });
+  return sidedEval(board, score + surroundingBonus);
 };
 
 // src/search/model/BestMove.ts
@@ -1685,6 +1739,15 @@ function createTranspositionTable(sizeMB = 32) {
       if (ttZobrist[i] === z)
         return { depth: ttDepth[i], score: ttScore[i], flag: ttFlag[i], move: ttMove[i] };
       return null;
+    },
+    reset() {
+      for (let i = 0; i < TT_SIZE; i++) {
+        ttZobrist[i] = BigInt(0);
+        ttDepth[i] = 0;
+        ttScore[i] = 0;
+        ttFlag[i] = 0;
+        ttMove[i] = 0;
+      }
     }
   };
 }
@@ -1716,9 +1779,6 @@ var moveGenAtDepth = (depth) => {
 var isTTMoveValid = (moveGen, ttMove) => {
   for (let i = 0; i < moveGen.movesCount; i++) {
     if (moveGen.moves[i] === ttMove) {
-      console.log({
-        move: moveGen.moves[i]
-      });
       return true;
     }
   }
@@ -1755,9 +1815,9 @@ var search = (board, depth, alpha = -MATE_SCORE, beta = MATE_SCORE, height = 0) 
   let ttType = 2 /* UPPERBOUND */;
   let ttMove = null;
   for (let i = -1; i < moveGen.movesCount; i++) {
-    const move = i === -1 ? ttMove || 0 : moveGen.moves[i];
+    const move = i === -1 ? ttEntry?.move || 0 : moveGen.moves[i];
     if (i === -1) {
-      if (!isTTMoveValid(moveGen, ttMove || null)) {
+      if (!isTTMoveValid(moveGen, ttEntry?.move || null)) {
         continue;
       }
     }
@@ -1810,14 +1870,32 @@ var searchRoot = function(board, { onIteration, time }) {
 };
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
+  ALL_NEIGHBORS,
   BOARD_SIZE,
+  BOTTOM_LEFT_NEIGHBOR,
+  BOTTOM_LEFT_SQ,
+  BOTTOM_NEIGHBOR,
+  BOTTOM_RIGHT_NEIGHBOR,
+  BOTTOM_RIGHT_SQ,
+  COL,
+  CORNERS_SQ,
   HOLE,
   INITIAL_FEN,
+  LEFT_NEIGHBOR,
   MATE_SCORE,
   NUM_PIECE_KINDS,
   Piece,
+  RIGHT_NEIGHBOR,
+  ROW,
   SQS,
   Side,
+  THRONE_SQ,
+  TOP_LEFT_NEIGHBOR,
+  TOP_LEFT_SQ,
+  TOP_NEIGHBOR,
+  TOP_RIGHT_NEIGHBOR,
+  TOP_RIGHT_SQ,
+  VERTICAL_HORIZONTAL_NEIGHBORS,
   bestMove,
   bfs,
   checkTerminal,
@@ -1851,6 +1929,7 @@ var searchRoot = function(board, { onIteration, time }) {
   makeMove,
   moveFrom,
   moveTo,
+  precomputeBoard,
   printBoard,
   search,
   searchRoot,

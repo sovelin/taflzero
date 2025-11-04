@@ -1,4 +1,4 @@
-import {describe, it, expect} from "vitest";
+import {describe, it, expect, beforeAll} from "vitest";
 import {clearBoard, createBoard, setInitialPosition, setPiece, Piece, Side, HOLE} from "@/board";
 import {getSquareFromAlgebraic} from "@/board/utils";
 import {getBoardExpects} from "@/board/tests";
@@ -6,8 +6,13 @@ import {makeMove} from "./makeMove";
 import {createMoveFromAlgebraic} from "../move";
 import {printBoard} from "@/board/print";
 import {UndoMove} from "@/moves/model/UndoMove";
+import {initEngine} from "@/engine";
 
 describe('makeMove', () => {
+  beforeAll(() => {
+    initEngine()
+  })
+
   const prepare = () => {
     const board = createBoard();
     clearBoard(board);

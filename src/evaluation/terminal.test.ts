@@ -1,11 +1,16 @@
-import {describe, it, expect} from 'vitest';
+import {describe, it, expect, beforeAll} from 'vitest';
 import {createBoard, setInitialPosition, Side} from "@/board";
 import {makeMove} from "@/moves";
 import {printBoard} from "@/board/print";
 import {checkTerminal} from "./terminal";
 import {createMoveFromAlgebraic} from "@/moves/move";
+import {initEngine} from "@/engine";
 
 describe('Terminal Evaluation Tests', () => {
+  beforeAll(() => {
+    initEngine()
+  })
+
   it('3-repeatitions is always win for attackers', () => {
     const board = createBoard()
     setInitialPosition(board)

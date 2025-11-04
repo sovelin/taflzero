@@ -1,9 +1,14 @@
-import {describe, it, expect} from "vitest";
+import {describe, it, expect, beforeAll} from "vitest";
 import {createBoard, getSquareFromAlgebraic, Piece, setPiece} from "@/board";
 import {checkFort} from "./checkFort";
 import {printBoard} from "@/board/print";
+import {initEngine} from "@/engine";
 
 describe('Fort Check Tests', () => {
+  beforeAll(() => {
+    initEngine()
+  })
+
   it('empty king -> not fort', () => {
     const board = createBoard()
     setPiece(board, getSquareFromAlgebraic('f6'), Piece.KING)

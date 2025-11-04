@@ -1,7 +1,4 @@
-import {Board, getThroneSq, Piece} from "@/board";
-import {getBottomNeighbor, getLeftNeighbor, getRightNeighbor, getTopNeighbor} from "@/board/utils";
-
-const THRONE_SQ = getThroneSq();
+import {Board, THRONE_SQ, Piece, VERTICAL_HORIZONTAL_NEIGHBORS} from "@/board";
 
 export const kingIsSurrounded = (board: Board) => {
   const {kingSq} = board;
@@ -10,12 +7,8 @@ export const kingIsSurrounded = (board: Board) => {
     throw new Error("King square is not defined");
   }
 
-  return [
-    getLeftNeighbor(kingSq),
-    getTopNeighbor(kingSq),
-    getRightNeighbor(kingSq),
-    getBottomNeighbor(kingSq)
-  ].filter((sq) => {
+  return VERTICAL_HORIZONTAL_NEIGHBORS[kingSq]
+    .filter((sq) => {
     if (sq === Piece.EMPTY) {
       return false;
     }

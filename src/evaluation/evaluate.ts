@@ -1,6 +1,5 @@
-import {Board, Piece, Side} from "@/board";
+import {Board, Piece, Side, VERTICAL_HORIZONTAL_NEIGHBORS} from "@/board";
 import {PieceWeights, PSQT_ATK, PSQT_DEF, PSQT_KING} from "@/evaluation/constants";
-import {getBottomNeighbor, getLeftNeighbor, getRightNeighbor, getTopNeighbor} from "@/board/utils";
 
 export const sidedEval = (board: Board, score: number): number => {
   return board.sideToMove === Side.DEFENDERS
@@ -29,12 +28,8 @@ export const evaluateBoard = (board: Board): number => {
 
   let surroundingBonus = 0;
 
-  [
-    getTopNeighbor(board.kingSq),
-    getBottomNeighbor(board.kingSq),
-    getRightNeighbor(board.kingSq),
-    getLeftNeighbor(board.kingSq),
-  ].forEach((sq) => {
+  VERTICAL_HORIZONTAL_NEIGHBORS[board.kingSq]
+    .forEach((sq) => {
     if (!sq) return;
 
     const piece = board.board[sq!]

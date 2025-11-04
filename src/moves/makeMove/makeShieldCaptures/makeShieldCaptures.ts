@@ -1,19 +1,22 @@
 import {
   Board,
-  BOARD_SIZE, clearPiece,
+  BOARD_SIZE, BOTTOM_NEIGHBOR, clearPiece,
   getBottomLeftSquare,
   getBottomRightSquare,
   getCol,
   getRow,
   getSideByPiece,
   getTopLeftSquare,
-  getTopRightSquare,
-  Piece,
-  Side
+  getTopRightSquare, LEFT_NEIGHBOR,
+  Piece, RIGHT_NEIGHBOR,
+  Side, TOP_NEIGHBOR
 } from "@/board";
 import {CapturedPiece} from "@/moves/model/UndoMove";
-import {getBottomNeighbor, getLeftNeighbor, getRightNeighbor, getTopNeighbor} from "@/board/utils";
-import {printBoard} from "@/board/print";
+
+const getBottomNeighbor = (sq: number) => BOTTOM_NEIGHBOR[sq];
+const getTopNeighbor = (sq: number) => TOP_NEIGHBOR[sq];
+const getLeftNeighbor = (sq: number) => LEFT_NEIGHBOR[sq];
+const getRightNeighbor = (sq: number) => RIGHT_NEIGHBOR[sq];
 
 interface ShieldIterator {
   getRoofNeighbor: (sq: number) => number | null;

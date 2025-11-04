@@ -1,17 +1,22 @@
-import {describe, it, expect} from "vitest";
+import {describe, it, expect, beforeAll} from "vitest";
 import {createBoard, getSquareFromAlgebraic, Piece, setPiece} from "@/board";
-import {defendersIsSurrounded} from "@/evaluation/defendersIsSurrounded/defendersIsSurrounded";
+import {defendersIsSurrounded} from "./defendersIsSurrounded";
 import {printBoard} from "@/board/print";
+import {initEngine} from "@/engine";
 
 describe('Defenders Is Surrounded Evaluation Tests', () => {
-    it('by default not surrounded', () => {
-      const board = createBoard()
-      setPiece(board, getSquareFromAlgebraic('d4'), Piece.KING)
+  beforeAll(() => {
+    initEngine()
+  })
 
-      const isSurrounded = defendersIsSurrounded(board)
+  it('by default not surrounded', () => {
+    const board = createBoard()
+    setPiece(board, getSquareFromAlgebraic('d4'), Piece.KING)
 
-      expect(isSurrounded).toBeFalsy()
-    })
+    const isSurrounded = defendersIsSurrounded(board)
+
+    expect(isSurrounded).toBeFalsy()
+  })
 
   it('surrounded corners but with open edges -> not surrounded', () => {
     const board = createBoard()

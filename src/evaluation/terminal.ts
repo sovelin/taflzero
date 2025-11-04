@@ -1,31 +1,18 @@
 import {
   Board,
-  getBottomLeftSquare,
-  getBottomRightSquare,
-  getSquareAlg,
-  getTopLeftSquare,
-  getTopRightSquare,
-  Side
+  Side,
+  CORNERS_SQ
 } from "@/board";
 import {kingIsSurrounded} from "@/evaluation/kingIsSurrounded/kingIsSurrounded";
 import {defendersIsSurrounded} from "@/evaluation/defendersIsSurrounded";
 import {checkFort} from "@/evaluation/checkFort";
-import {Stats} from "@/evaluation/checkFort/checkFort";
-import {printBoard} from "@/board/print";
-
-const cornersSquares = [
-  getTopRightSquare(),
-  getTopLeftSquare(),
-  getBottomLeftSquare(),
-  getBottomRightSquare(),
-];
 
 export const checkTerminal = (board: Board): Side | null => {
   if (board.repTable.get(board.zobrist)! >= 3) {
     return Side.ATTACKERS;
   }
 
-  if (cornersSquares.includes(board.kingSq) || board.attackersCount < 2) {
+  if (CORNERS_SQ.includes(board.kingSq) || board.attackersCount < 2) {
     return Side.DEFENDERS;
   }
 

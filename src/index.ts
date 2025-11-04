@@ -1,13 +1,15 @@
 import {createMoveGenerator, initMovesModule, makeMove} from "@/moves";
 import {Board, createBoard, getSquareFromAlgebraic, Piece, setInitialPosition, setPiece, Side} from "@/board";
 import {printBoard} from "@/board/print";
-import {search} from "@/search/search";
+import {search, tt} from "@/search/search";
 import {searchRoot, statistics} from "@/search";
 import {checkTerminal, getScoreText} from "@/evaluation";
 import {bestMove} from "@/search/model/BestMove";
 import {getMoveAlg} from "@/moves";
+import {initEngine} from "@/engine";
+import {timer} from "@/search/model/Timer";
 
-initMovesModule()
+initEngine()
 
 const runSimulator = () => {
   const board = createBoard()
@@ -152,7 +154,30 @@ const runSelfPlayTest = () => {
   }
 }
 
-runSelfPlayTest();
-//runAlphaBetaTest()
-setInterval(() => {}, 1e9);
+const speedTest = () => {
+  const board = createBoard()
+  setInitialPosition(board);
+
+  const iterations = 1000;
+  console.log(`Running speed test for ${iterations} iterations...`)
+  const start = Date.now();
+
+  statistics.reset()
+  for (let i = 0; i < iterations; i++) {
+    timer.startSearch(1000)
+    search(board, 2)
+    console.log(statistics.nodes)
+  }
+
+  const end = Date.now();
+  const duration = end - start;
+  console.log(statistics.nodes)
+  const knps = (statistics.nodes / duration).toFixed(2);
+
+  console.log(`Speed test completed in ${duration} ms`);
+  console.log(`Nodes per second: ${knps} knps`);
+}
+
+//runSelfPlayTest();
+speedTest()
 
