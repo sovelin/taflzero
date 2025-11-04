@@ -1,12 +1,14 @@
 import {Board, Side} from "@/board";
-import {createMoveGenerator, getMoveAlg, makeMove, unmakeMove} from "@/moves";
+import {createMoveGenerator, makeMove, unmakeMove} from "@/moves";
 import {statistics} from "@/search/model/Statistics";
-import {MATE_SCORE, checkTerminal, evaluateBoard, sidedEval} from "@/evaluation";
+import {MATE_SCORE, checkTerminal, evaluateBoard, sidedEval, isMateScore} from "@/evaluation";
 import {bestMove} from "@/search/model/BestMove";
 import {createTranspositionTable} from "@/transposition/createTT";
 import {TTFlag} from "@/transposition";
 import {timer} from "@/search/model/Timer";
 import {MoveGenerator} from "@/moves/movegen/movegen";
+import {estimateMoves, MoveScores, pickMove} from "@/search/movesOrdering";
+import {readScore} from "@/transposition/utils";
 
 const MAX_DEPTH = 256;
 const moveGens = Array.from({length: MAX_DEPTH}, () => createMoveGenerator());
@@ -46,19 +48,21 @@ export const search = (
 
   const zobrist = board.zobrist;
   const ttEntry = tt.probe(zobrist);
-  if (ttEntry && ttEntry.depth >= depth && height > 0) {
+  if (ttEntry && ttEntry.zobrist === zobrist && ttEntry.depth >= depth && height > 0) {
+    let readedScore = readScore(ttEntry.score, height);
+
     if (ttEntry.flag === TTFlag.EXACT) {
-      return ttEntry.score;
+      return readedScore;
     }
 
     if (ttEntry.flag === TTFlag.LOWERBOUND) {
-      alpha = Math.max(alpha, ttEntry.score);
+      alpha = Math.max(alpha, readedScore);
     } else if (ttEntry.flag === TTFlag.UPPERBOUND) {
-      beta = Math.min(beta, ttEntry.score);
+      beta = Math.min(beta, readedScore);
     }
 
     if (alpha >= beta) {
-      return ttEntry.score;
+      return readedScore;
     }
   }
 
@@ -69,18 +73,14 @@ export const search = (
   const moveGen = moveGenAtDepth(height);
   moveGen.movegen(board);
 
+  estimateMoves(moveGen, MoveScores[height], moveGen.movesCount, ttEntry?.move || null);
+
+  let move;
+
   let ttType = TTFlag.UPPERBOUND;
   let ttMove: number | null = null;
 
-  for (let i = -1; i < moveGen.movesCount; i++) {
-    const move: number =  i === -1 ? (ttEntry?.move || 0) : moveGen.moves[i];
-
-    if (i === -1) {
-      if (!isTTMoveValid(moveGen, ttEntry?.move || null)) {
-        continue;
-      }
-    }
-
+  while (move = pickMove(moveGen, MoveScores[height])) {
     statistics.incrementNodes();
 
     // Make the move

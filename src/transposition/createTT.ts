@@ -1,3 +1,4 @@
+import {writeScore} from "@/transposition/utils";
 
 export function createTranspositionTable(sizeMB = 32) {
   const entrySize = 8 + 1 + 2 + 1 + 4;
@@ -11,18 +12,18 @@ export function createTranspositionTable(sizeMB = 32) {
   const ttMove    = new Uint32Array(TT_SIZE);
 
   return {
-    store(z: bigint, depth: number, score: number, flag: number, move: number) {
+    store(z: bigint, depth: number, score: number, flag: number, move: number, height: number) {
       const i = Number(z & BigInt(MASK));
       ttZobrist[i] = z;
       ttDepth[i] = depth;
-      ttScore[i] = score;
+      ttScore[i] = writeScore(score, height);
       ttFlag[i] = flag;
       ttMove[i] = move;
     },
     probe(z: bigint) {
       const i = Number(z & BigInt(MASK));
       if (ttZobrist[i] === z)
-        return { depth: ttDepth[i], score: ttScore[i], flag: ttFlag[i], move: ttMove[i] };
+        return { depth: ttDepth[i], score: ttScore[i], flag: ttFlag[i], move: ttMove[i], zobrist: ttZobrist[i] };
       return null;
     },
     reset() {
@@ -33,6 +34,6 @@ export function createTranspositionTable(sizeMB = 32) {
         ttFlag[i] = 0;
         ttMove[i] = 0;
       }
-    }
+      }
   };
 }

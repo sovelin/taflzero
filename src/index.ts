@@ -135,7 +135,7 @@ const runSelfPlayTest = () => {
   while (true) {
     movesCount++;
     const {bestMove, bestScore} = searchRoot(board, {
-      time: 100000,
+      time: 1000,
       onIteration: (depth, move, score, nodes: number, speed: number, time: number) => {
         console.log(`Depth: ${depth}, Move: ${getMoveAlg(move)}, Score: ${getScoreText(score)}, Nodes: ${nodes}, Speed (knps): ${Math.floor(speed / 1000)}, Time (ms): ${time}`);
       }
@@ -176,5 +176,6 @@ const speedTest = () => {
   console.log(`Nodes per second: ${knps} knps`);
 }
 
-speedTest()
+//speedTest()
+runSelfPlayTest()
 
