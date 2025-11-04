@@ -34,6 +34,6 @@ export function createTranspositionTable(sizeMB = 32) {
         ttFlag[i] = 0;
         ttMove[i] = 0;
       }
-      }
-  };
+    }
+  }
 }

@@ -117,7 +117,7 @@ export const search = (
     }
   }
 
-  tt.store(zobrist, depth, alpha, ttType, ttMove || 0);
+  tt.store(zobrist, depth, alpha, ttType, ttMove || 0, height);
 
   return alpha;
 }

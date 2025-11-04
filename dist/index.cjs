@@ -656,11 +656,11 @@ var disableBlockedSquares = (beam, piece, rowOrColIndex) => {
   return beam;
 };
 var createMoveGenerator = () => {
-  const MAX_MOVES = 1024;
-  const moves = new Uint32Array(MAX_MOVES);
+  const MAX_MOVES2 = 1024;
+  const moves = new Uint32Array(MAX_MOVES2);
   let moveCount = 0;
   const addMove = (fromSq, toSq) => {
-    if (moveCount >= MAX_MOVES) {
+    if (moveCount >= MAX_MOVES2) {
       throw new Error("Exceeded maximum move capacity");
     }
     moves[moveCount++] = createMove(fromSq, toSq);
@@ -729,7 +729,7 @@ var createMoveGenerator = () => {
     get movesCount() {
       return moveCount;
     },
-    MAX_MOVES,
+    MAX_MOVES: MAX_MOVES2,
     decreaseCount: () => {
       if (moveCount > 0) {
         moveCount--;
@@ -1716,6 +1716,28 @@ var BestMove = class {
 };
 var bestMove = new BestMove();
 
+// src/transposition/utils.ts
+var readScore = (score, height) => {
+  if (isMateScore(score)) {
+    if (score > 0) {
+      return score + height;
+    } else {
+      return score - height;
+    }
+  }
+  return score;
+};
+var writeScore = (score, height) => {
+  if (isMateScore(score)) {
+    if (score > 0) {
+      return score - height;
+    } else {
+      return score + height;
+    }
+  }
+  return score;
+};
+
 // src/transposition/createTT.ts
 function createTranspositionTable(sizeMB = 32) {
   const entrySize = 8 + 1 + 2 + 1 + 4;
@@ -1727,18 +1749,18 @@ function createTranspositionTable(sizeMB = 32) {
   const ttFlag = new Uint8Array(TT_SIZE);
   const ttMove = new Uint32Array(TT_SIZE);
   return {
-    store(z, depth, score, flag, move) {
+    store(z, depth, score, flag, move, height) {
       const i = Number(z & BigInt(MASK));
       ttZobrist[i] = z;
       ttDepth[i] = depth;
-      ttScore[i] = score;
+      ttScore[i] = writeScore(score, height);
       ttFlag[i] = flag;
       ttMove[i] = move;
     },
     probe(z) {
       const i = Number(z & BigInt(MASK));
       if (ttZobrist[i] === z)
-        return { depth: ttDepth[i], score: ttScore[i], flag: ttFlag[i], move: ttMove[i] };
+        return { depth: ttDepth[i], score: ttScore[i], flag: ttFlag[i], move: ttMove[i], zobrist: ttZobrist[i] };
       return null;
     },
     reset() {
@@ -1770,20 +1792,42 @@ var Timer = class {
 };
 var timer = new Timer();
 
+// src/search/movesOrdering.ts
+var MAX_MOVES = 1024;
+var MoveScores = Array.from({ length: 256 }, () => new Int32Array(MAX_MOVES));
+var estimateMoves = (moveGen, moveScores, movesCount, ttMove) => {
+  for (let i = 0; i < movesCount; i++) {
+    moveScores[i] = 0;
+    if (moveGen.moves[i] === ttMove) {
+      moveScores[i] += 1e6;
+    }
+  }
+};
+var pickMove = (moveGen, moveScores) => {
+  if (moveGen.movesCount === 0) {
+    return 0;
+  }
+  let bestIndex = 0;
+  let bestScore = moveScores[0];
+  for (let i = 1; i < moveGen.movesCount; i++) {
+    if (moveScores[i] > bestScore) {
+      bestScore = moveScores[i];
+      bestIndex = i;
+    }
+  }
+  const bestMove2 = moveGen.moves[bestIndex];
+  [moveGen.moves[moveGen.movesCount - 1], moveGen.moves[bestIndex]] = [moveGen.moves[bestIndex], moveGen.moves[moveGen.movesCount - 1]];
+  [moveScores[moveGen.movesCount - 1], moveScores[bestIndex]] = [moveScores[bestIndex], moveScores[moveGen.movesCount - 1]];
+  moveGen.decreaseCount();
+  return bestMove2;
+};
+
 // src/search/search.ts
 var MAX_DEPTH = 256;
 var moveGens = Array.from({ length: MAX_DEPTH }, () => createMoveGenerator());
 var tt = createTranspositionTable();
 var moveGenAtDepth = (depth) => {
   return moveGens[depth];
-};
-var isTTMoveValid = (moveGen, ttMove) => {
-  for (let i = 0; i < moveGen.movesCount; i++) {
-    if (moveGen.moves[i] === ttMove) {
-      return true;
-    }
-  }
-  return false;
 };
 var search = (board, depth, alpha = -MATE_SCORE, beta = MATE_SCORE, height = 0) => {
   const terminal = checkTerminal(board);
@@ -1795,17 +1839,18 @@ var search = (board, depth, alpha = -MATE_SCORE, beta = MATE_SCORE, height = 0) 
   }
   const zobrist2 = board.zobrist;
   const ttEntry = tt.probe(zobrist2);
-  if (ttEntry && ttEntry.depth >= depth && height > 0) {
+  if (ttEntry && ttEntry.zobrist === zobrist2 && ttEntry.depth >= depth && height > 0) {
+    let readedScore = readScore(ttEntry.score, height);
     if (ttEntry.flag === 0 /* EXACT */) {
-      return ttEntry.score;
+      return readedScore;
     }
     if (ttEntry.flag === 1 /* LOWERBOUND */) {
-      alpha = Math.max(alpha, ttEntry.score);
+      alpha = Math.max(alpha, readedScore);
     } else if (ttEntry.flag === 2 /* UPPERBOUND */) {
-      beta = Math.min(beta, ttEntry.score);
+      beta = Math.min(beta, readedScore);
     }
     if (alpha >= beta) {
-      return ttEntry.score;
+      return readedScore;
     }
   }
   if (timer.isTimeUp()) {
@@ -1813,15 +1858,11 @@ var search = (board, depth, alpha = -MATE_SCORE, beta = MATE_SCORE, height = 0) 
   }
   const moveGen = moveGenAtDepth(height);
   moveGen.movegen(board);
+  estimateMoves(moveGen, MoveScores[height], moveGen.movesCount, ttEntry?.move || null);
+  let move;
   let ttType = 2 /* UPPERBOUND */;
   let ttMove = null;
-  for (let i = -1; i < moveGen.movesCount; i++) {
-    const move = i === -1 ? ttEntry?.move || 0 : moveGen.moves[i];
-    if (i === -1) {
-      if (!isTTMoveValid(moveGen, ttEntry?.move || null)) {
-        continue;
-      }
-    }
+  while (move = pickMove(moveGen, MoveScores[height])) {
     statistics.incrementNodes();
     const undo = makeMove(board, move);
     const score = -search(
@@ -1848,7 +1889,7 @@ var search = (board, depth, alpha = -MATE_SCORE, beta = MATE_SCORE, height = 0) 
       break;
     }
   }
-  tt.store(zobrist2, depth, alpha, ttType, ttMove || 0);
+  tt.store(zobrist2, depth, alpha, ttType, ttMove || 0, height);
   return alpha;
 };
 
