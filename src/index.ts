@@ -166,18 +166,15 @@ const speedTest = () => {
   for (let i = 0; i < iterations; i++) {
     timer.startSearch(1000)
     search(board, 2)
-    console.log(statistics.nodes)
   }
 
   const end = Date.now();
   const duration = end - start;
-  console.log(statistics.nodes)
   const knps = (statistics.nodes / duration).toFixed(2);
 
   console.log(`Speed test completed in ${duration} ms`);
   console.log(`Nodes per second: ${knps} knps`);
 }
 
-//runSelfPlayTest();
 speedTest()
 

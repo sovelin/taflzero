@@ -74,6 +74,7 @@ __export(lib_exports, {
   getThroneSq: () => getThroneSq,
   getTopLeftSquare: () => getTopLeftSquare,
   getTopRightSquare: () => getTopRightSquare,
+  initEngine: () => initEngine,
   initMovesModule: () => initMovesModule,
   isMateScore: () => isMateScore,
   makeMove: () => makeMove,
@@ -1868,6 +1869,12 @@ var searchRoot = function(board, { onIteration, time }) {
   }
   return { bestMove: bestMoveRes, bestScore };
 };
+
+// src/engine/init.ts
+var initEngine = () => {
+  initMovesModule();
+  precomputeBoard();
+};
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   ALL_NEIGHBORS,
@@ -1924,6 +1931,7 @@ var searchRoot = function(board, { onIteration, time }) {
   getThroneSq,
   getTopLeftSquare,
   getTopRightSquare,
+  initEngine,
   initMovesModule,
   isMateScore,
   makeMove,

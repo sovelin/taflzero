@@ -1773,6 +1773,12 @@ var searchRoot = function(board, { onIteration, time }) {
   }
   return { bestMove: bestMoveRes, bestScore };
 };
+
+// src/engine/init.ts
+var initEngine = () => {
+  initMovesModule();
+  precomputeBoard();
+};
 export {
   ALL_NEIGHBORS,
   BOARD_SIZE,
@@ -1828,6 +1834,7 @@ export {
   getThroneSq,
   getTopLeftSquare,
   getTopRightSquare,
+  initEngine,
   initMovesModule,
   isMateScore,
   makeMove,
