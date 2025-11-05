@@ -123,19 +123,18 @@ const runAlphaBetaTest = () => {
 
 const runSelfPlayTest = () => {
   const board = createBoard()
-  //setInitialPosition(board);
-  setFEN(board, "3a1a1a3/11/4aa5/3adda3a/3a1dda3/a1ad1kd1a1a/2ad1dda3/2a1dda3a/5a5/3a7/4aa1a3 a")
+  setInitialPosition(board);
+  //setFEN(board, "3aa1a4/9d1/1aadd1a4/a4d4a/1a1a7/a1d2ka4/2a2dd3a/2add5a/8d2/3a7/3aaaaa3 d")
+  //setFEN(board, "3a1a1a3/11/4aa5/3adda3a/3a1dda3/a1ad1kd1a1a/2ad1dda3/2a1dda3a/5a5/3a7/4aa1a3 a")
   //setWinningPositionForAttackers(board)
   //setCloseToSurroundedPosition(board)
   //sertNearToFortPosition(board)
   printBoard(board);
 
-  const maxDepth = 5;
-
   let movesCount = 0
   while (true) {
     movesCount++;
-    const {bestMove, bestScore} = searchRoot(board, {
+    const {bestMove} = searchRoot(board, {
       time: 1000,
       onIteration: (depth, move, score, nodes: number, speed: number, time: number) => {
         console.log(`Depth: ${depth}, Move: ${getMoveAlg(move)}, Score: ${getScoreText(score)}, Nodes: ${nodes}, Speed (knps): ${Math.floor(speed / 1000)}, Time (ms): ${time}`);

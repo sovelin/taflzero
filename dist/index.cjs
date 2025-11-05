@@ -542,6 +542,7 @@ function printBoard(b) {
   console.log(borderBottom);
   console.log(top);
   console.log(`zobrist: ${b.zobrist}`);
+  console.log(`FEN: ${getFEN(b)}`);
 }
 
 // src/board/precompute.ts
@@ -622,6 +623,7 @@ function setMoves(board, moves) {
 
 // src/moves/attackers.ts
 var LINE_MOVES = Array.from({ length: BOARD_SIZE }, () => new Uint16Array(1 << BOARD_SIZE));
+var POSSIBLE_MOVES_COUNT = Array.from({ length: BOARD_SIZE }, () => new Uint8Array(1 << BOARD_SIZE));
 function buildLineMask(at, occ) {
   let mask = 0;
   for (let i = at - 1; i >= 0; i--) {
@@ -634,10 +636,20 @@ function buildLineMask(at, occ) {
   }
   return mask;
 }
+function countSetBits(n) {
+  let count = 0;
+  while (n) {
+    count += n & 1;
+    n >>= 1;
+  }
+  console.log({ count });
+  return count;
+}
 function initLineMoves() {
   for (let pos = 0; pos < BOARD_SIZE; pos++) {
     for (let occ = 0; occ < 1 << BOARD_SIZE; occ++) {
       LINE_MOVES[pos][occ] = buildLineMask(pos, occ);
+      POSSIBLE_MOVES_COUNT[pos][occ] = countSetBits(LINE_MOVES[pos][occ]);
     }
   }
 }
@@ -1370,8 +1382,8 @@ var PSQT_ATK = new Int16Array([
   6
 ]);
 var PieceWeights = {
-  [2 /* DEFENDER */]: 100,
-  [1 /* ATTACKER */]: 50
+  [2 /* DEFENDER */]: 350,
+  [1 /* ATTACKER */]: 200
 };
 var KING_SURROUNDING_BONUSES = [0, 20, 50, 90, 100];
 
@@ -1682,9 +1694,37 @@ var checkTerminal = (board) => {
   return null;
 };
 
+// src/evaluation/movesCount/movesCount.ts
+var getPossibleMovesCount = (board, sq) => {
+  const row = ROW[sq];
+  const col = COL[sq];
+  const rowOcc = board.rowOcc[row];
+  const horizontalMoves = POSSIBLE_MOVES_COUNT[col][rowOcc];
+  const colOcc = board.colOcc[col];
+  const verticalMoves = POSSIBLE_MOVES_COUNT[row][colOcc];
+  return horizontalMoves + verticalMoves;
+};
+
 // src/evaluation/evaluate.ts
 var sidedEval = (board, score) => {
   return board.sideToMove === 1 /* DEFENDERS */ ? score : -score;
+};
+var DEFENDERS_MOBILITY_SCORES = [-20, -15, -10, 0, 7, 11, 16, 20, 24, 26, 27, 28, 30, 33, 37, 41, 44, 46, 48, 50, 52];
+var ATTACKERS_MOBILITY_SCORES = [-10, -7, -5, 0, 5, 8, 11, 14, 17, 19, 21, 23, 25, 27, 30, 32, 34, 36, 38, 40, 42];
+var evaluateDefendersMobility = (board) => {
+  let res = 0;
+  for (let i = 0; i < board.defendersCount; i++) {
+    res += DEFENDERS_MOBILITY_SCORES[getPossibleMovesCount(board, board.defenders[i])];
+  }
+  res += DEFENDERS_MOBILITY_SCORES[getPossibleMovesCount(board, board.kingSq)] * 2;
+  return res;
+};
+var evaluateAttackersMobility = (board) => {
+  let res = 0;
+  for (let i = 0; i < board.attackersCount; i++) {
+    res += ATTACKERS_MOBILITY_SCORES[getPossibleMovesCount(board, board.attackers[i])];
+  }
+  return res;
 };
 var evaluateBoard = (board) => {
   const { attackersCount, defendersCount } = board;
@@ -1692,6 +1732,8 @@ var evaluateBoard = (board) => {
   score += defendersCount * PieceWeights[2 /* DEFENDER */];
   score -= attackersCount * PieceWeights[1 /* ATTACKER */];
   score += PSQT_KING[board.kingSq];
+  score += evaluateDefendersMobility(board);
+  score -= evaluateAttackersMobility(board);
   for (let i = 0; i < defendersCount; i++) {
     const sq = board.defenders[i];
     score += PSQT_DEF[sq];
@@ -1944,6 +1986,7 @@ var searchRoot = function(board, { onIteration, time }) {
 
 // src/engine/init.ts
 var initEngine = () => {
+  console.log("here");
   initMovesModule();
   precomputeBoard();
 };

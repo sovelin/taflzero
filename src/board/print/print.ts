@@ -1,6 +1,7 @@
 import {Piece} from "../types";
 import {Board} from "../model/Board";
 import {getCol, getRow} from "../utils/utils";
+import {getFEN} from "@/board";
 
 export function printBoard(b: Board) {
   const size = 11;
@@ -39,4 +40,5 @@ export function printBoard(b: Board) {
   console.log(borderBottom);
   console.log(top);
   console.log(`zobrist: ${b.zobrist}`);
+  console.log(`FEN: ${getFEN(b)}`);
 }
