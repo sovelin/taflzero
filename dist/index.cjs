@@ -2054,6 +2054,7 @@ var search = (board, depth, alpha = -MATE_SCORE * 2, beta = MATE_SCORE * 2, heig
 var searchRoot = function(board, { onIteration, time }) {
   let bestScore = -Infinity;
   let bestMoveRes = 0;
+  bestMove.setBestMove(0);
   timer.startSearch(time);
   statistics.reset();
   clearKillers();
