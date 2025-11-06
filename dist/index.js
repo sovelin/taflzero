@@ -1302,8 +1302,8 @@ var PSQT_ATK = new Int16Array([
   6
 ]);
 var PieceWeights = {
-  [2 /* DEFENDER */]: 350,
-  [1 /* ATTACKER */]: 200
+  [2 /* DEFENDER */]: 150,
+  [1 /* ATTACKER */]: 100
 };
 var KING_SURROUNDING_BONUSES = [0, 20, 50, 90, 100];
 

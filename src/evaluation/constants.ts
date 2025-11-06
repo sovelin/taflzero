@@ -46,8 +46,8 @@ export const PSQT_ATK = new Int16Array([
 
 
 export const PieceWeights = {
-  [Piece.DEFENDER]: 350,
-  [Piece.ATTACKER]: 200,
+  [Piece.DEFENDER]: 150,
+  [Piece.ATTACKER]: 100,
 }
 
 export const KING_SURROUNDING_BONUSES = [0, 20, 50, 90, 100];
