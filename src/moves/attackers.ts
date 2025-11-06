@@ -25,7 +25,7 @@ function countSetBits(n: number): number {
     count += n & 1;
     n >>= 1;
   }
-  console.log({count})
+
   return count;
 }
 

@@ -66,7 +66,6 @@ describe('FEN Parser', () => {
       printBoard(board)
 
       const fen = getFEN(board)
-      console.log({fen})
 
       expect(fen).toBe('11/4a6/11/11/7d3/5k5/11/1d9/8a2/11/10a a')
     })
@@ -76,7 +75,6 @@ describe('FEN Parser', () => {
     const board = createBoard()
     setInitialPosition(board)
     const initialFen = getFEN(board)
-    console.log({initialFen})
     const initialZobrist = board.zobrist
 
     setFEN(board, initialFen)

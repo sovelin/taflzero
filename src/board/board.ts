@@ -1,6 +1,6 @@
 import {Piece, Side} from "./types";
 import {Board} from "./model/Board";
-import {getCol, getRow, getSquareFromAlgebraic} from "./utils";
+import {getCol, getRow} from "./utils";
 import {BOARD_SIZE, HOLE, INITIAL_FEN, SQS} from "./constants";
 import {sideZobrist, zobrist} from "@/board/zobrist/zobrist";
 import {setFEN} from "@/board/fen/fen";

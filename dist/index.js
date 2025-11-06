@@ -563,7 +563,6 @@ function countSetBits(n) {
     count += n & 1;
     n >>= 1;
   }
-  console.log({ count });
   return count;
 }
 function initLineMoves() {
@@ -1925,7 +1924,6 @@ var searchRoot = function(board, { onIteration, time }) {
 
 // src/engine/init.ts
 var initEngine = () => {
-  console.log("here");
   initMovesModule();
   precomputeBoard();
 };
