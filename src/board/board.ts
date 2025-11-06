@@ -111,7 +111,11 @@ function clearDefender(board: Board, sq: number): void {
 
 export function clearPiece(board: Board, sq: number): void {
   const piece = board.board[sq];
-  board.zobrist ^= zobrist[piece - 1][sq];
+  try {
+    board.zobrist ^= zobrist[piece - 1][sq];
+  } catch(e) {
+    throw new Error(`Error clearing piece at square ${sq}: ${e} ${piece}`);
+  }
   board.board[sq] = Piece.EMPTY;
 
   const row = getRow(sq);

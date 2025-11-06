@@ -369,7 +369,11 @@ function clearDefender(board, sq) {
 }
 function clearPiece(board, sq) {
   const piece = board.board[sq];
-  board.zobrist ^= zobrist[piece - 1][sq];
+  try {
+    board.zobrist ^= zobrist[piece - 1][sq];
+  } catch (e) {
+    throw new Error(`Error clearing piece at square ${sq}: ${e} ${piece}`);
+  }
   board.board[sq] = 0 /* EMPTY */;
   const row = getRow(sq);
   const col = getCol(sq);
@@ -468,6 +472,19 @@ var BOTTOM_RIGHT_NEIGHBOR = Array.from({ length: SQS });
 var BOTTOM_LEFT_NEIGHBOR = Array.from({ length: SQS });
 var VERTICAL_HORIZONTAL_NEIGHBORS = Array.from({ length: SQS });
 var ALL_NEIGHBORS = Array.from({ length: SQS });
+var MANHATTAN_DISTANCE = (() => {
+  const res = Array.from({ length: SQS }, () => new Array(SQS).fill(0));
+  for (let sq1 = 0; sq1 < SQS; sq1++) {
+    const row1 = getRow(sq1);
+    const col1 = getCol(sq1);
+    for (let sq2 = 0; sq2 < SQS; sq2++) {
+      const row2 = getRow(sq2);
+      const col2 = getCol(sq2);
+      res[sq1][sq2] = Math.abs(row1 - row2) + Math.abs(col1 - col2);
+    }
+  }
+  return res;
+})();
 var precomputeBoard = () => {
   for (let i = 0; i < SQS; i++) {
     ROW[i] = getRow(i);
@@ -1615,6 +1632,8 @@ var sidedEval = (board, score) => {
 };
 var DEFENDERS_MOBILITY_SCORES = [-20, -15, -10, 0, 7, 11, 16, 20, 24, 26, 27, 28, 30, 33, 37, 41, 44, 46, 48, 50, 52];
 var ATTACKERS_MOBILITY_SCORES = [-10, -7, -5, 0, 5, 8, 11, 14, 17, 19, 21, 23, 25, 27, 30, 32, 34, 36, 38, 40, 42];
+var ATTACKERS_DISTANCE_TO_KING_SCORES = [0, 80, 75, 65, 55, 45, 35, 25, 15, 5, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+var DEFENDERS_DISTANCE_TO_KING_SCORES = [0, 50, 45, 40, 35, 30, 25, 20, 15, 10, 5, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 var evaluateDefendersMobility = (board) => {
   let res = 0;
   for (let i = 0; i < board.defendersCount; i++) {
@@ -1630,6 +1649,20 @@ var evaluateAttackersMobility = (board) => {
   }
   return res;
 };
+var evaluateDistanceToKingAttackerBonuses = (board) => {
+  let res = 0;
+  for (let i = 0; i < board.attackersCount; i++) {
+    res += ATTACKERS_DISTANCE_TO_KING_SCORES[MANHATTAN_DISTANCE[board.attackers[i]][board.kingSq]];
+  }
+  return res;
+};
+var evaluateDistanceToKingDefenderBonuses = (board) => {
+  let res = 0;
+  for (let i = 0; i < board.defendersCount; i++) {
+    res += DEFENDERS_DISTANCE_TO_KING_SCORES[MANHATTAN_DISTANCE[board.defenders[i]][board.kingSq]];
+  }
+  return res;
+};
 var evaluateBoard = (board) => {
   const { attackersCount, defendersCount } = board;
   let score = 0;
@@ -1638,6 +1671,8 @@ var evaluateBoard = (board) => {
   score += PSQT_KING[board.kingSq];
   score += evaluateDefendersMobility(board);
   score -= evaluateAttackersMobility(board);
+  score += evaluateDistanceToKingDefenderBonuses(board);
+  score -= evaluateDistanceToKingAttackerBonuses(board);
   for (let i = 0; i < defendersCount; i++) {
     const sq = board.defenders[i];
     score += PSQT_DEF[sq];
@@ -1907,6 +1942,7 @@ export {
   HOLE,
   INITIAL_FEN,
   LEFT_NEIGHBOR,
+  MANHATTAN_DISTANCE,
   MATE_SCORE,
   NUM_PIECE_KINDS,
   Piece,

@@ -31,6 +31,24 @@ export const BOTTOM_LEFT_NEIGHBOR: (number | null)[] = Array.from({length: SQS})
 export const VERTICAL_HORIZONTAL_NEIGHBORS: number[][] = Array.from({length: SQS})
 export const ALL_NEIGHBORS: number[][] = Array.from({length: SQS})
 
+export const MANHATTAN_DISTANCE: number[][] = (() => {
+  const res: number[][] = Array.from({length: SQS}, () => new Array(SQS).fill(0))
+
+  for (let sq1 = 0; sq1 < SQS; sq1++) {
+    const row1 = getRow(sq1)
+    const col1 = getCol(sq1)
+
+    for (let sq2 = 0; sq2 < SQS; sq2++) {
+      const row2 = getRow(sq2)
+      const col2 = getCol(sq2)
+
+      res[sq1][sq2] = Math.abs(row1 - row2) + Math.abs(col1 - col2)
+    }
+  }
+
+  return res
+})()
+
 export const precomputeBoard = () => {
   for (let i = 0; i < SQS; i++) {
     ROW[i] = getRow(i);
