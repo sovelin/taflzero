@@ -3,6 +3,7 @@ import {Board} from "@/board";
 import {timer} from "@/search/model/Timer";
 import {bestMove} from "@/search/model/BestMove";
 import {statistics} from "@/search/model/Statistics";
+import {clearKillers} from "@/search/model/Killers";
 
 interface Params {
   onIteration?: (depth: number, move: number, score: number, nodes: number, speed: number, time: number) => void;
@@ -14,6 +15,7 @@ export const searchRoot = function (board: Board, {onIteration, time}: Params) {
   let bestMoveRes = 0;
   timer.startSearch(time)
   statistics.reset()
+  clearKillers()
 
   for (let depth = 1; depth <= 128; depth++) {
     const res = search(board, depth);

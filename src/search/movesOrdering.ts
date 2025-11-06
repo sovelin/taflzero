@@ -1,12 +1,20 @@
 // TODO! Constants!
 
 import {MoveGenerator} from "@/moves/movegen/movegen";
+import {killers} from "@/search/model/Killers";
+import {moveFrom, moveTo} from "@/moves";
+import {Side} from "@/board";
+import {history} from "@/search/model/History";
 
 const MAX_MOVES = 1024
 
 export const MoveScores = Array.from({length: 256}, () => new Int32Array(MAX_MOVES));
 
-export const estimateMoves = (moveGen: MoveGenerator, moveScores: Int32Array, movesCount: number, ttMove: number | null) => {
+const clampHistoryScore = (score: number) => {
+  return score / 1000; // scale down to prevent overflow (will be in range [0, 1000])
+}
+
+export const estimateMoves = (moveGen: MoveGenerator, moveScores: Int32Array, movesCount: number, ttMove: number | null, height: number, side: Side) => {
   for (let i = 0; i < MAX_MOVES; i++) {
     moveScores[i] = 0;
   }
@@ -15,8 +23,20 @@ export const estimateMoves = (moveGen: MoveGenerator, moveScores: Int32Array, mo
     moveScores[i] = 0;
 
     if (moveGen.moves[i] === ttMove) {
-      moveScores[i] = 1000000;
+      moveScores[i] += 1000000;
     }
+
+    if (moveGen.moves[i] === killers[height][0]) {
+      moveScores[i] += 900000;
+    } else if (moveGen.moves[i] === killers[height][1]) {
+      moveScores[i] += 800000;
+    }
+
+    // History heuristic: from^to
+    const from = moveFrom(moveGen.moves[i])
+    const to = moveTo(moveGen.moves[i])
+    const historyScore = history[side][from][to];
+    moveScores[i] += clampHistoryScore(historyScore);
   }
 }
 

@@ -1873,18 +1873,66 @@ var Timer = class {
 };
 var timer = new Timer();
 
+// src/search/constants.ts
+var MAX_DEPTH = 256;
+var MAX_HISTORY_SCORE = 1e6;
+
+// src/search/model/Killers.ts
+var killers = Array.from({ length: MAX_DEPTH }).fill(null).map(() => {
+  return [0, 0];
+});
+var saveKiller = (height, move) => {
+  const killer = killers[height];
+  if (!killer[0]) {
+    killer[0] = move;
+  } else {
+    killer[1] = killer[0];
+    killer[0] = move;
+  }
+};
+var clearKillers = () => {
+  for (let i = 0; i < MAX_DEPTH; i++) {
+    killers[i][0] = 0;
+    killers[i][1] = 0;
+  }
+};
+
+// src/search/model/History.ts
+var history = Array.from({ length: 2 }, () => Array.from(
+  { length: SQS },
+  () => new Int32Array(SQS)
+));
+var updateHistory = (side, from, to, depth) => {
+  history[side][from][to] += depth * depth;
+  if (history[side][from][to] > MAX_HISTORY_SCORE) {
+    history[side][from][to] >>= 1;
+  }
+};
+
 // src/search/movesOrdering.ts
 var MAX_MOVES = 1024;
 var MoveScores = Array.from({ length: 256 }, () => new Int32Array(MAX_MOVES));
-var estimateMoves = (moveGen, moveScores, movesCount, ttMove) => {
+var clampHistoryScore = (score) => {
+  return score / 1e3;
+};
+var estimateMoves = (moveGen, moveScores, movesCount, ttMove, height, side) => {
   for (let i = 0; i < MAX_MOVES; i++) {
     moveScores[i] = 0;
   }
   for (let i = 0; i < movesCount; i++) {
     moveScores[i] = 0;
     if (moveGen.moves[i] === ttMove) {
-      moveScores[i] = 1e6;
+      moveScores[i] += 1e6;
     }
+    if (moveGen.moves[i] === killers[height][0]) {
+      moveScores[i] += 9e5;
+    } else if (moveGen.moves[i] === killers[height][1]) {
+      moveScores[i] += 8e5;
+    }
+    const from = moveFrom(moveGen.moves[i]);
+    const to = moveTo(moveGen.moves[i]);
+    const historyScore = history[side][from][to];
+    moveScores[i] += clampHistoryScore(historyScore);
   }
 };
 var pickMove = (moveGen, moveScores) => {
@@ -1907,7 +1955,6 @@ var pickMove = (moveGen, moveScores) => {
 };
 
 // src/search/search.ts
-var MAX_DEPTH = 256;
 var moveGens = Array.from({ length: MAX_DEPTH }, () => createMoveGenerator());
 var tt = createTranspositionTable();
 var moveGenAtDepth = (depth) => {
@@ -1944,7 +1991,7 @@ var search = (board, depth, alpha = -MATE_SCORE * 2, beta = MATE_SCORE * 2, heig
   }
   const moveGen = moveGenAtDepth(height);
   moveGen.movegen(board);
-  estimateMoves(moveGen, MoveScores[height], moveGen.movesCount, isValidTT ? ttEntry?.move || null : null);
+  estimateMoves(moveGen, MoveScores[height], moveGen.movesCount, isValidTT ? ttEntry?.move || null : null, height, board.sideToMove);
   let ttType = 2 /* UPPERBOUND */;
   let ttMove = null;
   let i = 0;
@@ -1991,9 +2038,11 @@ var search = (board, depth, alpha = -MATE_SCORE * 2, beta = MATE_SCORE * 2, heig
       }
       ttType = 0 /* EXACT */;
       ttMove = move;
+      updateHistory(board.sideToMove, moveFrom(move), moveTo(move), depth);
     }
     if (alpha >= beta) {
       ttType = 1 /* LOWERBOUND */;
+      saveKiller(height, move);
       break;
     }
   }
@@ -2007,6 +2056,7 @@ var searchRoot = function(board, { onIteration, time }) {
   let bestMoveRes = 0;
   timer.startSearch(time);
   statistics.reset();
+  clearKillers();
   for (let depth = 1; depth <= 128; depth++) {
     const res = search(board, depth);
     if (!timer.isTimeUp()) {

@@ -1,5 +1,5 @@
 import {Board, Side} from "@/board";
-import {createMoveGenerator, makeMove, unmakeMove} from "@/moves";
+import {createMoveGenerator, makeMove, moveFrom, moveTo, unmakeMove} from "@/moves";
 import {statistics} from "@/search/model/Statistics";
 import {MATE_SCORE, checkTerminal, evaluateBoard, sidedEval} from "@/evaluation";
 import {bestMove} from "@/search/model/BestMove";
@@ -8,8 +8,11 @@ import {TTFlag} from "@/transposition";
 import {timer} from "@/search/model/Timer";
 import {estimateMoves, MoveScores, pickMove} from "@/search/movesOrdering";
 import {readScore} from "@/transposition/utils";
+import {MAX_DEPTH} from "./constants";
+import {killers, saveKiller} from "./model/Killers";
+import {updateHistory} from "@/search/model/History";
 
-const MAX_DEPTH = 256;
+
 const moveGens = Array.from({length: MAX_DEPTH}, () => createMoveGenerator());
 
 export const tt = createTranspositionTable()
@@ -65,7 +68,7 @@ export const search = (
 
   const moveGen = moveGenAtDepth(height);
   moveGen.movegen(board);
-  estimateMoves(moveGen, MoveScores[height], moveGen.movesCount, isValidTT ? (ttEntry?.move || null) : null);
+  estimateMoves(moveGen, MoveScores[height], moveGen.movesCount, isValidTT ? (ttEntry?.move || null) : null, height, board.sideToMove);
 
 
   let ttType = TTFlag.UPPERBOUND;
@@ -125,10 +128,12 @@ export const search = (
       }
       ttType = TTFlag.EXACT;
       ttMove = move;
+      updateHistory(board.sideToMove, moveFrom(move), moveTo(move), depth);
     }
 
     if (alpha >= beta) {
       ttType = TTFlag.LOWERBOUND;
+      saveKiller(height, move);
       break; // Beta cutoff
     }
   }
