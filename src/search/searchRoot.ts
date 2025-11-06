@@ -13,6 +13,7 @@ interface Params {
 export const searchRoot = function (board: Board, {onIteration, time}: Params) {
   let bestScore = -Infinity;
   let bestMoveRes = 0;
+  bestMove.setBestMove(0)
   timer.startSearch(time)
   statistics.reset()
   clearKillers()
