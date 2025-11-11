@@ -1,4 +1,4 @@
-import {createMoveGenerator, initMovesModule, makeMove} from "@/moves";
+import {createMoveGenerator, initMovesModule, makeMove, unmakeMove} from "@/moves";
 import {Board, createBoard, getSquareFromAlgebraic, Piece, setFEN, setInitialPosition, setPiece, Side} from "@/board";
 import {printBoard} from "@/board/print";
 import {search, tt} from "@/search/search";
@@ -176,6 +176,43 @@ const speedTest = () => {
   console.log(`Nodes per second: ${knps} knps`);
 }
 
+const moveGens = Array.from({length: 10}, () => createMoveGenerator());
+let nodesCounts = 0
+const goPerft = (board: Board, depth: number) => {
+    const moveGen = moveGens[depth];
+
+    if (depth === 0) {
+        nodesCounts++;
+        return;
+    }
+
+    moveGen.movegen(board);
+
+    for (let i = 0; i < moveGen.movesCount; i++) {
+        const move = moveGen.moves[i];
+        const undo = makeMove(board, move);
+        goPerft(board, depth - 1);
+        unmakeMove(board, undo);
+    }
+}
+
+const perftTest = () => {
+  const board = createBoard()
+  setInitialPosition(board);
+
+  for (let depth = 1; depth <= 5; depth++) {
+      nodesCounts = 0;
+      const start = Date.now();
+      goPerft(board, depth);
+      const end = Date.now();
+      const duration = end - start;
+      const speed = (nodesCounts / duration).toFixed(2);
+
+      console.log(`Perft depth ${depth}: ${nodesCounts} nodes in ${duration} ms, speed: ${speed} knps`);
+  }
+}
+
 //speedTest()
-runSelfPlayTest()
+//runSelfPlayTest()
+perftTest();
 

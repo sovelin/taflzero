@@ -1,0 +1,155 @@
+use crate::board::Board;
+use crate::board::types::Side;
+use crate::evaluation::{evaluate, sided_evaluation, MATE_SCORE};
+use crate::evaluation::terminal::check_terminal;
+use crate::moves::mv::Move;
+use super::search_data::SearchData;
+use super::transposition::{TTFlag, TranspositionTable};
+
+pub fn search(
+    board: &mut Board,
+    depth: u32,
+    mut alpha: i32,
+    mut beta: i32,
+    height: u32,
+    search_data: &mut SearchData,
+    tt: &mut TranspositionTable,
+) -> i32 {
+    if let Some(result) = check_terminal(board) {
+        let score = if result == Side::DEFENDERS {
+            MATE_SCORE - height as i32
+        } else {
+            -MATE_SCORE + height as i32
+        };
+
+        return sided_evaluation(score, board.side_to_move);
+    }
+
+    if depth == 0 {
+        return evaluate(board);
+    }
+
+    let is_pv_node = alpha < beta - 1;
+    let tt_entry = tt.probe(board.zobrist);
+
+    if !is_pv_node && tt_entry.is_valid(board.zobrist)  && tt_entry.depth() as u32 >= depth {
+        let tt_score = tt_entry.score(height);
+
+        match tt_entry.flag() {
+            TTFlag::Exact => {
+                return tt_score;
+            }
+            TTFlag::LowerBound => {
+                alpha = alpha.max(tt_score);
+            }
+            TTFlag::UpperBound => {
+                beta = beta.min(tt_score);
+            }
+        }
+
+        if alpha >= beta {
+            return tt_score;
+        }
+    }
+
+
+    let mut tt_type = TTFlag::UpperBound;
+    let mut tt_move = Move::default();
+
+
+    if search_data.time_exceeded_quick() {
+        return 0;
+    }
+
+    search_data.move_gens[height as usize].generate_moves(board);
+
+    search_data.move_gens[height as usize].order_moves(
+        board,
+        tt_move,
+        &search_data.killers,
+        &search_data.history,
+        height as usize,
+    );
+
+    let mut moves_count = 0;
+
+    while let Some(mv) = search_data.move_gens[height as usize].pick_move() {
+        moves_count += 1;
+
+
+        search_data.nodes_searched += 1;
+
+        board.make_move(mv, &mut search_data.undos[height as usize]).unwrap();
+
+        let mut score: i32;
+
+        if is_pv_node && moves_count == 1 {
+            score = -search(
+                board,
+                depth - 1,
+                -beta,
+                -alpha,
+                height + 1,
+                search_data,
+                tt,
+            );
+        } else {
+            score = -search(
+                board,
+                depth - 1,
+                -alpha - 1,
+                -alpha,
+                height + 1,
+                search_data,
+                tt,
+            );
+
+            if score > alpha && score < beta {
+                score = -search(
+                    board,
+                    depth - 1,
+                    -beta,
+                    -alpha,
+                    height + 1,
+                    search_data,
+                    tt,
+                );
+            }
+        }
+
+        board.unmake_move(&mut search_data.undos[height as usize]).unwrap();
+
+        if  search_data.time_exceeded_quick() {
+            return 0;
+        }
+
+        if score > alpha {
+            alpha = score;
+
+            if height == 0 {
+                search_data.best_move = Some(mv);
+            }
+
+            tt_type = TTFlag::Exact;
+            tt_move = mv;
+            search_data.history.update(board.side_to_move, mv, depth as i32);
+
+            if score >= beta {
+                tt_type = TTFlag::LowerBound;
+                search_data.killers.save(height as usize, mv);
+                break;
+            }
+        }
+    }
+
+    tt.store(
+        board.zobrist,
+        depth as u8,
+        alpha,
+        tt_type,
+        tt_move,
+        height,
+    );
+
+    alpha
+}
