@@ -20,9 +20,9 @@ pub struct SearchData {
     pub time_limit: u64,
     cached_exceed: bool,
     time_exceeded_checks: u32,
-    pub temperatures: [[i32; MAX_MOVES]; MAX_PLY],
+    pub temperatures: Vec<Vec<i32>>,
     pub temperature: usize,
-    pub random_generator: rand::rngs::StdRng,
+    pub random_generator: StdRng,
 }
 
 impl SearchData {
@@ -33,6 +33,11 @@ impl SearchData {
         for _ in 0..MAX_PLY {
             move_gens.push(MoveGen::new());
             undos.push(UndoMove::new());
+        }
+
+        let mut temperatures = Vec::with_capacity(MAX_PLY);
+        for _ in 0..MAX_PLY {
+            temperatures.push(vec![0; MAX_MOVES]);
         }
 
         Self {
@@ -46,9 +51,9 @@ impl SearchData {
             killers: Killer::new(),
             cached_exceed: false,
             time_exceeded_checks: 0,
-            temperatures: [[0; MAX_MOVES]; MAX_PLY],
-            temperature: 20,
-            random_generator: StdRng::seed_from_u64(123456)
+            temperatures,
+            temperature: 0,
+            random_generator: StdRng::seed_from_u64(123456),
         }
     }
 

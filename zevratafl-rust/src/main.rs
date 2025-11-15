@@ -6,6 +6,7 @@ use zevratafl_rust::moves::undo::UndoMove;
 use zevratafl_rust::search::search_root::SearchIterationResponse;
 use zevratafl_rust::dataset::play_random_games;
 use zevratafl_rust::nnue::{load_fc1_from_raw, load_fc1_single_line, load_fc2_from_raw, load_fc2_single_line};
+use zevratafl_rust::WasmClient;
 
 struct SearchData {
     move_gens: Vec<MoveGen>,

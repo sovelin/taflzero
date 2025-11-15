@@ -18,6 +18,7 @@ pub use board::*;
 pub use moves::*;
 pub use search::*;
 pub use evaluation::*;
+pub use uci::*;
 
 // экспортируем тестовую функцию (для проверки)
 #[wasm_bindgen]

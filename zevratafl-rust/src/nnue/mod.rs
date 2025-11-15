@@ -1,3 +1,4 @@
+use std::num::FpCategory;
 use crate::constants::SQS;
 use crate::types::{Piece, Square};
 
@@ -173,7 +174,7 @@ pub fn load_fc2(text: &str) -> Weights2 {
         .collect();
 
 
-    assert!(floats.len() == HIDDEN);
+    assert_eq!(floats.len(), HIDDEN);
 
     let mut w2 = [0i32; HIDDEN];
     for h in 0..HIDDEN {
@@ -205,5 +206,6 @@ pub fn load_fc1_from_raw() -> Weights1 {
 }
 
 pub fn load_fc2_from_raw() -> Weights2 {
+    println!("{}", FC2_RAW);
     load_fc2(FC2_RAW)
 }
