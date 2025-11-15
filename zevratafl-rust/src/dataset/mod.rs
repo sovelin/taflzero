@@ -164,7 +164,7 @@ fn set_random_opening(engine: &mut Engine, rng: &mut StdRng, ply_count: usize) {
         board.make_move_simple(random_move).unwrap();
     }
 
-    engine.set_position_and_moves(INITIAL_FEN, moves).unwrap();
+    engine.set_position_and_moves(INITIAL_FEN, moves);
 }
 
 fn play_random_game(rnd: &mut StdRng, game: &mut LearningGame, w1: &Weights1, w2: &Weights2) -> GameResult {
@@ -225,7 +225,7 @@ pub fn play_random_games(num_games: usize, file_name: String) {
         .as_secs();
 
     let w1 = load_fc1_single_line("nnue-gen2/fc1.62.weights.csv");
-    let w2 = load_fc2_single_line("nnue-gen2/fc1.62.weights.csv");
+    let w2 = load_fc2_single_line("nnue-gen2/fc2.62.weights.csv");
 
     let mut rng = StdRng::seed_from_u64(time_seed);
 

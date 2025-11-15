@@ -39,18 +39,13 @@ impl Engine {
         self.best_move
     }
 
-    pub fn set_position_and_moves(&mut self, fen: &str, moves: Vec<Move>) -> Result<(), JsValue> {
+    pub fn set_position_and_moves(&mut self, fen: &str, moves: Vec<Move>) {
         self.board.clear();
-
-        if let Err(_) =self.board.set_fen(fen) {
-            return Err(JsValue::from_str("Invalid FEN string"));
-        }
+        self.board.set_fen(fen).unwrap();
 
         for mv in moves {
-            self.board.make_move(mv, &mut self.search_data.undos[0])?;
+            self.board.make_move_simple(mv).unwrap();
         }
-
-        Ok(())
     }
 
     pub fn make_search(&mut self, time: u64, on_iteration: Option<&dyn Fn(SearchIterationResponse)>) -> SearchResponse {

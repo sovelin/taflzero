@@ -44,6 +44,14 @@ fn perft_test(board: &mut Board, depth: usize, search_data: &mut SearchData) -> 
 }
 
 fn main() {
+    let mut ss = WasmClient::new("ss".to_string(), 32);
+
+    ss.run("uci");
+    ss.run("position fen 3aaaaa3/5a5/11/a4d4a/a3ddd3a/aa1ddkdd1aa/a3ddd3a/a4d4a/11/5a5/3aaaaa3 a moves g1g2");
+        ss.print_board();
+    ss.run("go movetime 1000");
+    return;;
+
     // let file_name = std::env::args().nth(1);
     //
     // if let Some(f) = file_name {
@@ -57,10 +65,14 @@ fn main() {
 
     let w1 = load_fc1_from_raw();
     let w2 = load_fc2_from_raw();
-
-    let mut engine = Engine::new(1024, &w1, &w2);
-
-    engine.set_position_and_moves(INITIAL_FEN, vec![]).unwrap();
+    //
+    let mut engine = Engine::new(32, &w1, &w2);
+    engine.set_position_and_moves(INITIAL_FEN, vec![]);
+    //
+    // engine.set_position_and_moves("akaaaaaaaaa/k9d/dddddddd/11/11/11/11/11/11/11/aaaaaaaaaaa a", vec![]);
+    // engine.board().nnue.debug_float_full();
+    // println!("Eval at start: {}", engine.board().get_sided_eval());
+    // return;
 
     engine.make_search(
         10000000,

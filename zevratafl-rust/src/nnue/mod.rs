@@ -15,20 +15,20 @@ pub static FC2_RAW: &str = include_str!("../../nnue-gen2/fc2.62.weights.csv");
 #[derive(Clone)]
 pub struct NNUE {
     pub inputs: [u8; INPUTS],
-    pub acc: [i32; HIDDEN],
-    pub w1: [[i32; HIDDEN]; INPUTS],
-    pub w2: [i32; HIDDEN],
+    pub acc: [f32; HIDDEN],
+    pub w1: [[f32; HIDDEN]; INPUTS],
+    pub w2: [f32; HIDDEN],
     pub eval: f32,
 }
 
-pub type Weights1 = [[i32; HIDDEN]; INPUTS];
-pub type Weights2 = [i32; HIDDEN];
+pub type Weights1 = [[f32; HIDDEN]; INPUTS];
+pub type Weights2 = [f32; HIDDEN];
 
 impl NNUE {
     pub fn new(w1: Weights1, w2: Weights2) -> Self {
         NNUE {
             inputs: [0; INPUTS],
-            acc: [0; HIDDEN],
+            acc: [0.0; HIDDEN],
             w1,
             w2,
             eval: 0.0,
@@ -38,7 +38,7 @@ impl NNUE {
     #[inline]
     pub fn reset(&mut self) {
         self.inputs = [0; INPUTS];
-        self.acc = [0; HIDDEN];
+        self.acc = [0.0; HIDDEN];
         self.eval = 0.0;
     }
 
@@ -72,58 +72,97 @@ impl NNUE {
         }
     }
 
-    // ===============================
-    // Evaluate (scalar version)
-    // ===============================
+    pub fn debug_float_full(&self) {
+        println!("\n=== ACC (float, до ReLU) ===");
 
-    pub fn evaluate(&self) -> i32 {
-        let mut sum: i64 = 0;
-
-        for h in 0..HIDDEN {
-            let x = self.acc[h].max(0) as i64;
-            let w = self.w2[h] as i64;
-            sum += x * w;
-        }
-
-        let num = sum * SCALE as i64;
-        let den = (QA as i64) * (QB as i64);
-
-        (num / den) as i32
-    }
-
-    pub fn clear(&mut self) {
-        self.inputs = [0; INPUTS];
-        self.acc = [0; HIDDEN];
-        self.eval = 0.0;
-    }
-
-    pub fn print_weights(&self) {
-        for i in 0..INPUTS {
-            if self.inputs[i] == 1 {
-                println!("Input {}:", i);
-            }
-        }
+        // ---------- ACC первого слоя ----------
+        let mut acc = [0.0f32; HIDDEN];
 
         for i in 0..INPUTS {
-            for h in 0..HIDDEN {
-                if self.w1[i][h] != 0 {
-                    println!("W1[{}][{}] = {}", i, h, self.w1[i][h]);
+            if self.inputs[i] != 0 {
+                let w = &self.w1[i]; // [HIDDEN]
+                for h in 0..HIDDEN {
+                    acc[h] += w[h];
                 }
             }
         }
 
         for h in 0..HIDDEN {
-            if self.w2[h] != 0 {
-                println!("W2[{}] = {}", h, self.w2[h]);
+            println!("Acc[{h}] = {}", acc[h]);
+        }
+
+        // ---------- ReLU ----------
+        println!("\n=== ReLU(ACC) ===");
+        let mut relu_acc = [0.0f32; HIDDEN];
+
+        for h in 0..HIDDEN {
+            relu_acc[h] = acc[h].max(0.0);
+            println!("ReLU[{h}] = {}", relu_acc[h]);
+        }
+
+        // ---------- Второй слой ----------
+        println!("\n=== Вклад второго слоя (relu * w2) ===");
+        let mut sum_out: f32 = 0.0;
+
+        for h in 0..HIDDEN {
+            let contrib = relu_acc[h] * self.w2[h];
+            sum_out += contrib;
+            println!(
+                "h={}: relu={}, w2={}, contrib={}, running_sum={}",
+                h,
+                relu_acc[h],
+                self.w2[h],
+                contrib,
+                sum_out
+            );
+        }
+    }
+
+    // ---------- Итог ----------
+
+
+        // ===============================
+    // Evaluate (scalar version)
+    // ===============================
+
+
+    pub fn debug_full_recompute(&self) {
+        let mut acc = [0.0; HIDDEN];
+
+        for i in 0..INPUTS {
+            if self.inputs[i] == 1 {
+                let w = &self.w1[i];
+                for h in 0..HIDDEN {
+                    acc[h] += w[h];
+                }
             }
         }
 
-        // acc print
+        println!("-- ACC FULL RECOMPUTE --");
         for h in 0..HIDDEN {
-            if self.acc[h] != 0 {
-                println!("Acc[{}] = {}", h, self.acc[h]);
-            }
+            println!("AccFull[{h}] = {}", acc[h]);
         }
+    }
+
+    pub fn evaluate(&self) -> i32 {
+        let mut sum: f32 = 0.0;
+
+        for h in 0..HIDDEN {
+            let x = self.acc[h].max(0.0);
+            let w = self.w2[h];
+            sum += x * w;
+        }
+        
+        (sum * SCALE as f32) as i32
+
+        // let den = (QA as i64) * (QB as i64);
+        // (num / den) as i32
+    }
+
+    pub fn clear(&mut self) {
+        self.inputs = [0; INPUTS];
+        self.acc = [0.0; HIDDEN];
+        self.eval = 0.0;
     }
 }
 
@@ -153,13 +192,14 @@ pub fn load_fc1(text: &str) -> Weights1 {
         floats.len()
     );
 
-    let mut w1 = [[0i32; HIDDEN]; INPUTS];
+    let mut w1 = [[0.0; HIDDEN]; INPUTS];
 
     for flat in 0..(INPUTS * HIDDEN) {
         let h = flat / INPUTS;  // hidden index (0..31)
         let i = flat % INPUTS;  // input index  (0..362)
 
-        w1[i][h] = (floats[flat] * QA as f32).round() as i32;
+        w1[i][h] = floats[flat];
+        println!("i:{}; h:{}, w: {}", i, h, floats[flat]);
     }
 
     w1
@@ -176,13 +216,13 @@ pub fn load_fc2(text: &str) -> Weights2 {
 
     assert_eq!(floats.len(), HIDDEN);
 
-    let mut w2 = [0i32; HIDDEN];
+    let mut w2 = [0.0; HIDDEN];
     for h in 0..HIDDEN {
-        w2[h] = (floats[h] * QB as f32).round() as i32;
+        w2[h] = floats[h];
     }
 
     w2
-    }
+}
 
 pub fn load_fc1_single_line(path: &str) -> Weights1 {
     use std::fs;

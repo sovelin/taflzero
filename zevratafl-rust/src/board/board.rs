@@ -41,7 +41,7 @@ impl Board {
             zobrist: 0,
             rep_table: HashMap::new(),
             last_move_to: HOLE,
-            nnue: NNUE::new([[0; HIDDEN]; INPUTS], [0; HIDDEN])
+            nnue: NNUE::new([[0.0; HIDDEN]; INPUTS], [0.0; HIDDEN])
         }
     }
 
@@ -190,10 +190,6 @@ impl Board {
             Side::DEFENDERS => self.nnue.evaluate(),
             Side::ATTACKERS => -self.nnue.evaluate(),
         }
-    }
-
-    pub fn print_nnue_weights(&self) {
-        self.nnue.print_weights();
     }
 }
 

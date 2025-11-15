@@ -36,10 +36,17 @@ pub fn search_root(
     search_data.timer.start();
     search_data.best_move = None;
 
+    let mut local_best_move: Option<Move> = None;
+
     for i in 1..MAX_PLY {
         let res = search(board, i as u32, -MATE_SCORE, MATE_SCORE, 0, search_data, tt);
 
+        if search_data.time_exceeded() {
+            break;
+        }
+
         let time_elapsed = search_data.timer.elapsed_ms();
+        local_best_move = search_data.best_move;
 
         if let Some(callback) = on_iteration {
             let best_move = search_data.best_move.unwrap_or_default();
@@ -59,14 +66,10 @@ pub fn search_root(
                 speed,
             });
         }
-
-        if search_data.time_exceeded() {
-            break;
-        }
     }
 
     SearchResponse {
-        best_move: search_data.best_move.unwrap_or_default(),
+        best_move: local_best_move.unwrap_or_default(),
         score: best_score,
     }
 }

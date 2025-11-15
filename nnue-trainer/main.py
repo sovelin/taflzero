@@ -20,12 +20,13 @@ def get_positions_distribution(count: int):
 def evaluate_position_simple(fen):
     nnue = HnefataflNetwork(32)
     manager = HnefataflNetworkDataManager()
-    nnue.load_weights(37, "trains/hnefatafl-363x32-15M")
+    nnue.load_weights(62, "trains/hnefatafl-363x32-15M-gen2")
     nnue.eval()
+    nnue.print_weights()
     nnue_input = manager.calculate_nnue_input_layer(fen)
     nnue_input = tensor(nnue_input, dtype=float32)
 
-    nnue.print_acc_like_rust(nnue_input.unsqueeze(0))
+    nnue.manual_eval_float(nnue_input.unsqueeze(0))
 
     print(nnue(nnue_input).item() * SCALE)
 
@@ -196,12 +197,12 @@ def run_hnefatafl_train_nnue(
     )
 
 if __name__ == '__main__':
-    # evaluate_position_simple("4aaa4/3a1a5/7a3/a4d4a/a2dddd3a/a2d1kdd1aa/aa2ddd3a/a4d4a/11/5a5/3aaaaa3 d")
+    evaluate_position_simple("akaaaaaaaaa/k9d/dddddddd/11/11/11/11/11/11/11/aaaaaaaaaaa a")
     
-    run_hnefatafl_train_nnue(
-        32,
-        "train_data2.csv",
-        "validate_data2.csv",
-        f"{TRAINS_DIR}/hnefatafl-363x32-15M-gen2",
-        8361000
-    )
+    # run_hnefatafl_train_nnue(
+    #     32,
+    #     "train_data2.csv",
+    #     "validate_data2.csv",
+    #     f"{TRAINS_DIR}/hnefatafl-363x32-15M-gen2",
+    #     8361000
+    # )

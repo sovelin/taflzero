@@ -35,11 +35,18 @@ impl WasmClient {
         Self { event_name, engine: Engine::new(tt_size, &w1, &w2) }
     }
 
+    pub fn print_board(&self) {
+        self.engine.print_board();
+    }
+
     fn set_moves(&mut self, fen: &str, moves_str: &[&str]) {
         let moves: Vec<_> = moves_str
             .iter()
             .map(|mv_str| create_move_from_algebraic(mv_str))
             .collect();
+
+        // print moves
+        println!("Setting moves: {:?}", moves_str);
 
         let mut legal_moves = Vec::new();
 
@@ -53,10 +60,7 @@ impl WasmClient {
             }
         }
 
-        if let Err(_) = self.engine.set_position_and_moves(fen, legal_moves) {
-            self.broadcast("invalid fen string");
-            return;
-        }
+        self.engine.set_position_and_moves(fen, legal_moves)
     }
 
     fn handle_position(&mut self, args: &[&str]) {
@@ -73,14 +77,15 @@ impl WasmClient {
                 }
             }
             "fen" => {
-                let fen = args[1];
+                let fen = args[1].to_owned() + " " + args[2];
+                println!("Setting position to FEN: {}", fen);
 
-                if args[2] != "moves" {
+                if args[3] != "moves" {
                     self.broadcast("only 'position fen <fen> moves' without moves is supported");
                     return;
                 }
 
-                self.set_moves(fen, &args[3..]);
+                self.set_moves(&fen, &args[4..]);
             },
             _ => {
                 self.broadcast("unknown position command");
