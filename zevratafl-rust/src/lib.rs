@@ -10,6 +10,8 @@ pub mod utils;
 mod tests;
 mod timer;
 mod uci;
+pub mod nnue;
+pub mod dataset;
 
 pub use engine::*;
 pub use board::*;

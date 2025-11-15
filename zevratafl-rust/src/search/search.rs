@@ -1,7 +1,9 @@
+use rand::Rng;
 use crate::board::Board;
 use crate::board::types::Side;
-use crate::evaluation::{evaluate, sided_evaluation, MATE_SCORE};
+use crate::evaluation::{sided_evaluation, MATE_SCORE};
 use crate::evaluation::terminal::check_terminal;
+use crate::is_mate_score;
 use crate::moves::mv::Move;
 use super::search_data::SearchData;
 use super::transposition::{TTFlag, TranspositionTable};
@@ -26,13 +28,13 @@ pub fn search(
     }
 
     if depth == 0 {
-        return evaluate(board);
+        return board.get_sided_eval();
     }
 
     let is_pv_node = alpha < beta - 1;
     let tt_entry = tt.probe(board.zobrist);
 
-    if !is_pv_node && tt_entry.is_valid(board.zobrist)  && tt_entry.depth() as u32 >= depth {
+    if !is_pv_node && tt_entry.is_valid(board.zobrist) && tt_entry.depth() as u32 >= depth {
         let tt_score = tt_entry.score(height);
 
         match tt_entry.flag() {
@@ -73,8 +75,20 @@ pub fn search(
 
     let mut moves_count = 0;
 
+    for i in 0..search_data.move_gens[height as usize].count() {
+        if search_data.temperatures[height as usize][i] == 0 &&
+           moves_count >= search_data.move_gens[height as usize].count() / 2 {
+            search_data.temperatures[height as usize][i] = search_data.random_generator.gen_range(0..search_data.temperature as i32);
+        } else {
+            search_data.temperatures[height as usize][i] = 0;
+        }
+
+    }
+
     while let Some(mv) = search_data.move_gens[height as usize].pick_move() {
+        let bonus = if is_mate_score(alpha) {0} else { search_data.temperatures[height as usize][moves_count as usize] };
         moves_count += 1;
+
 
 
         search_data.nodes_searched += 1;
@@ -87,8 +101,8 @@ pub fn search(
             score = -search(
                 board,
                 depth - 1,
-                -beta,
-                -alpha,
+                -beta + bonus,
+                -alpha + bonus,
                 height + 1,
                 search_data,
                 tt,
@@ -97,8 +111,8 @@ pub fn search(
             score = -search(
                 board,
                 depth - 1,
-                -alpha - 1,
-                -alpha,
+                -alpha - 1 + bonus,
+                -alpha + bonus,
                 height + 1,
                 search_data,
                 tt,
@@ -108,8 +122,8 @@ pub fn search(
                 score = -search(
                     board,
                     depth - 1,
-                    -beta,
-                    -alpha,
+                    -beta + bonus,
+                    -alpha + bonus,
                     height + 1,
                     search_data,
                     tt,

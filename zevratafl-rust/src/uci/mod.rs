@@ -4,6 +4,7 @@ use web_sys::{window, CustomEvent, CustomEventInit};
 use crate::constants::INITIAL_FEN;
 use crate::Engine;
 use crate::mv::{create_move_from_algebraic, Move};
+use crate::nnue::{load_fc1_from_raw, load_fc2_from_raw};
 
 #[wasm_bindgen]
 pub struct WasmClient {
@@ -28,7 +29,10 @@ fn broadcast(event_name: &str, msg: &str) {
 impl WasmClient {
     #[wasm_bindgen(constructor)]
     pub fn new(event_name: String, tt_size: usize) -> Self {
-        Self { event_name, engine: Engine::new(tt_size) }
+        let w1 = load_fc1_from_raw();
+        let w2 = load_fc2_from_raw();
+
+        Self { event_name, engine: Engine::new(tt_size, &w1, &w2) }
     }
 
     fn set_moves(&mut self, fen: &str, moves_str: &[&str]) {

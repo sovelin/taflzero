@@ -1,3 +1,6 @@
+use std::cell::RefCell;
+use rand::prelude::StdRng;
+use rand::{Rng, SeedableRng};
 use crate::board::{Board, PRECOMPUTED};
 use crate::board::constants::SQS;
 use crate::board::types::{Piece, Square};
@@ -135,7 +138,16 @@ fn evaluate_defenders_distance_to_king(board: &Board, king_sq: Square) -> i32 {
 	result
 }
 
+thread_local! {
+    static RNG: RefCell<StdRng> = RefCell::new(StdRng::seed_from_u64(12345));
+}
+
+pub fn rnd_i32() -> i32 {
+	RNG.with(|r| r.borrow_mut().gen_range(-50..50))
+}
+
 pub fn evaluate(board: &Board) -> i32 {
+	return rnd_i32();
 	let king_sq = match board.king_sq {
 		sq if sq >= 0 => sq as Square,
 		_ => return 0,

@@ -1,3 +1,6 @@
+use rand::rngs::StdRng;
+use rand::SeedableRng;
+use crate::movegen::MAX_MOVES;
 use crate::moves::movegen::MoveGen;
 use crate::moves::mv::Move;
 use crate::moves::undo::UndoMove;
@@ -17,6 +20,9 @@ pub struct SearchData {
     pub time_limit: u64,
     cached_exceed: bool,
     time_exceeded_checks: u32,
+    pub temperatures: [[i32; MAX_MOVES]; MAX_PLY],
+    pub temperature: usize,
+    pub random_generator: rand::rngs::StdRng,
 }
 
 impl SearchData {
@@ -40,6 +46,9 @@ impl SearchData {
             killers: Killer::new(),
             cached_exceed: false,
             time_exceeded_checks: 0,
+            temperatures: [[0; MAX_MOVES]; MAX_PLY],
+            temperature: 20,
+            random_generator: StdRng::seed_from_u64(123456)
         }
     }
 
@@ -61,5 +70,7 @@ impl SearchData {
     pub fn start_timer(&mut self, time_limit_ms: u64) {
         self.timer.start();
         self.time_limit = time_limit_ms;
+        self.time_exceeded_checks = 0;
+        self.cached_exceed = false;
     }
 }

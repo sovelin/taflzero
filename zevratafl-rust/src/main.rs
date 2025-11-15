@@ -1,10 +1,11 @@
-use std::sync::LazyLock;
 use zevratafl_rust::board::board::Board;
 use zevratafl_rust::board::constants::INITIAL_FEN;
 use zevratafl_rust::engine::Engine;
 use zevratafl_rust::moves::movegen::MoveGen;
 use zevratafl_rust::moves::undo::UndoMove;
 use zevratafl_rust::search::search_root::SearchIterationResponse;
+use zevratafl_rust::dataset::play_random_games;
+use zevratafl_rust::nnue::{load_fc1_from_raw, load_fc1_single_line, load_fc2_from_raw, load_fc2_single_line};
 
 struct SearchData {
     move_gens: Vec<MoveGen>,
@@ -41,16 +42,27 @@ fn perft_test(board: &mut Board, depth: usize, search_data: &mut SearchData) -> 
     nodes
 }
 
-
 fn main() {
-    let mut engine = Engine::new(1024);
+    // let file_name = std::env::args().nth(1);
+    //
+    // if let Some(f) = file_name {
+    //     play_random_games(10000000, f);
+    // }
+    //
+    // return;
+
+    // let w1 = load_fc1_single_line("nnue-gen2/fc1.62.weights.csv");
+    // let w2 = load_fc2_single_line("nnue-gen2/fc2.62.weights.csv");
+
+    let w1 = load_fc1_from_raw();
+    let w2 = load_fc2_from_raw();
+
+    let mut engine = Engine::new(1024, &w1, &w2);
 
     engine.set_position_and_moves(INITIAL_FEN, vec![]).unwrap();
-    //engine.set_position_and_moves("4aaaa3/4da5/4k6/3a1d4a/1aa2dd3a/a1ad2dd1aa/a2dddd3a/a4d4a/11/5a5/3aaaaa3 d", vec![]).unwrap();
-    engine.print_board();
 
     engine.make_search(
-        100000,
+        10000000,
         Some(&|iteration: SearchIterationResponse| {
             println!(
                 "Depth: {}, Best Move: {:?}, Score: {}, Nodes: {}, Time: {}ms, Speed: {} knps",

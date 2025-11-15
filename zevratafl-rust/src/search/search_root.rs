@@ -34,13 +34,10 @@ pub fn search_root(
     let best_score = 0;
 
     search_data.timer.start();
+    search_data.best_move = None;
 
     for i in 1..MAX_PLY {
         let res = search(board, i as u32, -MATE_SCORE, MATE_SCORE, 0, search_data, tt);
-
-        if search_data.time_exceeded() {
-            break;
-        }
 
         let time_elapsed = search_data.timer.elapsed_ms();
 
@@ -61,6 +58,10 @@ pub fn search_root(
                 time: time_elapsed,
                 speed,
             });
+        }
+
+        if search_data.time_exceeded() {
+            break;
         }
     }
 

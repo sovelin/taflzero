@@ -2,9 +2,12 @@ use wasm_bindgen::prelude::*;
 
 use crate::board::Board;
 use crate::mv::Move;
+use crate::nnue::{Weights1, Weights2};
 use crate::search::search_data::SearchData;
 use crate::search::search_root::{search_root, SearchIterationResponse, SearchResponse};
 use crate::search::transposition::TranspositionTable;
+use crate::terminal::check_terminal;
+use crate::types::Side;
 
 #[wasm_bindgen]
 pub struct Engine {
@@ -15,7 +18,15 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub fn new(tt_size_mb: usize) -> Self {
+    pub fn new(tt_size_mb: usize, w1: &Weights1, w2: &Weights2) -> Self {
+        Self {
+            tt: TranspositionTable::new(tt_size_mb),
+            search_data: SearchData::new(),
+            board: Board::new_with_nnue(w1.clone(), w2.clone()),
+            best_move: None,
+        }
+    }
+    pub fn new_no_nnue(tt_size_mb: usize) -> Self {
         Self {
             tt: TranspositionTable::new(tt_size_mb),
             search_data: SearchData::new(),
@@ -49,11 +60,23 @@ impl Engine {
         res
     }
 
+    pub fn make_move(&mut self, mv: Move) -> Result<(), &'static str> {
+        self.board.make_move_simple(mv)
+    }
+
     pub fn print_board(&self) {
         println!("{:?}", self.board);
     }
 
     pub fn board(&self) -> &Board {
         &self.board
+    }
+
+    pub fn check_terminal(&mut self) -> Option<Side> {
+        check_terminal(&mut self.board)
+    }
+
+    pub fn get_board_mutable(&mut self) -> &mut Board {
+        &mut self.board
     }
 }

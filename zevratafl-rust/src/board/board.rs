@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
+use wasm_bindgen::prelude::wasm_bindgen;
 use crate::board::fen::FenError;
 use crate::board::PRECOMPUTED;
+use crate::nnue::{calculate_nnue_index, Weights1, Weights2, HIDDEN, INPUTS, NNUE};
 use super::zobrist::{ZOBRIST_DATA};
 use super::types::{OptionalSquare, Piece, Side, Square, ZobristHash};
 use super::constants::{SQS, ATTACKERS_MAX, DEFENDERS_MAX, BOARD_SIZE, HOLE, INITIAL_FEN};
@@ -20,6 +22,7 @@ pub struct Board {
     pub zobrist: ZobristHash,
     pub rep_table: HashMap<ZobristHash, u8>,
     pub last_move_to: OptionalSquare,
+    pub nnue: NNUE,
 }
 
 impl Board {
@@ -37,8 +40,19 @@ impl Board {
             side_to_move: Side::ATTACKERS,
             zobrist: 0,
             rep_table: HashMap::new(),
-            last_move_to: HOLE
+            last_move_to: HOLE,
+            nnue: NNUE::new([[0; HIDDEN]; INPUTS], [0; HIDDEN])
         }
+    }
+
+    pub fn new_with_nnue(w1: Weights1, w2: Weights2) -> Self {
+        let mut board = Self::new();
+        board.set_nnue(w1, w2);
+        board
+    }
+
+    pub fn set_nnue(&mut self, w1: Weights1, w2: Weights2) {
+        self.nnue = NNUE::new(w1, w2);
     }
 
     pub fn clear(&mut self) {
@@ -55,6 +69,7 @@ impl Board {
         self.zobrist = 0;
         self.rep_table.clear();
         self.last_move_to = HOLE;
+        self.nnue.clear();
     }
 
     fn set_attacker(&mut self, sq: Square) -> Result<(), &'static str> {
@@ -119,6 +134,8 @@ impl Board {
         self.row_occ[row] |= 1 << col;
         self.col_occ[col] |= 1 << row;
 
+        self.nnue.set_input(calculate_nnue_index(piece, sq));
+
         if piece == Piece::ATTACKER {
             self.set_attacker(sq)
         } else if piece == Piece::DEFENDER {
@@ -132,6 +149,9 @@ impl Board {
     }
     pub fn clear_piece(&mut self, sq: Square) {
         let piece = self.board[sq];
+        self.nnue.reset_input(calculate_nnue_index(piece, sq));
+
+
         self.zobrist ^= ZOBRIST_DATA.table[piece as usize][sq];
         self.board[sq] = Piece::EMPTY;
 
@@ -164,8 +184,18 @@ impl Board {
             self.flip_side();
         }
     }
-}
 
+    pub fn get_sided_eval(&self) -> i32 {
+        match self.side_to_move {
+            Side::DEFENDERS => self.nnue.evaluate(),
+            Side::ATTACKERS => -self.nnue.evaluate(),
+        }
+    }
+
+    pub fn print_nnue_weights(&self) {
+        self.nnue.print_weights();
+    }
+}
 
 impl Debug for Board {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
