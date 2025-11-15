@@ -19,11 +19,12 @@ impl Default for Move {
 impl Debug for Move {
     #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+
         let from_sq = self.from();
         let to_sq = self.to();
         let alg_from = get_sq_algebraic(from_sq);
         let alg_to = get_sq_algebraic(to_sq);
-        write!(f, "Move({} -> {})", alg_from, alg_to)
+        write!(f, "{}{}", alg_from, alg_to)
     }
 }
 
