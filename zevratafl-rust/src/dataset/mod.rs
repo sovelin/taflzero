@@ -4,7 +4,7 @@ use rand::rngs::StdRng;
 use crate::{Board, Engine};
 use crate::constants::INITIAL_FEN;
 use crate::movegen::MoveGen;
-use crate::nnue::{load_fc1_single_line, load_fc2_single_line, Weights1, Weights2};
+use crate::nnue::{load_fc1_from_raw, load_fc1_single_line, load_fc2_from_raw, load_fc2_single_line, Weights1, Weights2};
 use crate::types::Side;
 
 struct GameResult {
@@ -144,6 +144,100 @@ impl Batcher {
     }
 }
 
+static ATTACKER_OVERSAMPLE_FACTOR: usize = 5;
+
+
+pub struct SaveResult {
+    total_positions_written: usize,
+    total_attacker_positions_written: usize,
+    total_defender_positions_written: usize,
+}
+
+impl SaveResult {
+    pub fn new() -> Self {
+        Self {
+            total_positions_written: 0,
+            total_attacker_positions_written: 0,
+            total_defender_positions_written: 0,
+        }
+    }
+
+    pub fn append(&mut self, other: &SaveResult) {
+        self.total_positions_written += other.total_positions_written;
+        self.total_attacker_positions_written += other.total_attacker_positions_written;
+        self.total_defender_positions_written += other.total_defender_positions_written;
+    }
+}
+
+impl std::fmt::Display for SaveResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Total positions written: {}, Attacker positions written: {}, Defender positions written: {}, D/A ratio: {:.2}",
+            self.total_positions_written,
+            self.total_attacker_positions_written,
+            self.total_defender_positions_written,
+            if self.total_defender_positions_written == 0 {
+                self.total_attacker_positions_written as f64
+            } else {
+                self.total_attacker_positions_written as f64 / self.total_defender_positions_written as f64
+            }
+        )
+    }
+}
+
+impl std::fmt::Debug for SaveResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
+pub fn save_to_file(lean: &LearningGame, file_path: &str, attackers_oversample: usize) -> SaveResult {
+    use std::io::Write;
+    let mut total_pos_written = 0;
+    let mut total_attacker_pos_written = 0;
+    let mut total_defender_pos_written = 0;
+
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(file_path)
+        .unwrap();
+
+    for fen in &lean.fens {
+        let win_score = if lean.winner == fen.stm { 1 } else { 0 };
+        let line = format!("{},{}\n", fen.fen, win_score);
+
+        // min between 5 and attackers_oversample
+        let attackers_oversample = if attackers_oversample < 5 {
+            5
+        } else {
+            attackers_oversample as usize
+        };
+
+        if lean.winner == Side::ATTACKERS {
+            total_attacker_pos_written += 1;
+            for _ in 0..attackers_oversample {
+                file.write_all(line.as_bytes()).unwrap();
+                total_pos_written += 1;
+            }
+            continue;
+        } else {
+            file.write_all(line.as_bytes()).unwrap();
+            total_pos_written += 1;
+            total_defender_pos_written += 1;
+        }
+    }
+
+    file.flush().unwrap();
+
+    SaveResult {
+        total_positions_written: total_pos_written,
+        total_attacker_positions_written: total_attacker_pos_written,
+        total_defender_positions_written: total_defender_pos_written,
+    }
+}
+
 
 fn set_random_opening(engine: &mut Engine, rng: &mut StdRng, ply_count: usize) {
     let mut mv_generator = MoveGen::new();
@@ -224,8 +318,8 @@ pub fn play_random_games(num_games: usize, file_name: String) {
         .unwrap()
         .as_secs();
 
-    let w1 = load_fc1_single_line("nnue-gen2/fc1.62.weights.csv");
-    let w2 = load_fc2_single_line("nnue-gen2/fc2.62.weights.csv");
+    let w1 = load_fc1_from_raw();
+    let w2 = load_fc2_from_raw();
 
     let mut rng = StdRng::seed_from_u64(time_seed);
 
@@ -234,30 +328,25 @@ pub fn play_random_games(num_games: usize, file_name: String) {
     let mut total_moves = 0;
 
     let batch_size = 10000;
-    let mut game_saved = 0;
-    let mut batcher = Batcher::new(batch_size);
+
+    let mut stat = SaveResult::new();
+
 
 
     for i in 0..num_games {
         let mut learning_game = LearningGame::new();
         let result = play_random_game(&mut rng, &mut learning_game, &w1, &w2);
         learning_game.mark_winner(result.winner);
-        batcher.add_game(learning_game);
 
-        if batcher.is_full() {
-            game_saved += batch_size;
-            println!("Saved {} positions to file...", game_saved);
-            batcher.save_to_file(file_name.as_str());
-            batcher.clear();
-        } else if i % 100 == 0 {
-            batcher.print_fullness();
-        }
+        let over_sample_factor =
+            if stat.total_attacker_positions_written == 0 {1} else {stat.total_defender_positions_written / (stat.total_attacker_positions_written)};
+
+        let new_res = save_to_file(&learning_game, file_name.as_str(), over_sample_factor);
+        stat.append(&new_res);
+        println!("{:?}", stat);
 
         total_moves += result.moves_count;
 
-        match result.winner {
-            Side::DEFENDERS => defender_wins += 1,
-            Side::ATTACKERS => attacker_wins += 1,
-        }
+        println!("Game {} completed. Winner: {:?}, Moves: {}, oversample: {}", i + 1, result.winner, result.moves_count, over_sample_factor);
     }
 }

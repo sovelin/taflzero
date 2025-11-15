@@ -52,7 +52,7 @@ impl SearchData {
             cached_exceed: false,
             time_exceeded_checks: 0,
             temperatures,
-            temperature: 0,
+            temperature: 20,
             random_generator: StdRng::seed_from_u64(123456),
         }
     }

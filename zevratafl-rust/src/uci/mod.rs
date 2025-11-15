@@ -148,7 +148,7 @@ impl WasmClient {
         let str2 = format!("Full command: {}", cmd);
         self.broadcast(&str2);
 
-        let response = match cmd {
+        match cmd {
             "isready" => {
                 self.broadcast("readyok");
             },

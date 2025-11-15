@@ -59,7 +59,7 @@ pub fn search(
     let mut tt_move = Move::default();
 
 
-    if search_data.time_exceeded_quick() {
+    if search_data.time_exceeded() {
         return 0;
     }
 
@@ -133,7 +133,7 @@ pub fn search(
 
         board.unmake_move(&mut search_data.undos[height as usize]).unwrap();
 
-        if  search_data.time_exceeded_quick() {
+        if  search_data.time_exceeded() {
             return 0;
         }
 

@@ -9,8 +9,8 @@ pub const QA: i32 = 255;     // quant for layer 1
 pub const QB: i32 = 64;      // quant for layer 2
 pub const SCALE: i32 = 400;
 
-pub static FC1_RAW: &str = include_str!("../../nnue-gen2/fc1.62.weights.csv");
-pub static FC2_RAW: &str = include_str!("../../nnue-gen2/fc2.62.weights.csv");
+pub static FC1_RAW: &str = include_str!("../../nnue-gen2/fc1.6.weights.csv");
+pub static FC2_RAW: &str = include_str!("../../nnue-gen2/fc2.6.weights.csv");
 
 #[derive(Clone)]
 pub struct NNUE {
@@ -152,7 +152,7 @@ impl NNUE {
             let w = self.w2[h];
             sum += x * w;
         }
-        
+
         (sum * SCALE as f32) as i32
 
         // let den = (QA as i64) * (QB as i64);

@@ -197,12 +197,12 @@ def run_hnefatafl_train_nnue(
     )
 
 if __name__ == '__main__':
-    evaluate_position_simple("akaaaaaaaaa/k9d/dddddddd/11/11/11/11/11/11/11/aaaaaaaaaaa a")
+    #evaluate_position_simple("akaaaaaaaaa/k9d/dddddddd/11/11/11/11/11/11/11/aaaaaaaaaaa a")
     
-    # run_hnefatafl_train_nnue(
-    #     32,
-    #     "train_data2.csv",
-    #     "validate_data2.csv",
-    #     f"{TRAINS_DIR}/hnefatafl-363x32-15M-gen2",
-    #     8361000
-    # )
+    run_hnefatafl_train_nnue(
+        32,
+        "train_data2.csv",
+        "validate_data2.csv",
+        f"{TRAINS_DIR}/hnefatafl-363x32-15M-gen2",
+        1134052
+    )

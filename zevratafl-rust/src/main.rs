@@ -43,14 +43,30 @@ fn perft_test(board: &mut Board, depth: usize, search_data: &mut SearchData) -> 
     nodes
 }
 
-fn main() {
-    let mut ss = WasmClient::new("ss".to_string(), 32);
 
-    ss.run("uci");
-    ss.run("position fen 3aaaaa3/5a5/11/a4d4a/a3ddd3a/aa1ddkdd1aa/a3ddd3a/a4d4a/11/5a5/3aaaaa3 a moves g1g2");
-        ss.print_board();
-    ss.run("go movetime 1000");
-    return;;
+fn generate_dataset(file_name: Option<String>) {
+    match file_name {
+        Some(f) => {
+            play_random_games(10000000, f);
+        },
+        None => {
+            println!("Please provide a file name as the first argument.");
+            return;
+        }
+    };
+}
+
+fn main() {
+    let file_name = std::env::args().nth(1);
+    generate_dataset(file_name);
+    return;
+    // let mut ss = WasmClient::new("ss".to_string(), 32);
+    //
+    // ss.run("uci");
+    // ss.run("position fen 3aaaaa3/5a5/11/a4d4a/a3ddd3a/aa1ddkdd1aa/a3ddd3a/a4d4a/11/5a5/3aaaaa3 a moves g1g2");
+    //     ss.print_board();
+    // ss.run("go movetime 1000");
+    // return;;
 
     // let file_name = std::env::args().nth(1);
     //
