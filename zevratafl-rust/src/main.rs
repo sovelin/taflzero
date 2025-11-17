@@ -57,9 +57,9 @@ fn generate_dataset(file_name: Option<String>) {
 }
 
 fn main() {
-    // let file_name = std::env::args().nth(1);
-    // generate_dataset(file_name);
-    // return;
+     let file_name = std::env::args().nth(1);
+     generate_dataset(file_name);
+     return;
 
     let w1 = load_fc1_from_raw();
     let w2 = load_fc2_from_raw();

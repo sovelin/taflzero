@@ -197,17 +197,13 @@ def run_hnefatafl_train_nnue(
     )
 
 if __name__ == '__main__':
-    evaluate_position_simple("ddddddddddd/ddddddddddd/ddddddddddd/ddddddddddd/11/11/11/11/11/ddddddddddd/ddddddddddd a")
-    # generate random NN weights
-    nnue = HnefataflNetwork(32)
-    nnue.fill_random_weights()
-    nnue.save_weights(0, "trains")
+    # evaluate_position_simple("ddddddddddd/ddddddddddd/ddddddddddd/ddddddddddd/11/11/11/11/11/ddddddddddd/ddddddddddd a")
 
 
     run_hnefatafl_train_nnue(
         32,
-        "train_data-test.csv",
-        "validate_data-test.csv",
-        f"{TRAINS_DIR}/hnefatafl-364x32-test-fixed",
-        315000
+        "train_data-for-gen-1.csv",
+        "validate_data-for-gen-1.csv",
+        f"{TRAINS_DIR}/hnefatafl-364x32-gen1",
+        8415000
     )

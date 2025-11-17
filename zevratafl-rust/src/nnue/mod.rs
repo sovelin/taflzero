@@ -10,8 +10,8 @@ pub const QB: i32 = 64;      // quant for layer 2
 pub const SCALE: i32 = 400;
 pub const STM_BIT: usize = 363;
 
-pub static FC1_RAW: &str = include_str!("../../nnue-gen1/fc1.60.weights.csv");
-pub static FC2_RAW: &str = include_str!("../../nnue-gen1/fc2.60.weights.csv");
+pub static FC1_RAW: &str = include_str!("../../nnue-gen1/fc1.33.weights.csv");
+pub static FC2_RAW: &str = include_str!("../../nnue-gen1/fc2.33.weights.csv");
 
 #[derive(Clone)]
 pub struct NNUE {
