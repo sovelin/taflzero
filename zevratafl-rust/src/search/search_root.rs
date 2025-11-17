@@ -34,6 +34,7 @@ pub fn search_root(
     let best_score = 0;
 
     search_data.timer.start();
+    search_data.nodes_searched = 0;
     search_data.best_move = None;
 
     let mut local_best_move: Option<Move> = None;

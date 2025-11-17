@@ -1,6 +1,8 @@
 from enum import Enum
 import numpy as np
 
+from src.networks.hnefatafl.constants import STM_BIT, NETWORK_SIZE
+
 BOARD_SIZE = 11
 SQS_COUNT = BOARD_SIZE * BOARD_SIZE
 PIECES_COUNT = 3  # attacker, defender, king
@@ -21,6 +23,11 @@ class FenParseError(Exception):
     pass
 
 
+def get_stm(fen):
+    stm = fen.split(' ')[-1]
+    return 1 if stm == 'd' else 0
+
+
 class FenCalculator:
     def __init__(self):
         pass
@@ -30,7 +37,7 @@ class FenCalculator:
         current_col = 0
         pass_cnt = ''
 
-        res = np.zeros(BOARD_SIZE * BOARD_SIZE * PIECES_COUNT, dtype=np.uint8)
+        res = np.zeros(NETWORK_SIZE, dtype=np.uint8)
 
         for ch in fen:
             if ch == '/':
@@ -71,5 +78,6 @@ class FenCalculator:
 
                 current_col += 1
 
+        res[STM_BIT] = get_stm(fen)
 
         return res

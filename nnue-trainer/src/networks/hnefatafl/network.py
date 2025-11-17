@@ -10,6 +10,8 @@ SCALE = 400
 QA = 255
 QB = 64
 
+
+
 class HnefataflNetwork(NNUE):
     def __init__(self, hidden_size):
         super(HnefataflNetwork, self).__init__()
@@ -22,6 +24,9 @@ class HnefataflNetwork(NNUE):
         self._save_weight(self.fc1, "fc1", epoch, train_directory)
         self._save_weight(self.fc2, "fc2", epoch, train_directory)
     
+    def fill_random_weights(self):
+        nn.init.uniform_(self.fc1.weight, a=-0.5, b=0.5)
+        nn.init.uniform_(self.fc2.weight, a=-0.5, b=0.5)
 
     def manual_eval_float(self, x):
         """

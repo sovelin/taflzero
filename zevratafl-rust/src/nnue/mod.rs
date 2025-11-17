@@ -2,15 +2,16 @@ use std::num::FpCategory;
 use crate::constants::SQS;
 use crate::types::{Piece, Square};
 
-pub const INPUTS: usize = 363;
+pub const INPUTS: usize = 364;
 pub const HIDDEN: usize = 32;
 
 pub const QA: i32 = 255;     // quant for layer 1
 pub const QB: i32 = 64;      // quant for layer 2
 pub const SCALE: i32 = 400;
+pub const STM_BIT: usize = 363;
 
-pub static FC1_RAW: &str = include_str!("../../nnue-gen2/fc1.6.weights.csv");
-pub static FC2_RAW: &str = include_str!("../../nnue-gen2/fc2.6.weights.csv");
+pub static FC1_RAW: &str = include_str!("../../nnue-gen1/fc1.60.weights.csv");
+pub static FC2_RAW: &str = include_str!("../../nnue-gen1/fc2.60.weights.csv");
 
 #[derive(Clone)]
 pub struct NNUE {

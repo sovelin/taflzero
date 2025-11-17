@@ -20,7 +20,7 @@ def get_positions_distribution(count: int):
 def evaluate_position_simple(fen):
     nnue = HnefataflNetwork(32)
     manager = HnefataflNetworkDataManager()
-    nnue.load_weights(62, "trains/hnefatafl-363x32-15M-gen2")
+    nnue.load_weights(80, "trains/hnefatafl-364x32-15M-gen1")
     nnue.eval()
     nnue.print_weights()
     nnue_input = manager.calculate_nnue_input_layer(fen)
@@ -197,12 +197,17 @@ def run_hnefatafl_train_nnue(
     )
 
 if __name__ == '__main__':
-    #evaluate_position_simple("akaaaaaaaaa/k9d/dddddddd/11/11/11/11/11/11/11/aaaaaaaaaaa a")
-    
+    evaluate_position_simple("ddddddddddd/ddddddddddd/ddddddddddd/ddddddddddd/11/11/11/11/11/ddddddddddd/ddddddddddd a")
+    # generate random NN weights
+    nnue = HnefataflNetwork(32)
+    nnue.fill_random_weights()
+    nnue.save_weights(0, "trains")
+
+
     run_hnefatafl_train_nnue(
         32,
-        "train_data2.csv",
-        "validate_data2.csv",
-        f"{TRAINS_DIR}/hnefatafl-363x32-15M-gen2",
-        1134052
+        "train_data-test.csv",
+        "validate_data-test.csv",
+        f"{TRAINS_DIR}/hnefatafl-364x32-test-fixed",
+        315000
     )

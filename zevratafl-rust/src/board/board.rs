@@ -3,7 +3,7 @@ use std::fmt::{Debug, Formatter};
 use wasm_bindgen::prelude::wasm_bindgen;
 use crate::board::fen::FenError;
 use crate::board::PRECOMPUTED;
-use crate::nnue::{calculate_nnue_index, Weights1, Weights2, HIDDEN, INPUTS, NNUE};
+use crate::nnue::{calculate_nnue_index, Weights1, Weights2, HIDDEN, INPUTS, NNUE, STM_BIT};
 use super::zobrist::{ZOBRIST_DATA};
 use super::types::{OptionalSquare, Piece, Side, Square, ZobristHash};
 use super::constants::{SQS, ATTACKERS_MAX, DEFENDERS_MAX, BOARD_SIZE, HOLE, INITIAL_FEN};
@@ -70,6 +70,18 @@ impl Board {
         self.rep_table.clear();
         self.last_move_to = HOLE;
         self.nnue.clear();
+        self.set_side_to_move(Side::ATTACKERS);
+    }
+
+    fn set_side_to_move(&mut self, side: Side) {
+        self.side_to_move = side;
+        let bit = if side == Side::DEFENDERS { 1 } else { 0 };
+
+        if bit == 1 {
+            self.nnue.set_input(STM_BIT);
+        } else {
+            self.nnue.reset_input(STM_BIT);
+        }
     }
 
     fn set_attacker(&mut self, sq: Square) -> Result<(), &'static str> {
@@ -171,7 +183,7 @@ impl Board {
     }
 
     pub fn flip_side(&mut self) {
-        self.side_to_move = Side::opposite(self.side_to_move);
+        self.set_side_to_move(Side::opposite(self.side_to_move));
         self.zobrist ^= ZOBRIST_DATA.side;
     }
 
@@ -185,11 +197,13 @@ impl Board {
         }
     }
 
-    pub fn get_sided_eval(&self) -> i32 {
-        match self.side_to_move {
-            Side::DEFENDERS => self.nnue.evaluate(),
-            Side::ATTACKERS => -self.nnue.evaluate(),
-        }
+    pub fn get_eval(&self) -> i32 {
+        self.nnue.evaluate()
+    }
+
+    pub fn print_eval_side(&self) {
+        let nnue_input = self.nnue.inputs[STM_BIT];
+        println!("{}", nnue_input);
     }
 }
 

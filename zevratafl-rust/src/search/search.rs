@@ -28,7 +28,7 @@ pub fn search(
     }
 
     if depth == 0 {
-        return board.get_sided_eval();
+        return board.get_eval();
     }
 
     let is_pv_node = alpha < beta - 1;
@@ -75,14 +75,10 @@ pub fn search(
 
     let mut moves_count = 0;
 
-    for i in 0..search_data.move_gens[height as usize].count() {
-        if search_data.temperatures[height as usize][i] == 0 &&
-           moves_count >= search_data.move_gens[height as usize].count() / 2 {
+    if height == 0 && search_data.temperature > 0 {
+        for i in 0..search_data.move_gens[height as usize].count() {
             search_data.temperatures[height as usize][i] = search_data.random_generator.gen_range(0..search_data.temperature as i32);
-        } else {
-            search_data.temperatures[height as usize][i] = 0;
         }
-
     }
 
     while let Some(mv) = search_data.move_gens[height as usize].pick_move() {

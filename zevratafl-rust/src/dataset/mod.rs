@@ -4,7 +4,7 @@ use rand::rngs::StdRng;
 use crate::{Board, Engine};
 use crate::constants::INITIAL_FEN;
 use crate::movegen::MoveGen;
-use crate::nnue::{load_fc1_from_raw, load_fc1_single_line, load_fc2_from_raw, load_fc2_single_line, Weights1, Weights2};
+use crate::nnue::{load_fc1_from_raw, load_fc2_from_raw, Weights1, Weights2};
 use crate::types::Side;
 
 struct GameResult {
@@ -144,100 +144,6 @@ impl Batcher {
     }
 }
 
-static ATTACKER_OVERSAMPLE_FACTOR: usize = 5;
-
-
-pub struct SaveResult {
-    total_positions_written: usize,
-    total_attacker_positions_written: usize,
-    total_defender_positions_written: usize,
-}
-
-impl SaveResult {
-    pub fn new() -> Self {
-        Self {
-            total_positions_written: 0,
-            total_attacker_positions_written: 0,
-            total_defender_positions_written: 0,
-        }
-    }
-
-    pub fn append(&mut self, other: &SaveResult) {
-        self.total_positions_written += other.total_positions_written;
-        self.total_attacker_positions_written += other.total_attacker_positions_written;
-        self.total_defender_positions_written += other.total_defender_positions_written;
-    }
-}
-
-impl std::fmt::Display for SaveResult {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Total positions written: {}, Attacker positions written: {}, Defender positions written: {}, D/A ratio: {:.2}",
-            self.total_positions_written,
-            self.total_attacker_positions_written,
-            self.total_defender_positions_written,
-            if self.total_defender_positions_written == 0 {
-                self.total_attacker_positions_written as f64
-            } else {
-                self.total_attacker_positions_written as f64 / self.total_defender_positions_written as f64
-            }
-        )
-    }
-}
-
-impl std::fmt::Debug for SaveResult {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self)
-    }
-}
-
-pub fn save_to_file(lean: &LearningGame, file_path: &str, attackers_oversample: usize) -> SaveResult {
-    use std::io::Write;
-    let mut total_pos_written = 0;
-    let mut total_attacker_pos_written = 0;
-    let mut total_defender_pos_written = 0;
-
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(file_path)
-        .unwrap();
-
-    for fen in &lean.fens {
-        let win_score = if lean.winner == fen.stm { 1 } else { 0 };
-        let line = format!("{},{}\n", fen.fen, win_score);
-
-        // min between 5 and attackers_oversample
-        let attackers_oversample = if attackers_oversample < 5 {
-            5
-        } else {
-            attackers_oversample as usize
-        };
-
-        if lean.winner == Side::ATTACKERS {
-            total_attacker_pos_written += 1;
-            for _ in 0..attackers_oversample {
-                file.write_all(line.as_bytes()).unwrap();
-                total_pos_written += 1;
-            }
-            continue;
-        } else {
-            file.write_all(line.as_bytes()).unwrap();
-            total_pos_written += 1;
-            total_defender_pos_written += 1;
-        }
-    }
-
-    file.flush().unwrap();
-
-    SaveResult {
-        total_positions_written: total_pos_written,
-        total_attacker_positions_written: total_attacker_pos_written,
-        total_defender_positions_written: total_defender_pos_written,
-    }
-}
-
 
 fn set_random_opening(engine: &mut Engine, rng: &mut StdRng, ply_count: usize) {
     let mut mv_generator = MoveGen::new();
@@ -263,7 +169,8 @@ fn set_random_opening(engine: &mut Engine, rng: &mut StdRng, ply_count: usize) {
 
 fn play_random_game(rnd: &mut StdRng, game: &mut LearningGame, w1: &Weights1, w2: &Weights2) -> GameResult {
     let mut engine = Engine::new(1, w1, w2);
-    set_random_opening(&mut engine, rnd, 16);
+    set_random_opening(&mut engine, rnd, 32);
+    //let to_remove = rnd.gen_range(0..4);
     let to_remove = rnd.gen_range(0..12);
 
     if to_remove > 0 {
@@ -287,13 +194,17 @@ fn play_random_game(rnd: &mut StdRng, game: &mut LearningGame, w1: &Weights1, w2
 
     loop {
         if let Some(res) = engine.check_terminal() {
+            if res == Side::ATTACKERS {
+                engine.print_board();
+            }
+
             return GameResult {
                 winner: res,
                 moves_count,
             };
         }
 
-        let bm = engine.make_search(30, None);
+        let bm = engine.make_search(5, None);
         if !bm.best_move.is_null() {
             engine.make_move(bm.best_move).unwrap();
             game.add_position(&engine.board());
@@ -328,25 +239,30 @@ pub fn play_random_games(num_games: usize, file_name: String) {
     let mut total_moves = 0;
 
     let batch_size = 10000;
-
-    let mut stat = SaveResult::new();
-
+    let mut game_saved = 0;
+    let mut batcher = Batcher::new(batch_size);
 
 
     for i in 0..num_games {
         let mut learning_game = LearningGame::new();
         let result = play_random_game(&mut rng, &mut learning_game, &w1, &w2);
         learning_game.mark_winner(result.winner);
+        batcher.add_game(learning_game);
 
-        let over_sample_factor =
-            if stat.total_attacker_positions_written == 0 {1} else {stat.total_defender_positions_written / (stat.total_attacker_positions_written)};
-
-        let new_res = save_to_file(&learning_game, file_name.as_str(), over_sample_factor);
-        stat.append(&new_res);
-        println!("{:?}", stat);
+        if batcher.is_full() {
+            game_saved += batch_size;
+            println!("Saved {} positions to file...", game_saved);
+            batcher.save_to_file(file_name.as_str());
+            batcher.clear();
+        } else if i % 100 == 0 {
+            batcher.print_fullness();
+        }
 
         total_moves += result.moves_count;
 
-        println!("Game {} completed. Winner: {:?}, Moves: {}, oversample: {}", i + 1, result.winner, result.moves_count, over_sample_factor);
+        match result.winner {
+            Side::DEFENDERS => defender_wins += 1,
+            Side::ATTACKERS => attacker_wins += 1,
+        }
     }
 }

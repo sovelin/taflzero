@@ -8,10 +8,12 @@ from src.model.train_data_manager import TrainDataManager
 from src.networks.hnefatafl.set_fen import FenCalculator, SQS_COUNT
 from src.utils import unpack_bits, pack_bits
 
+
 class Piece(Enum):
     ATTACKER = 0
     DEFENDER = 1
     KING = 2
+
 
 def calculate_nnue_index(piece: Piece, square: int):
     pieces_mapper = {
@@ -22,6 +24,7 @@ def calculate_nnue_index(piece: Piece, square: int):
 
     return pieces_mapper[piece] * SQS_COUNT + square
 
+
 class HnefataflNetworkDataManager(TrainDataManager):
     fen_calculator = FenCalculator()
 
@@ -29,7 +32,7 @@ class HnefataflNetworkDataManager(TrainDataManager):
         return self.fen_calculator.calculate_nnue_input_layer(fen)
 
     def get_packed_size(self):
-        return (NETWORK_SIZE + 7) // 8
+        return 46  # NETWORK_SIZE // 8
 
     def get_record_size(self):
         return self.get_packed_size() + 1 * 4
