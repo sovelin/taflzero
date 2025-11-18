@@ -58,6 +58,11 @@ impl Move {
     pub fn create_null() -> Self {
         Move(0)
     }
+    
+    #[inline]
+    pub fn from_u32(mv_u32: u32) -> Self {
+        Move(mv_u32)
+    }
 }
 
 pub fn create_move_from_algebraic(s: &str) -> Result<Move, String> {

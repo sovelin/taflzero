@@ -1,19 +1,239 @@
-use js_sys::global;
-use wasm_bindgen::prelude::*;
-use web_sys::{window, CustomEvent, CustomEventInit};
-use crate::constants::INITIAL_FEN;
-use crate::Engine;
-use crate::mv::{create_move_from_algebraic, Move};
-use crate::nnue::{load_fc1_from_raw, load_fc2_from_raw};
+pub mod engine_client;
 
-#[wasm_bindgen]
-pub struct WasmClient {
-    event_name: String,
-    engine: Engine,
+use crate::constants::INITIAL_FEN;
+use crate::mv::create_move_from_algebraic;
+use crate::nnue::{load_fc1_from_raw, load_fc2_from_raw};
+use crate::search::search_root::SearchIterationResponse;
+use crate::Engine;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UciRunState {
+    Continue,
+    Quit,
 }
 
+pub trait UciOutput {
+    fn send(&self, message: &str);
+}
+
+pub struct UciController<O: UciOutput> {
+    engine: Engine,
+    output: O,
+}
+
+impl<O: UciOutput> UciController<O> {
+    pub fn new(tt_size_mb: usize, output: O) -> Self {
+        let w1 = load_fc1_from_raw();
+        let w2 = load_fc2_from_raw();
+
+        Self {
+            engine: Engine::new(tt_size_mb, &w1, &w2),
+            output,
+        }
+    }
+
+    pub fn engine(&self) -> &Engine {
+        &self.engine
+    }
+
+    pub fn engine_mut(&mut self) -> &mut Engine {
+        &mut self.engine
+    }
+
+    fn send(&self, message: &str) {
+        self.output.send(message);
+    }
+
+    pub fn run(&mut self, cmd: &str) -> UciRunState {
+        let tokens = cmd.split_whitespace().collect::<Vec<&str>>();
+
+        if tokens.is_empty() {
+            self.send("unknown command");
+            return UciRunState::Continue;
+        }
+
+        let keyword = tokens[0];
+        self.send(&format!("Command received: {}", keyword));
+        self.send(&format!("Full command: {}", cmd));
+
+        match keyword {
+            "quit" => {
+                self.send("bye");
+                UciRunState::Quit
+            }
+            "isready" => {
+                self.send("readyok");
+                UciRunState::Continue
+            }
+            "uci" => {
+                self.send("id name ZevraTafl\nid author Oleg Smirnov\nuciok");
+                UciRunState::Continue
+            }
+            "position" => {
+                self.handle_position(&tokens[1..]);
+                UciRunState::Continue
+            }
+            "board" => {
+                self.send(&format!("{:?}", self.engine.board()));
+                UciRunState::Continue
+            }
+            "go" => {
+                self.handle_go(&tokens[1..]);
+                UciRunState::Continue
+            }
+            _ => {
+                self.send("unknown command");
+                UciRunState::Continue
+            }
+        }
+    }
+
+    fn handle_position(&mut self, args: &[&str]) {
+        if args.is_empty() {
+            self.send("position command missing arguments");
+            return;
+        }
+
+        match args[0] {
+            "startpos" => {
+                if args.len() == 1 {
+                    self.set_moves(INITIAL_FEN, &[]);
+                    self.send("position set to startpos");
+                    return;
+                }
+
+                if args[1] == "moves" {
+                    self.set_moves(INITIAL_FEN, &args[2..]);
+                    self.send(&format!("position set to startpos ({} moves)", args.len() - 2));
+                    return;
+                }
+
+                self.send("unsupported startpos format");
+            }
+            "fen" => {
+                if args.len() < 4 {
+                    self.send("invalid fen command");
+                    return;
+                }
+
+                let fen = format!("{} {}", args[1], args[2]);
+
+                if args[3] != "moves" {
+                    self.send("only 'position fen <fen> moves' is supported");
+                    return;
+                }
+
+                self.set_moves(&fen, &args[4..]);
+                self.send(&format!("position set to fen '{}' ({} moves)", fen, args.len() - 4));
+            }
+            _ => {
+                self.send("unknown position command");
+            }
+        }
+    }
+
+    fn set_moves(&mut self, fen: &str, moves_str: &[&str]) {
+        let mut legal_moves = Vec::with_capacity(moves_str.len());
+
+        for mv_str in moves_str {
+            match create_move_from_algebraic(mv_str) {
+                Ok(mv) => legal_moves.push(mv),
+                Err(err) => {
+                    self.send(&format!("invalid move '{}': {}", mv_str, err));
+                    return;
+                }
+            }
+        }
+
+        self.engine.set_position_and_moves(fen, legal_moves);
+    }
+
+    fn handle_go(&mut self, args: &[&str]) {
+        if args.is_empty() {
+            self.send("go command missing arguments");
+            return;
+        }
+
+        match args[0] {
+            "movetime" => self.handle_go_movetime(&args[1..]),
+            _ => self.send("unknown go subcommand"),
+        }
+    }
+
+    fn handle_go_movetime(&mut self, args: &[&str]) {
+        if args.is_empty() {
+            self.send("movetime value missing");
+            return;
+        }
+
+        let movetime = args[0].parse::<u64>().unwrap_or(0);
+
+        if movetime == 0 {
+            self.send("invalid movetime value");
+            return;
+        }
+
+        let output = &self.output;
+        self.engine.make_search(movetime, Some(&|iteration: SearchIterationResponse| {
+            let msg = format!(
+                "info depth {} score {} nodes {} time {} speed {} bestmove {:?}",
+                iteration.depth,
+                iteration.score,
+                iteration.nodes,
+                iteration.time,
+                iteration.speed,
+                iteration.mv,
+            );
+            output.send(&msg);
+        }));
+
+        if let Some(mv) = self.engine.best_move() {
+            self.send(&format!("bestmove {:?}", mv));
+        } else {
+            self.send("bestmove (none)");
+        }
+    }
+}
+
+#[derive(Default, Clone, Copy)]
+pub struct ConsoleBridge;
+
+impl UciOutput for ConsoleBridge {
+    fn send(&self, message: &str) {
+        println!("{}", message);
+    }
+}
+
+pub struct ConsoleClient {
+    controller: UciController<ConsoleBridge>,
+}
+
+impl ConsoleClient {
+    pub fn new(tt_size_mb: usize) -> Self {
+        Self {
+            controller: UciController::new(tt_size_mb, ConsoleBridge),
+        }
+    }
+
+    pub fn run_line(&mut self, line: &str) -> UciRunState {
+        self.controller.run(line)
+    }
+
+    pub fn engine(&self) -> &Engine {
+        self.controller.engine()
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+use js_sys::global;
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::{prelude::*, JsCast};
+#[cfg(target_arch = "wasm32")]
+use web_sys::{CustomEvent, CustomEventInit};
+
+#[cfg(target_arch = "wasm32")]
 fn broadcast(event_name: &str, msg: &str) {
-    let global = global(); // <-- это работает и в window, и в worker
+    let global = global();
 
     let init = CustomEventInit::new();
     init.set_detail(&JsValue::from_str(msg));
@@ -25,154 +245,49 @@ fn broadcast(event_name: &str, msg: &str) {
         .unwrap()
         .dispatch_event(&event);
 }
+
+#[cfg(target_arch = "wasm32")]
+#[derive(Clone)]
+struct WasmBridge {
+    event_name: String,
+}
+
+#[cfg(target_arch = "wasm32")]
+impl WasmBridge {
+    fn new(event_name: String) -> Self {
+        Self { event_name }
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl UciOutput for WasmBridge {
+    fn send(&self, message: &str) {
+        broadcast(&self.event_name, message);
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub struct WasmClient {
+    controller: UciController<WasmBridge>,
+}
+
+#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 impl WasmClient {
     #[wasm_bindgen(constructor)]
     pub fn new(event_name: String, tt_size: usize) -> Self {
-        let w1 = load_fc1_from_raw();
-        let w2 = load_fc2_from_raw();
-
-        Self { event_name, engine: Engine::new(tt_size, &w1, &w2) }
+        let bridge = WasmBridge::new(event_name);
+        Self {
+            controller: UciController::new(tt_size, bridge),
+        }
     }
 
     pub fn print_board(&self) {
-        self.engine.print_board();
+        self.controller.engine().print_board();
     }
 
-    fn set_moves(&mut self, fen: &str, moves_str: &[&str]) {
-        let moves: Vec<_> = moves_str
-            .iter()
-            .map(|mv_str| create_move_from_algebraic(mv_str))
-            .collect();
-
-        // print moves
-        println!("Setting moves: {:?}", moves_str);
-
-        let mut legal_moves = Vec::new();
-
-        for mv_res in &moves {
-            match mv_res {
-                Ok(mv) => legal_moves.push(*mv),
-                Err(_) => {
-                    self.broadcast("invalid move in moves list");
-                    return;
-                }
-            }
-        }
-
-        self.engine.set_position_and_moves(fen, legal_moves)
-    }
-
-    fn handle_position(&mut self, args: &[&str]) {
-        match args[0] {
-            "startpos" => {
-                if args.len() < 2 {
-                    self.set_moves(INITIAL_FEN, &[]);
-                    return;
-                }
-
-                if args[1] == "moves" {
-                    self.set_moves(INITIAL_FEN, &args[2..]);
-                    return;
-                }
-            }
-            "fen" => {
-                let fen = args[1].to_owned() + " " + args[2];
-                println!("Setting position to FEN: {}", fen);
-
-                if args[3] != "moves" {
-                    self.broadcast("only 'position fen <fen> moves' without moves is supported");
-                    return;
-                }
-
-                self.set_moves(&fen, &args[4..]);
-            },
-            _ => {
-                self.broadcast("unknown position command");
-            }
-        }
-    }
-
-    fn handle_go(&mut self, args: &[&str]) {
-        match args[0] {
-            "movetime" => {
-                if args.len() < 2 {
-                    self.broadcast("invalid movetime command");
-                    return;
-                }
-                let movetime = args[1].parse::<u64>().unwrap_or(0);
-
-                if movetime == 0 {
-                    self.broadcast("invalid movetime value");
-                    return;
-                }
-
-                self.engine.make_search(movetime, Some(&|iteration| {
-                    let msg = format!(
-                        "info depth {} score {} nodes {} time {} speed {} bestmove {:?}",
-                        iteration.depth,
-                        iteration.score,
-                        iteration.nodes,
-                        iteration.time,
-                        iteration.speed,
-                        iteration.mv,
-                    );
-
-                    broadcast(&self.event_name, &msg);
-                }));
-
-                if let Some(mv) = self.engine.best_move() {
-                    self.broadcast(&format!("bestmove {:?}", mv));
-                }
-            },
-            _ => {
-                self.broadcast("unknown go command");
-            }
-        }
-    }
-
-    #[wasm_bindgen]
     pub fn run(&mut self, cmd: &str) {
-        let tokens = cmd.split_whitespace().collect::<Vec<&str>>();
-
-        if tokens.is_empty() {
-            self.broadcast("unknown command");
-            return;
-        }
-
-        let cmd = tokens[0];
-
-        // print cmd
-        let str = format!("Command received: {}", cmd);
-        self.broadcast(&str);
-        let str2 = format!("Full command: {}", cmd);
-        self.broadcast(&str2);
-
-        match cmd {
-            "isready" => {
-                self.broadcast("readyok");
-            },
-            "uci" => {
-                self.broadcast("id name ZevraTafl\nid author Oleg Smirnov\nuciok");
-            },
-            "position" => {
-                self.handle_position(&tokens[1..]);
-                return;
-            },
-            "board" => {
-                self.broadcast(&format!("{:?}", self.engine.board()));
-            },
-            "go" => {
-                self.handle_go(&tokens[1..]);
-                return;
-            },
-            _ => {
-                self.broadcast("unknown command");
-            },
-        };
-    }
-
-    fn broadcast(&self, msg: &str) {
-        broadcast(&self.event_name, msg);
+        self.controller.run(cmd);
     }
 }

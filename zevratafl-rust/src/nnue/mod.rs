@@ -13,6 +13,12 @@ pub const STM_BIT: usize = 363;
 pub static FC1_RAW: &str = include_str!("../../nnue-gen1/fc1.33.weights.csv");
 pub static FC2_RAW: &str = include_str!("../../nnue-gen1/fc2.33.weights.csv");
 
+// pub static FC1_RAW: &str = include_str!("../../nnue-gen0/fc1.0.weights.csv");
+// pub static FC2_RAW: &str = include_str!("../../nnue-gen0/fc2.0.weights.csv");
+
+// pub static FC1_RAW: &str = include_str!("../../nnue-gen0.5/fc1.60.weights.csv");
+// pub static FC2_RAW: &str = include_str!("../../nnue-gen0.5/fc2.60.weights.csv");
+
 #[derive(Clone)]
 pub struct NNUE {
     pub inputs: [u8; INPUTS],
@@ -200,7 +206,6 @@ pub fn load_fc1(text: &str) -> Weights1 {
         let i = flat % INPUTS;  // input index  (0..362)
 
         w1[i][h] = floats[flat];
-        println!("i:{}; h:{}, w: {}", i, h, floats[flat]);
     }
 
     w1
@@ -247,6 +252,5 @@ pub fn load_fc1_from_raw() -> Weights1 {
 }
 
 pub fn load_fc2_from_raw() -> Weights2 {
-    println!("{}", FC2_RAW);
     load_fc2(FC2_RAW)
 }

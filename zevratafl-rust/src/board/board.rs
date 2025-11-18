@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use wasm_bindgen::prelude::wasm_bindgen;
 use crate::board::fen::FenError;
 use crate::board::PRECOMPUTED;
@@ -264,5 +264,11 @@ impl Debug for Board {
         // }
 
         Ok(())
+    }
+}
+
+impl Display for Board {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
     }
 }
