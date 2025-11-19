@@ -205,5 +205,5 @@ if __name__ == '__main__':
         "train_data-for-gen-2.csv",
         "validate_data-for-gen-2.csv",
         f"{TRAINS_DIR}/hnefatafl-364x32-gen2",
-        2268000
+        18693000
     )

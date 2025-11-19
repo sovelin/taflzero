@@ -1,4 +1,3 @@
-use std::time::{SystemTime, UNIX_EPOCH};
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use crate::movegen::MAX_MOVES;
@@ -53,6 +52,7 @@ impl SearchData {
             cached_exceed: false,
             time_exceeded_checks: 0,
             temperatures,
+            //temperature: 15,
             temperature: 0,
             random_generator: StdRng::seed_from_u64(123456),
         }
