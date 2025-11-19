@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use wasm_bindgen::prelude::wasm_bindgen;
 use crate::board::constants::BOARD_SIZE;
 use crate::board::types::{Col, Row, Square};
@@ -28,38 +28,58 @@ impl Debug for Move {
     }
 }
 
+impl Display for Move {
+    #[inline]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+
+        let from_sq = self.from();
+        let to_sq = self.to();
+        let alg_from = get_sq_algebraic(from_sq);
+        let alg_to = get_sq_algebraic(to_sq);
+        write!(f, "{}{}", alg_from, alg_to)
+    }
+}
+
+#[wasm_bindgen]
 impl Move {
     #[inline]
+    #[wasm_bindgen(constructor)]
     pub fn new(from: Square, to: Square) -> Self {
         Move(((from as u32) << 16) | (to as u32))
     }
 
     #[inline]
+    #[wasm_bindgen]
     pub fn from(self) -> Square {
         ((self.0 >> 16) & 0xFFFF) as Square
     }
 
     #[inline]
+    #[wasm_bindgen]
     pub fn to(&self) -> Square {
         (self.0 & 0xFFFF) as Square
     }
 
     #[inline]
+    #[wasm_bindgen]
     pub fn raw(&self) -> u32 {
         self.0
     }
 
     #[inline]
+    #[wasm_bindgen]
     pub fn is_null(&self) -> bool {
         self.0 == 0
     }
 
     #[inline]
+    #[wasm_bindgen]
     pub fn create_null() -> Self {
         Move(0)
     }
     
     #[inline]
+    #[wasm_bindgen]
     pub fn from_u32(mv_u32: u32) -> Self {
         Move(mv_u32)
     }

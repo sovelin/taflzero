@@ -11,6 +11,7 @@ pub enum Side {
 
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[wasm_bindgen]
 pub enum Piece {
     EMPTY = 0,
     ATTACKER = 1,

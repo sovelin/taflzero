@@ -1,5 +1,5 @@
 use std::num::FpCategory;
-use crate::constants::SQS;
+use crate::board::constants::SQS;
 use crate::types::{Piece, Square};
 
 pub const INPUTS: usize = 364;

@@ -1,6 +1,6 @@
 pub mod engine_client;
+pub mod constants;
 
-use crate::constants::INITIAL_FEN;
 use crate::mv::create_move_from_algebraic;
 use crate::nnue::{load_fc1_from_raw, load_fc2_from_raw};
 use crate::search::search_root::SearchIterationResponse;
@@ -231,6 +231,7 @@ use js_sys::global;
 use wasm_bindgen::{prelude::*, JsCast};
 #[cfg(target_arch = "wasm32")]
 use web_sys::{CustomEvent, CustomEventInit};
+use crate::board::constants::INITIAL_FEN;
 
 #[cfg(target_arch = "wasm32")]
 fn broadcast(event_name: &str, msg: &str) {

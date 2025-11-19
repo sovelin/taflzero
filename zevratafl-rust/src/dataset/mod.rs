@@ -2,7 +2,7 @@ use std::fs::OpenOptions;
 use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
 use crate::{Board, Engine};
-use crate::constants::INITIAL_FEN;
+use crate::board::constants::INITIAL_FEN;
 use crate::movegen::MoveGen;
 use crate::nnue::{load_fc1_from_raw, load_fc2_from_raw, Weights1, Weights2};
 use crate::terminal::is_threefold_repetition;
