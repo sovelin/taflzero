@@ -5,11 +5,13 @@ use crate::{Board, Engine};
 use crate::constants::INITIAL_FEN;
 use crate::movegen::MoveGen;
 use crate::nnue::{load_fc1_from_raw, load_fc2_from_raw, Weights1, Weights2};
+use crate::terminal::is_threefold_repetition;
 use crate::types::Side;
 
 struct GameResult {
     winner: Side,
     moves_count: usize,
+    aborted: bool,
 }
 
 #[derive(Clone)]
@@ -170,7 +172,6 @@ fn set_random_opening(engine: &mut Engine, rng: &mut StdRng, ply_count: usize) {
 fn play_random_game(rnd: &mut StdRng, game: &mut LearningGame, w1: &Weights1, w2: &Weights2) -> GameResult {
     let mut engine = Engine::new(1, w1, w2);
     set_random_opening(&mut engine, rnd, 32);
-    //let to_remove = rnd.gen_range(0..4);
     let to_remove = rnd.gen_range(0..12);
 
     if to_remove > 0 {
@@ -193,6 +194,14 @@ fn play_random_game(rnd: &mut StdRng, game: &mut LearningGame, w1: &Weights1, w2
     game.add_position(&engine.board());
 
     loop {
+        if is_threefold_repetition(&mut engine.board()) {
+            return GameResult {
+                winner: Side::DEFENDERS,
+                moves_count,
+                aborted: true,
+            };
+        }
+
         if let Some(res) = engine.check_terminal() {
             if res == Side::ATTACKERS {
                 engine.print_board();
@@ -201,10 +210,11 @@ fn play_random_game(rnd: &mut StdRng, game: &mut LearningGame, w1: &Weights1, w2
             return GameResult {
                 winner: res,
                 moves_count,
+                aborted: false,
             };
         }
 
-        let bm = engine.make_search(5, None);
+        let bm = engine.make_search(10, None);
         if !bm.best_move.is_null() {
             engine.make_move(bm.best_move).unwrap();
             game.add_position(&engine.board());
@@ -218,6 +228,7 @@ fn play_random_game(rnd: &mut StdRng, game: &mut LearningGame, w1: &Weights1, w2
             return GameResult {
                 winner: Side::opposite(engine.board().side_to_move),
                 moves_count,
+                aborted: false,
             };
         }
     }
@@ -246,6 +257,11 @@ pub fn play_random_games(num_games: usize, file_name: String) {
     for i in 0..num_games {
         let mut learning_game = LearningGame::new();
         let result = play_random_game(&mut rng, &mut learning_game, &w1, &w2);
+
+        if result.aborted {
+            continue;
+        }
+
         learning_game.mark_winner(result.winner);
         batcher.add_game(learning_game);
 

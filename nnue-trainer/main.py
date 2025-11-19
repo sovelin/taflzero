@@ -202,8 +202,8 @@ if __name__ == '__main__':
 
     run_hnefatafl_train_nnue(
         32,
-        "train_data-for-gen-1.csv",
-        "validate_data-for-gen-1.csv",
-        f"{TRAINS_DIR}/hnefatafl-364x32-gen1",
-        8415000
+        "train_data-for-gen-2.csv",
+        "validate_data-for-gen-2.csv",
+        f"{TRAINS_DIR}/hnefatafl-364x32-gen2",
+        2268000
     )

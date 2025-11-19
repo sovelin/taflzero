@@ -111,12 +111,13 @@ impl<O: UciOutput> UciController<O> {
                 self.send("unsupported startpos format");
             }
             "fen" => {
+                let fen = format!("{} {}", args[1], args[2]);
+
                 if args.len() < 4 {
-                    self.send("invalid fen command");
+                    self.set_moves(&fen, &vec![]);
                     return;
                 }
 
-                let fen = format!("{} {}", args[1], args[2]);
 
                 if args[3] != "moves" {
                     self.send("only 'position fen <fen> moves' is supported");

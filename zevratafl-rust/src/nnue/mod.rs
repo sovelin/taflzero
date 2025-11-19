@@ -6,18 +6,15 @@ pub const INPUTS: usize = 364;
 pub const HIDDEN: usize = 32;
 
 pub const QA: i32 = 255;     // quant for layer 1
-pub const QB: i32 = 64;      // quant for layer 2
+pub const QB: i32 = 32;      // quant for layer 2
 pub const SCALE: i32 = 400;
 pub const STM_BIT: usize = 363;
 
-pub static FC1_RAW: &str = include_str!("../../nnue-gen1/fc1.33.weights.csv");
-pub static FC2_RAW: &str = include_str!("../../nnue-gen1/fc2.33.weights.csv");
+pub static FC1_RAW: &str = include_str!("../../nnue-gen1/fc1.296.weights.csv");
+pub static FC2_RAW: &str = include_str!("../../nnue-gen1/fc2.296.weights.csv");
 
-// pub static FC1_RAW: &str = include_str!("../../nnue-gen0/fc1.0.weights.csv");
-// pub static FC2_RAW: &str = include_str!("../../nnue-gen0/fc2.0.weights.csv");
-
-// pub static FC1_RAW: &str = include_str!("../../nnue-gen0.5/fc1.60.weights.csv");
-// pub static FC2_RAW: &str = include_str!("../../nnue-gen0.5/fc2.60.weights.csv");
+// pub static FC1_RAW: &str = include_str!("../../nnue-gen2/fc1.149.weights.csv");
+// pub static FC2_RAW: &str = include_str!("../../nnue-gen2/fc2.149.weights.csv");
 
 #[derive(Clone)]
 pub struct NNUE {

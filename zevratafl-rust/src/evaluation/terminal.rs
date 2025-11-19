@@ -4,11 +4,17 @@ use crate::evaluation::check_fort::check_fort;
 use crate::evaluation::defenders_is_surrounded::defenders_is_surrounded;
 use crate::evaluation::king_is_surrounded::king_is_surrounded;
 
-pub fn check_terminal(board: &mut Board) -> Option<Side> {
+pub fn is_threefold_repetition(board: &Board) -> bool {
     if let Some(value) = board.rep_table.get(&board.zobrist) {
-        if *value >= 3 {
-            return Some(Side::DEFENDERS);
-        }
+        *value >= 3
+    } else {
+        false
+    }
+}
+
+pub fn check_terminal(board: &mut Board) -> Option<Side> {
+    if is_threefold_repetition(board) {
+        return Some(Side::ATTACKERS);
     }
 
     if PRECOMPUTED.corners_sq.contains(&(board.king_sq as Square)) {
