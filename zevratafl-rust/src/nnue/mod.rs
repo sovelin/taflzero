@@ -10,8 +10,8 @@ pub const QB: i32 = 32;      // quant for layer 2
 pub const SCALE: i32 = 400;
 pub const STM_BIT: usize = 363;
 
-pub static FC1_RAW: &str = include_str!("../../nnue-324x128-gen3/fc1.22.weights.csv");
-pub static FC2_RAW: &str = include_str!("../../nnue-324x128-gen3/fc2.22.weights.csv");
+pub static FC1_RAW: &str = include_str!("../../nnue-324x128-gen3/fc1.135.weights.csv");
+pub static FC2_RAW: &str = include_str!("../../nnue-324x128-gen3/fc2.135.weights.csv");
 
 
 

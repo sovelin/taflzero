@@ -35,22 +35,15 @@ pub fn defenders_is_surrounded(board: &Board) -> bool {
         return false;
     }
 
-    let visited = bfs(
-        |sq| {
-            board.board[sq] != Piece::ATTACKER
-        },
-        &PRECOMPUTED.vertical_horizontal_neighbors,
-        &PRECOMPUTED.corners_sq,
-    );
+    let mut start_sqs = vec![];
 
-    for i in 0..visited.len() {
-        if !visited[i] {
-            continue;
-        }
+    if board.king_sq != HOLE {
+        start_sqs.push(board.king_sq as Square);
+    }
 
-        if board.board[i] == Piece::DEFENDER || board.board[i] == Piece::KING {
-            return false;
-        }
+    for i in 0..board.defenders_count {
+        let sq = board.defenders[i as usize];
+        start_sqs.push(sq);
     }
 
     let inner_squares = bfs(
@@ -58,7 +51,7 @@ pub fn defenders_is_surrounded(board: &Board) -> bool {
             board.board[sq] != Piece::ATTACKER
         },
         &PRECOMPUTED.vertical_horizontal_neighbors,
-        &vec![board.king_sq as Square],
+        &start_sqs,
     );
 
     for i in 0..inner_squares.len() {
@@ -152,6 +145,15 @@ mod tests {
         board.set_piece(get_square_from_algebraic("b9"), Piece::DEFENDER).unwrap();
 
         board.set_piece(get_square_from_algebraic("b10"), Piece::KING).unwrap();
+
+        let is_surrounded = defenders_is_surrounded(&board);
+        assert!(!is_surrounded);
+    }
+
+    #[test]
+    fn not_surrounded_if_at_leadt_one_piece_could_go_to_edge() {
+        let mut board = Board::new();
+    board.set_fen("2a8/11/aa3aa2a1/1da2a5/ad1aaa5/1aa1k1a2aa/3a1aa3a/1a2a6/11/11/11 d");
 
         let is_surrounded = defenders_is_surrounded(&board);
         assert!(!is_surrounded);
