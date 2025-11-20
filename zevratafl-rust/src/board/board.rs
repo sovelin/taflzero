@@ -41,7 +41,7 @@ impl Board {
             zobrist: 0,
             rep_table: HashMap::new(),
             last_move_to: HOLE,
-            nnue: NNUE::new([[0.0; HIDDEN]; INPUTS], [0.0; HIDDEN])
+            nnue: NNUE::new(Box::new([[0.0; HIDDEN]; INPUTS]), Box::new([0.0; HIDDEN]))
         }
     }
 

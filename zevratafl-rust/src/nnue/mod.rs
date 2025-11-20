@@ -3,15 +3,15 @@ use crate::board::constants::SQS;
 use crate::types::{Piece, Square};
 
 pub const INPUTS: usize = 364;
-pub const HIDDEN: usize = 32;
+pub const HIDDEN: usize = 128;
 
 pub const QA: i32 = 255;     // quant for layer 1
 pub const QB: i32 = 32;      // quant for layer 2
 pub const SCALE: i32 = 400;
 pub const STM_BIT: usize = 363;
 
-pub static FC1_RAW: &str = include_str!("../../nnue-gen2/fc1.77.weights.csv");
-pub static FC2_RAW: &str = include_str!("../../nnue-gen2/fc2.77.weights.csv");
+pub static FC1_RAW: &str = include_str!("../../nnue-324x128-gen3/fc1.22.weights.csv");
+pub static FC2_RAW: &str = include_str!("../../nnue-324x128-gen3/fc2.22.weights.csv");
 
 
 
@@ -19,13 +19,13 @@ pub static FC2_RAW: &str = include_str!("../../nnue-gen2/fc2.77.weights.csv");
 pub struct NNUE {
     pub inputs: [u8; INPUTS],
     pub acc: [f32; HIDDEN],
-    pub w1: [[f32; HIDDEN]; INPUTS],
-    pub w2: [f32; HIDDEN],
+    pub w1: Box<[[f32; HIDDEN]; INPUTS]>,
+    pub w2: Box<[f32; HIDDEN]>,
     pub eval: f32,
 }
 
-pub type Weights1 = [[f32; HIDDEN]; INPUTS];
-pub type Weights2 = [f32; HIDDEN];
+pub type Weights1 = Box<[[f32; HIDDEN]; INPUTS]>;
+pub type Weights2 = Box<[f32; HIDDEN]>;
 
 impl NNUE {
     pub fn new(w1: Weights1, w2: Weights2) -> Self {
@@ -195,7 +195,7 @@ pub fn load_fc1(text: &str) -> Weights1 {
         floats.len()
     );
 
-    let mut w1 = [[0.0; HIDDEN]; INPUTS];
+    let mut w1 = Box::new([[0.0; HIDDEN]; INPUTS]);
 
     for flat in 0..(INPUTS * HIDDEN) {
         let h = flat / INPUTS;  // hidden index (0..31)
@@ -218,7 +218,7 @@ pub fn load_fc2(text: &str) -> Weights2 {
 
     assert_eq!(floats.len(), HIDDEN);
 
-    let mut w2 = [0.0; HIDDEN];
+    let mut w2 = Box::new([0.0; HIDDEN]);
     for h in 0..HIDDEN {
         w2[h] = floats[h];
     }
