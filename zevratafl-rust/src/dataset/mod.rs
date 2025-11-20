@@ -172,7 +172,7 @@ fn set_random_opening(engine: &mut Engine, rng: &mut StdRng, ply_count: usize) {
 fn play_random_game(rnd: &mut StdRng, game: &mut LearningGame, w1: &Weights1, w2: &Weights2) -> GameResult {
     let mut engine = Engine::new(1, w1, w2);
     set_random_opening(&mut engine, rnd, 32);
-    let to_remove = rnd.gen_range(0..12);
+    let to_remove = 0; // rnd.gen_range(0..12);
 
     if to_remove > 0 {
         for _ in 0..to_remove {
@@ -203,10 +203,6 @@ fn play_random_game(rnd: &mut StdRng, game: &mut LearningGame, w1: &Weights1, w2
         }
 
         if let Some(res) = engine.check_terminal() {
-            if res == Side::ATTACKERS {
-                engine.print_board();
-            }
-
             return GameResult {
                 winner: res,
                 moves_count,
@@ -221,10 +217,6 @@ fn play_random_game(rnd: &mut StdRng, game: &mut LearningGame, w1: &Weights1, w2
             moves_count += 1;
             continue;
         } else {
-            // No best move found, return winner as opposite side
-            if Side::opposite(engine.board().side_to_move) == Side::ATTACKERS {
-                engine.print_board();
-            }
             return GameResult {
                 winner: Side::opposite(engine.board().side_to_move),
                 moves_count,
@@ -270,7 +262,7 @@ pub fn play_random_games(num_games: usize, file_name: String) {
             println!("Saved {} positions to file...", game_saved);
             batcher.save_to_file(file_name.as_str());
             batcher.clear();
-        } else if i % 100 == 0 {
+        } else if i % 10 == 0 {
             batcher.print_fullness();
         }
 
