@@ -1,1 +1,0 @@
-export {getPossibleMovesCount} from './movesCount'

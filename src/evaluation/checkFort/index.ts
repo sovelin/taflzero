@@ -1,1 +1,0 @@
-export {checkFort} from './checkFort'
