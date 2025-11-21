@@ -1,0 +1,15 @@
+{
+  "name": "zevratafl-rust",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "zevratafl_rust_bg.wasm",
+    "zevratafl_rust.js",
+    "zevratafl_rust.d.ts"
+  ],
+  "main": "zevratafl_rust.js",
+  "types": "zevratafl_rust.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

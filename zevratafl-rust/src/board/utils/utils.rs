@@ -179,6 +179,7 @@ pub fn is_edge_square(sq: Square) -> bool {
     row == 0 || row == BOARD_SIZE - 1 || col == 0 || col == BOARD_SIZE - 1
 }
 
+#[wasm_bindgen]
 pub fn get_sq_algebraic(sq: Square) -> String {
     let mut first = b'a';
 
