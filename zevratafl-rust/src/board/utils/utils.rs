@@ -16,11 +16,13 @@ pub fn get_square_from_algebraic(coord: &str) -> Square {
 }
 
 #[inline(always)]
+#[wasm_bindgen]
 pub fn get_row(sq: Square) -> Row {
     sq / BOARD_SIZE
 }
 
 #[inline(always)]
+#[wasm_bindgen]
 pub fn get_col(sq: Square) -> Col {
     sq % BOARD_SIZE
 }
