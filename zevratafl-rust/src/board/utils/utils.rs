@@ -1,6 +1,8 @@
+use wasm_bindgen::prelude::wasm_bindgen;
 use crate::board::constants::BOARD_SIZE;
 use crate::board::types::{Col, Piece, Row, Side, Square};
 
+#[wasm_bindgen]
 #[inline(always)]
 pub fn get_square(row: Row, col: Col) -> Square {
     row * BOARD_SIZE + col
