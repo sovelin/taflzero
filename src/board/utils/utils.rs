@@ -8,6 +8,7 @@ pub fn get_square(row: Row, col: Col) -> Square {
     row * BOARD_SIZE + col
 }
 
+#[wasm_bindgen]
 pub fn get_square_from_algebraic(coord: &str) -> Square {
     let file = coord.as_bytes()[0] - b'a';
     let rank = coord[1..].parse::<u8>().unwrap() - 1;
