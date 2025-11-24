@@ -6,10 +6,11 @@ export function main_js(): void;
 export function get_total_squares(): number;
 export function get_board_size(): number;
 export function get_initial_board_fen(): string;
-export function get_col(sq: number): number;
-export function get_square(row: number, col: number): number;
-export function get_row(sq: number): number;
 export function get_sq_algebraic(sq: number): string;
+export function get_row(sq: number): number;
+export function get_square(row: number, col: number): number;
+export function get_square_from_algebraic(coord: string): number;
+export function get_col(sq: number): number;
 export enum Piece {
   EMPTY = 0,
   ATTACKER = 1,
@@ -135,6 +136,7 @@ export interface InitOutput {
   readonly get_row: (a: number) => number;
   readonly get_sq_algebraic: (a: number, b: number) => void;
   readonly get_square: (a: number, b: number) => number;
+  readonly get_square_from_algebraic: (a: number, b: number) => number;
   readonly get_total_squares: () => number;
   readonly hello: (a: number) => void;
   readonly move_create_null: () => number;

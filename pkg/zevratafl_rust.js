@@ -305,34 +305,6 @@ export function get_initial_board_fen() {
 
 /**
  * @param {number} sq
- * @returns {number}
- */
-export function get_col(sq) {
-    const ret = wasm.get_col(sq);
-    return ret >>> 0;
-}
-
-/**
- * @param {number} row
- * @param {number} col
- * @returns {number}
- */
-export function get_square(row, col) {
-    const ret = wasm.get_square(row, col);
-    return ret >>> 0;
-}
-
-/**
- * @param {number} sq
- * @returns {number}
- */
-export function get_row(sq) {
-    const ret = wasm.get_row(sq);
-    return ret >>> 0;
-}
-
-/**
- * @param {number} sq
  * @returns {string}
  */
 export function get_sq_algebraic(sq) {
@@ -350,6 +322,45 @@ export function get_sq_algebraic(sq) {
         wasm.__wbindgen_add_to_stack_pointer(16);
         wasm.__wbindgen_export4(deferred1_0, deferred1_1, 1);
     }
+}
+
+/**
+ * @param {number} sq
+ * @returns {number}
+ */
+export function get_row(sq) {
+    const ret = wasm.get_row(sq);
+    return ret >>> 0;
+}
+
+/**
+ * @param {number} row
+ * @param {number} col
+ * @returns {number}
+ */
+export function get_square(row, col) {
+    const ret = wasm.get_square(row, col);
+    return ret >>> 0;
+}
+
+/**
+ * @param {string} coord
+ * @returns {number}
+ */
+export function get_square_from_algebraic(coord) {
+    const ptr0 = passStringToWasm0(coord, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.get_square_from_algebraic(ptr0, len0);
+    return ret >>> 0;
+}
+
+/**
+ * @param {number} sq
+ * @returns {number}
+ */
+export function get_col(sq) {
+    const ret = wasm.get_col(sq);
+    return ret >>> 0;
 }
 
 function _assertClass(instance, klass) {

@@ -45,6 +45,7 @@ export const get_initial_board_fen: (a: number) => void;
 export const get_row: (a: number) => number;
 export const get_sq_algebraic: (a: number, b: number) => void;
 export const get_square: (a: number, b: number) => number;
+export const get_square_from_algebraic: (a: number, b: number) => number;
 export const get_total_squares: () => number;
 export const hello: (a: number) => void;
 export const move_create_null: () => number;

@@ -95,6 +95,13 @@ impl EngineClient {
     pub fn is_move_available(&mut self, from: Square, to: Square) -> bool {
         let mv = Move::new(from, to);
         self.move_gen.generate_moves(self.engine.get_board_mutable());
-        self.move_gen.moves.iter().any(|&gen_mv| gen_mv == mv)
+
+        for index in 0..self.move_gen.count {
+            if self.move_gen.moves[index] == mv {
+                return true;
+            }
+        }
+
+        false
     }
 }
