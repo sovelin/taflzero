@@ -50,7 +50,7 @@ impl Move {
 
     #[inline]
     #[wasm_bindgen]
-    pub fn from(self) -> Square {
+    pub fn from(&self) -> Square {
         ((self.0 >> 16) & 0xFFFF) as Square
     }
 

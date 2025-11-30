@@ -656,8 +656,7 @@ export class Move {
      * @returns {number}
      */
     from() {
-        const ptr = this.__destroy_into_raw();
-        const ret = wasm.move_from(ptr);
+        const ret = wasm.move_from(this.__wbg_ptr);
         return ret >>> 0;
     }
     /**
