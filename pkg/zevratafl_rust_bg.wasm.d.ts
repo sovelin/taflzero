@@ -27,6 +27,7 @@ export const __wbg_wasmclient_free: (a: number, b: number) => void;
 export const build_info: (a: number) => void;
 export const engineclient_check_terminal_state: (a: number) => number;
 export const engineclient_check_terminal_state_for_fen: (a: number, b: number, c: number) => number;
+export const engineclient_get_available_moves_from_square: (a: number, b: number, c: number) => void;
 export const engineclient_get_board_state: (a: number, b: number) => void;
 export const engineclient_get_board_str: (a: number, b: number) => void;
 export const engineclient_get_fen: (a: number, b: number) => void;

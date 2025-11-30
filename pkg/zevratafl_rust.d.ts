@@ -40,6 +40,7 @@ export class EngineClient {
   check_terminal_state(): Side | undefined;
   set_position_and_moves(fen: string, moves: Uint32Array): void;
   check_terminal_state_for_fen(fen: string): Side | undefined;
+  get_available_moves_from_square(from: number): Move[];
   constructor(tt_size_mb: number);
   get_fen(): string;
   set_fen(fen: string): void;
@@ -118,6 +119,7 @@ export interface InitOutput {
   readonly build_info: (a: number) => void;
   readonly engineclient_check_terminal_state: (a: number) => number;
   readonly engineclient_check_terminal_state_for_fen: (a: number, b: number, c: number) => number;
+  readonly engineclient_get_available_moves_from_square: (a: number, b: number, c: number) => void;
   readonly engineclient_get_board_state: (a: number, b: number) => void;
   readonly engineclient_get_board_str: (a: number, b: number) => void;
   readonly engineclient_get_fen: (a: number, b: number) => void;

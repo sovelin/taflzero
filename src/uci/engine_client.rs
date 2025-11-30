@@ -92,16 +92,28 @@ impl EngineClient {
     }
 
     #[wasm_bindgen]
-    pub fn is_move_available(&mut self, from: Square, to: Square) -> bool {
-        let mv = Move::new(from, to);
+    pub fn get_available_moves_from_square(&mut self, from: Square) -> Vec<Move> {
         self.move_gen.generate_moves(self.engine.get_board_mutable());
+        let mut available_moves = Vec::new();
 
         for index in 0..self.move_gen.count {
-            if self.move_gen.moves[index] == mv {
-                return true;
+            let mv = self.move_gen.moves[index];
+            if mv.from() == from {
+                available_moves.push(mv);
             }
         }
 
+        available_moves
+    }
+
+    #[wasm_bindgen]
+    pub fn is_move_available(&mut self, from: Square, to: Square) -> bool {
+        let available_moves = self.get_available_moves_from_square(from);
+        for mv in available_moves {
+            if mv.to() == to {
+                return true;
+            }
+        }
         false
     }
 }
