@@ -548,6 +548,16 @@ export class EngineClient {
         wasm.engineclient_set_position_and_moves(this.__wbg_ptr, ptr0, len0, ptr1, len1);
     }
     /**
+     * @param {string} mv_str
+     * @returns {Move}
+     */
+    create_move_from_algebraic(mv_str) {
+        const ptr0 = passStringToWasm0(mv_str, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.engineclient_create_move_from_algebraic(this.__wbg_ptr, ptr0, len0);
+        return Move.__wrap(ret);
+    }
+    /**
      * @param {string} fen
      * @returns {Side | undefined}
      */
