@@ -1,7 +1,7 @@
 use wasm_bindgen::prelude::wasm_bindgen;
 use crate::{Board, Engine};
 use crate::movegen::MoveGen;
-use crate::mv::Move;
+use crate::mv::{create_move_from_algebraic, Move};
 use crate::nnue::{load_fc1_from_raw, load_fc2_from_raw};
 use crate::terminal::check_terminal;
 use crate::types::{Piece, Side, Square};
@@ -89,6 +89,11 @@ impl EngineClient {
     pub fn move_num_to_str(&self, mv_num: u32) -> String {
         let mv = Move::from_u32(mv_num);
         format!("{}", mv)
+    }
+
+    #[wasm_bindgen]
+    pub fn create_move_from_algebraic(&self, mv_str: &str) -> Move {
+        create_move_from_algebraic(mv_str).unwrap()
     }
 
     #[wasm_bindgen]
