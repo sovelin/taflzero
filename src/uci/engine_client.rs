@@ -97,6 +97,18 @@ impl EngineClient {
     }
 
     #[wasm_bindgen]
+    pub fn get_available_moves(&mut self, from: Square) -> Vec<Move> {
+        self.move_gen.generate_moves(self.engine.get_board_mutable());
+        let mut available_moves = Vec::new();
+
+        for index in 0..self.move_gen.count {
+            available_moves.push(self.move_gen.moves[index]);
+        }
+
+        available_moves
+    }
+
+    #[wasm_bindgen]
     pub fn get_available_moves_from_square(&mut self, from: Square) -> Vec<Move> {
         self.move_gen.generate_moves(self.engine.get_board_mutable());
         let mut available_moves = Vec::new();

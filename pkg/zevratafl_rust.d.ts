@@ -37,6 +37,7 @@ export class EngineClient {
   move_num_to_str(mv_num: number): string;
   move_str_to_num(mv_str: string): number;
   is_move_available(from: number, to: number): boolean;
+  get_available_moves(from: number): Move[];
   check_terminal_state(): Side | undefined;
   set_position_and_moves(fen: string, moves: Uint32Array): void;
   create_move_from_algebraic(mv_str: string): Move;
@@ -121,6 +122,7 @@ export interface InitOutput {
   readonly engineclient_check_terminal_state: (a: number) => number;
   readonly engineclient_check_terminal_state_for_fen: (a: number, b: number, c: number) => number;
   readonly engineclient_create_move_from_algebraic: (a: number, b: number, c: number) => number;
+  readonly engineclient_get_available_moves: (a: number, b: number, c: number) => void;
   readonly engineclient_get_available_moves_from_square: (a: number, b: number, c: number) => void;
   readonly engineclient_get_board_state: (a: number, b: number) => void;
   readonly engineclient_get_board_str: (a: number, b: number) => void;

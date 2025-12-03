@@ -530,6 +530,23 @@ export class EngineClient {
         return ret !== 0;
     }
     /**
+     * @param {number} from
+     * @returns {Move[]}
+     */
+    get_available_moves(from) {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.engineclient_get_available_moves(retptr, this.__wbg_ptr, from);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayJsValueFromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 4, 4);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
      * @returns {Side | undefined}
      */
     check_terminal_state() {
