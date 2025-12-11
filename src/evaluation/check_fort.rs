@@ -1,8 +1,15 @@
-use std::collections::{HashSet, VecDeque};
+use std::collections::{VecDeque};
 use crate::board::{Board, PRECOMPUTED};
 use crate::board::constants::{BOARD_SIZE, HOLE, SQS};
 use crate::board::types::{Piece, Square};
 use crate::board::utils::is_edge_square;
+use crate::types::OptionalSquare;
+
+fn revert_cleared_defenders(board: &mut Board, cleared_defenders: &Vec<OptionalSquare>) {
+    for &sq in cleared_defenders.iter() {
+        board.set_piece(sq as Square, Piece::DEFENDER).unwrap();
+    }
+}
 
 pub fn check_fort(board: &mut Board) -> bool {
     if board.king_sq == HOLE {
@@ -17,26 +24,99 @@ pub fn check_fort(board: &mut Board) -> bool {
         return false;
     }
 
-    let fort_info = get_fort(board);
-
-    if fort_info.is_attackers_accessing_king || fort_info.is_corner_accessing_king {
+    if king_contacts_attackers(&board) {
         return false;
     }
 
-    if fort_info.fort_set.is_empty() {
-        return false;
+    let mut cleared_defenders: Vec<OptionalSquare> = Vec::new();
+
+    loop {
+        let attackers_space = get_attackers_space(board);
+        let breaked = try_break_fort(&attackers_space, board);
+
+        if breaked == HOLE {
+            break;
+        }
+
+        cleared_defenders.push(breaked);
+
+        if king_contacts_attackers(&board) {
+            revert_cleared_defenders(board, &cleared_defenders);
+            return false;
+        }
     }
 
-    !is_fort_breakable(board, &fort_info)
+    true
 }
 
-struct FortInfo {
-    fort_list: Vec<Square>,
-    fort_set: HashSet<Square>,
-    is_attackers_accessing_king: bool,
-    is_corner_accessing_king: bool,
-    inner_space: [bool; SQS],
+pub fn king_contacts_attackers(board: &Board) -> bool {
+    let mut is_contacting = false;
+
+    bfs_ts(
+        &[board.king_sq as Square],
+        &PRECOMPUTED.vertical_horizontal_neighbors,
+        |sq| {
+
+            if board.board[sq] == Piece::ATTACKER {
+                is_contacting = true;
+            }
+
+            board.board[sq] != Piece::DEFENDER
+        },
+    );
+
+    is_contacting
 }
+
+pub fn get_attackers_space(board: &Board) -> [bool; SQS] {
+    bfs_ts(
+        &board.attackers[..board.attackers_count as usize],
+        &PRECOMPUTED.vertical_horizontal_neighbors,
+        |sq| {
+            let piece = board.board[sq];
+
+            if piece == Piece::KING {
+                return false;
+            }
+
+            if piece == Piece::DEFENDER {
+                return false;
+            }
+
+            piece == Piece::EMPTY
+        },
+    )
+}
+
+pub fn try_break_fort(attackers_space: &[bool; SQS], board: &mut Board) -> OptionalSquare {
+    for &defender in board.defenders[0..board.defenders_count as usize].iter() {
+        // check horizontal capture
+
+        let left = PRECOMPUTED.left_neighbor[defender];
+        let right = PRECOMPUTED.right_neighbor[defender];
+
+        if let (Some(left), Some(right)) = (left, right) {
+            if attackers_space[left as usize] && attackers_space[right as usize] {
+                board.clear_piece(defender);
+                return defender as OptionalSquare;
+            }
+        }
+
+        // check vertical capture
+        let top = PRECOMPUTED.top_neighbor[defender];
+        let bottom = PRECOMPUTED.bottom_neighbor[defender];
+
+        if let (Some(top), Some(bottom)) = (top, bottom) {
+        if attackers_space[top as usize] && attackers_space[bottom as usize] {
+            board.clear_piece(defender);
+            return defender as OptionalSquare;
+        }
+            }
+    }
+
+    HOLE
+}
+
 
 fn is_calculate_needed(board: &Board) -> bool {
     if board.last_move_to == HOLE {
@@ -82,128 +162,6 @@ fn king_contacts_edge(king_sq: Square) -> bool {
     row == 0 || row == BOARD_SIZE - 1 || col == 0 || col == BOARD_SIZE - 1
 }
 
-fn get_fort(board: &Board) -> FortInfo {
-    let mut fort_list = Vec::new();
-    let mut fort_set: HashSet<Square> = HashSet::new();
-    let mut is_attackers_accessing_king = false;
-    let mut is_corner_accessing_king = false;
-
-    let mut inner_space = bfs_ts(
-        &[board.king_sq as Square],
-        &PRECOMPUTED.vertical_horizontal_neighbors,
-        |sq| {
-            let piece = board.board[sq];
-
-            if piece == Piece::ATTACKER {
-                is_attackers_accessing_king = true;
-            }
-
-            if is_corner_square(sq) {
-                is_corner_accessing_king = true;
-            }
-
-            if piece == Piece::DEFENDER && fort_set.insert(sq) {
-                fort_list.push(sq);
-            }
-
-            piece == Piece::EMPTY
-        },
-    );
-
-    inner_space[board.king_sq as usize] = true;
-
-    FortInfo {
-        fort_list,
-        fort_set,
-        is_attackers_accessing_king,
-        is_corner_accessing_king,
-        inner_space,
-    }
-}
-
-fn is_fort_breakable(board: &mut Board, fort_info: &FortInfo) -> bool {
-    let Some(&fort_sq) = fort_info
-        .fort_list
-        .iter()
-        .find(|&&sq| board.board[sq] == Piece::DEFENDER) else {
-        return false;
-    };
-
-    let connected_defenders = bfs_ts(
-        &[fort_sq],
-        &PRECOMPUTED.all_neighbors,
-        |sq| board.board[sq] == Piece::DEFENDER,
-    );
-
-    for sq in flags_to_vec(&connected_defenders) {
-        let left = PRECOMPUTED.left_neighbor[sq];
-        let right = PRECOMPUTED.right_neighbor[sq];
-
-        if is_capture_possible_in_enemy_area(board, left, right, &fort_info.inner_space) {
-            if fort_info.fort_set.contains(&sq) {
-                return true;
-            }
-
-            board.clear_piece(sq);
-            let res = is_fort_breakable(board, fort_info);
-            board.set_piece(sq, Piece::DEFENDER);
-
-            if res {
-                return true;
-            }
-        }
-
-        let top = PRECOMPUTED.top_neighbor[sq];
-        let bottom = PRECOMPUTED.bottom_neighbor[sq];
-
-        if is_capture_possible_in_enemy_area(board, top, bottom, &fort_info.inner_space) {
-            if fort_info.fort_set.contains(&sq) {
-                return true;
-            }
-
-            board.clear_piece(sq);
-            let res = is_fort_breakable(board, fort_info);
-            board.set_piece(sq, Piece::DEFENDER);
-
-            if res {
-                return true;
-            }
-        }
-    }
-
-    false
-}
-
-fn is_capture_possible_in_enemy_area(
-    board: &Board,
-    between_a: Option<Square>,
-    between_b: Option<Square>,
-    inner_space: &[bool; SQS],
-) -> bool {
-    let (Some(a), Some(b)) = (between_a, between_b) else {
-        return false;
-    };
-
-    is_from_outside(a, b, inner_space)
-        && could_have_potential_attacker(board, a)
-        && could_have_potential_attacker(board, b)
-}
-
-fn is_from_outside(a: Square, b: Square, inner_space: &[bool; SQS]) -> bool {
-    !inner_space[a] && !inner_space[b]
-}
-
-fn could_have_potential_attacker(board: &Board, sq: Square) -> bool {
-    board.board[sq] != Piece::DEFENDER && sq != PRECOMPUTED.throne_sq
-}
-
-fn is_corner_square(sq: Square) -> bool {
-    sq == PRECOMPUTED.top_left_sq
-        || sq == PRECOMPUTED.bottom_left_sq
-        || sq == PRECOMPUTED.top_right_sq
-        || sq == PRECOMPUTED.bottom_right_sq
-}
-
 fn bfs_ts<F>(start_squares: &[Square], neighbors: &[Vec<Square>; SQS], mut is_achievable: F) -> [bool; SQS]
 where
     F: FnMut(Square) -> bool,
@@ -233,14 +191,6 @@ where
     }
 
     flags
-}
-
-fn flags_to_vec(flags: &[bool; SQS]) -> Vec<Square> {
-    flags
-        .iter()
-        .enumerate()
-        .filter_map(|(idx, &flag)| if flag { Some(idx) } else { None })
-        .collect()
 }
 
 #[cfg(test)]
@@ -285,6 +235,7 @@ mod tests {
         board.set_piece(get_square_from_algebraic("f3"), Piece::DEFENDER).unwrap();
         board.set_piece(get_square_from_algebraic("e3"), Piece::DEFENDER).unwrap();
         board.set_piece(get_square_from_algebraic("g3"), Piece::DEFENDER).unwrap();
+        board.set_piece(get_square_from_algebraic("g8"), Piece::ATTACKER).unwrap();
         assert!(check_fort(&mut board));
     }
 
@@ -299,6 +250,7 @@ mod tests {
         board.set_piece(get_square_from_algebraic("f3"), Piece::DEFENDER).unwrap();
         board.set_piece(get_square_from_algebraic("e3"), Piece::DEFENDER).unwrap();
         board.set_piece(get_square_from_algebraic("g3"), Piece::DEFENDER).unwrap();
+        board.set_piece(get_square_from_algebraic("g8"), Piece::ATTACKER).unwrap();
         assert!(!check_fort(&mut board));
     }
 
@@ -342,6 +294,7 @@ mod tests {
         board.set_piece(get_square_from_algebraic("f2"), Piece::DEFENDER).unwrap();
         board.set_piece(get_square_from_algebraic("e2"), Piece::DEFENDER).unwrap();
         board.set_piece(get_square_from_algebraic("g2"), Piece::DEFENDER).unwrap();
+        board.set_piece(get_square_from_algebraic("g8"), Piece::ATTACKER).unwrap();
         assert!(!check_fort(&mut board));
     }
 
@@ -354,6 +307,7 @@ mod tests {
         board.set_piece(get_square_from_algebraic("f3"), Piece::DEFENDER).unwrap();
         board.set_piece(get_square_from_algebraic("e2"), Piece::DEFENDER).unwrap();
         board.set_piece(get_square_from_algebraic("g2"), Piece::DEFENDER).unwrap();
+        board.set_piece(get_square_from_algebraic("b2"), Piece::ATTACKER).unwrap();
         assert!(!check_fort(&mut board));
     }
 
@@ -373,6 +327,44 @@ mod tests {
         board.set_piece(get_square_from_algebraic("h2"), Piece::DEFENDER).unwrap();
         board.set_piece(get_square_from_algebraic("i2"), Piece::DEFENDER).unwrap();
         board.set_piece(get_square_from_algebraic("c2"), Piece::DEFENDER).unwrap();
+        board.set_piece(get_square_from_algebraic("g8"), Piece::ATTACKER).unwrap();
         assert!(check_fort(&mut board));
+    }
+
+    #[test]
+    fn king_surrounded_on_specific_hard_case_with_holes_is_fort() {
+        let mut board = Board::new();
+        board.set_piece(get_square_from_algebraic("e1"), Piece::KING).unwrap();
+        board.set_piece(get_square_from_algebraic("d1"), Piece::DEFENDER).unwrap();
+        board.set_piece(get_square_from_algebraic("f1"), Piece::DEFENDER).unwrap();
+        board.set_piece(get_square_from_algebraic("d2"), Piece::DEFENDER).unwrap();
+        board.set_piece(get_square_from_algebraic("f2"), Piece::DEFENDER).unwrap();
+        board.set_piece(get_square_from_algebraic("e3"), Piece::DEFENDER).unwrap();
+        board.set_piece(get_square_from_algebraic("c3"), Piece::DEFENDER).unwrap();
+        board.set_piece(get_square_from_algebraic("c4"), Piece::DEFENDER).unwrap();
+        board.set_piece(get_square_from_algebraic("d4"), Piece::DEFENDER).unwrap();
+        board.set_piece(get_square_from_algebraic("b8"), Piece::ATTACKER).unwrap();
+        assert!(check_fort(&mut board));
+
+        // check that all defenders are still on board
+        assert_eq!(board.defenders_count, 8);
+    }
+
+    #[test]
+    fn king_surrounded_on_specific_hard_breakable_case_with_holes_is_not_fort() {
+        let mut board = Board::new();
+        board.set_piece(get_square_from_algebraic("e1"), Piece::KING).unwrap();
+        board.set_piece(get_square_from_algebraic("d1"), Piece::DEFENDER).unwrap();
+        board.set_piece(get_square_from_algebraic("f1"), Piece::DEFENDER).unwrap();
+        board.set_piece(get_square_from_algebraic("d2"), Piece::DEFENDER).unwrap();
+        board.set_piece(get_square_from_algebraic("f2"), Piece::DEFENDER).unwrap();
+        board.set_piece(get_square_from_algebraic("e3"), Piece::DEFENDER).unwrap();
+        board.set_piece(get_square_from_algebraic("c3"), Piece::DEFENDER).unwrap();
+        board.set_piece(get_square_from_algebraic("d4"), Piece::DEFENDER).unwrap();
+        board.set_piece(get_square_from_algebraic("b8"), Piece::ATTACKER).unwrap();
+        assert!(!check_fort(&mut board));
+
+        // check that all defenders are still on board
+        assert_eq!(board.defenders_count, 7);
     }
 }

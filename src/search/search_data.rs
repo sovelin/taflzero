@@ -53,7 +53,6 @@ impl SearchData {
             time_exceeded_checks: 0,
             temperatures,
             temperature: 0,
-            //temperature: 0,
             random_generator: StdRng::seed_from_u64(123456),
         }
     }

@@ -30,7 +30,6 @@ fn is_calculate_needed(board: &Board) -> bool {
     false
 }
 
-// 6a4/11/4a6/a1aa2aaa2/1ad2a2a2/a1k5a2/1aa5a2/2a3aa3/3aaa1a3/11/11 a - wrong fen! should make calculations
 pub fn defenders_is_surrounded(board: &Board) -> bool {
     if !is_calculate_needed(board) {
         return false;
