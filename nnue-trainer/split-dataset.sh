@@ -1,45 +1,47 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Check if at least one argument is provided
-if [ $# -lt 1 ]; then
-    echo "Usage: $0 <file_name> [number_of_lines]"
-    exit 1
+if [ $# -ne 1 ]; then
+  echo "Usage: $0 <file>"
+  exit 1
 fi
 
-# Input file
-INPUT_FILE="$1"
+FILE="$1"
 
-# Check if the file exists
-if [ ! -f "$INPUT_FILE" ]; then
-    echo "File '$INPUT_FILE' does not exist."
-    exit 1
+if [ ! -f "$FILE" ]; then
+  echo "File not found: $FILE"
+  exit 1
 fi
 
-# Determine total lines to use
-if [ $# -eq 2 ]; then
-    TOTAL_LINES_TO_USE=$2
-    FILE_LINES=$(wc -l < "$INPUT_FILE")
-    if [ "$TOTAL_LINES_TO_USE" -gt "$FILE_LINES" ]; then
-        echo "The file has only $FILE_LINES lines, but you requested $TOTAL_LINES_TO_USE."
-        exit 1
-    fi
-else
-    TOTAL_LINES_TO_USE=$(wc -l < "$INPUT_FILE")
-fi
+BASENAME=$(basename "$FILE")
+TRAIN_FILE="train_$BASENAME"
+VALIDATE_FILE="validate_$BASENAME"
 
-# Generate output file names
-TRAIN_FILE="train_$(basename "$INPUT_FILE")"
-VALIDATE_FILE="validate_$(basename "$INPUT_FILE")"
+echo "Counting lines (this will take time)..."
+TOTAL_LINES=$(LC_ALL=C wc -l < "$FILE")
 
-# Calculate lines for training (90%) and validation (10%)
-TRAIN_LINES=$((TOTAL_LINES_TO_USE * 90 / 100))
-VALIDATE_LINES=$((TOTAL_LINES_TO_USE - TRAIN_LINES))
+TRAIN_LINES=$((TOTAL_LINES * 90 / 100))
+VALIDATE_LINES=$((TOTAL_LINES - TRAIN_LINES))
 
-# Split the file
-head -n "$TOTAL_LINES_TO_USE" "$INPUT_FILE" | head -n "$TRAIN_LINES" > "$TRAIN_FILE"
-head -n "$TOTAL_LINES_TO_USE" "$INPUT_FILE" | tail -n "$VALIDATE_LINES" > "$VALIDATE_FILE"
+FILE_SIZE=$(stat -f%z "$FILE")
 
-# Print summary
-echo "File split completed:"
-echo "Training dataset: $TRAIN_FILE ($TRAIN_LINES lines)"
-echo "Validation dataset: $VALIDATE_FILE ($VALIDATE_LINES lines)"
+echo "Total lines:      $TOTAL_LINES"
+echo "Training lines:   $TRAIN_LINES"
+echo "Validation lines: $VALIDATE_LINES"
+echo
+
+echo "Writing train file (90%)..."
+pv -s "$FILE_SIZE" "$FILE" \
+  | head -n "$TRAIN_LINES" \
+  > "$TRAIN_FILE"
+
+echo
+echo "Writing validation file (10%)..."
+pv -s "$FILE_SIZE" "$FILE" \
+  | tail -n "$VALIDATE_LINES" \
+  > "$VALIDATE_FILE"
+
+echo
+echo "Done."
+echo "Train:    $TRAIN_FILE"
+echo "Validate: $VALIDATE_FILE"
