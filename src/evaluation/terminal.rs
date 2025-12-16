@@ -65,7 +65,7 @@ mod tests {
         board.make_move_simple(create_move_from_algebraic("d5e5").unwrap()).unwrap();
 
         let result = check_terminal(&mut board);
-        assert_eq!(result, Some(Side::DEFENDERS));
+        assert_eq!(result, Some(Side::ATTACKERS));
     }
 
     #[test]
