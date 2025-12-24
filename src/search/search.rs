@@ -67,7 +67,7 @@ pub fn search(
 
     search_data.move_gens[height as usize].order_moves(
         board,
-        tt_move,
+        tt_entry.best_move(),
         &search_data.killers,
         &search_data.history,
         height as usize,
