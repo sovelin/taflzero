@@ -1,16 +1,16 @@
 /* tslint:disable */
 /* eslint-disable */
+export function main_js(): void;
 export function hello(): string;
 export function build_info(): string;
-export function main_js(): void;
 export function get_total_squares(): number;
-export function get_board_size(): number;
 export function get_initial_board_fen(): string;
+export function get_board_size(): number;
+export function get_square(row: number, col: number): number;
 export function get_sq_algebraic(sq: number): string;
 export function get_row(sq: number): number;
-export function get_square(row: number, col: number): number;
-export function get_square_from_algebraic(coord: string): number;
 export function get_col(sq: number): number;
+export function get_square_from_algebraic(coord: string): number;
 export enum Piece {
   EMPTY = 0,
   ATTACKER = 1,
@@ -29,7 +29,7 @@ export class Engine {
 export class EngineClient {
   free(): void;
   [Symbol.dispose](): void;
-  make_search(time: number): number;
+  make_search(time: number, depth: number): number;
   get_w2_first(): number;
   side_to_move(): Side;
   get_board_str(): string;
@@ -129,7 +129,7 @@ export interface InitOutput {
   readonly engineclient_get_fen: (a: number, b: number) => void;
   readonly engineclient_get_w2_first: (a: number) => number;
   readonly engineclient_is_move_available: (a: number, b: number, c: number) => number;
-  readonly engineclient_make_search: (a: number, b: number) => number;
+  readonly engineclient_make_search: (a: number, b: number, c: number) => number;
   readonly engineclient_move_num_to_str: (a: number, b: number, c: number) => void;
   readonly engineclient_move_str_to_num: (a: number, b: number, c: number, d: number) => void;
   readonly engineclient_new: (a: number) => number;

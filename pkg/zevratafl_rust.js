@@ -198,6 +198,11 @@ function takeObject(idx) {
     dropObject(idx);
     return ret;
 }
+
+export function main_js() {
+    wasm.main_js();
+}
+
 /**
  * @returns {string}
  */
@@ -238,10 +243,6 @@ export function build_info() {
     }
 }
 
-export function main_js() {
-    wasm.main_js();
-}
-
 function getArrayJsValueFromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     const mem = getDataViewMemory0();
@@ -276,14 +277,6 @@ export function get_total_squares() {
 }
 
 /**
- * @returns {number}
- */
-export function get_board_size() {
-    const ret = wasm.get_board_size();
-    return ret >>> 0;
-}
-
-/**
  * @returns {string}
  */
 export function get_initial_board_fen() {
@@ -301,6 +294,24 @@ export function get_initial_board_fen() {
         wasm.__wbindgen_add_to_stack_pointer(16);
         wasm.__wbindgen_export4(deferred1_0, deferred1_1, 1);
     }
+}
+
+/**
+ * @returns {number}
+ */
+export function get_board_size() {
+    const ret = wasm.get_board_size();
+    return ret >>> 0;
+}
+
+/**
+ * @param {number} row
+ * @param {number} col
+ * @returns {number}
+ */
+export function get_square(row, col) {
+    const ret = wasm.get_square(row, col);
+    return ret >>> 0;
 }
 
 /**
@@ -334,12 +345,11 @@ export function get_row(sq) {
 }
 
 /**
- * @param {number} row
- * @param {number} col
+ * @param {number} sq
  * @returns {number}
  */
-export function get_square(row, col) {
-    const ret = wasm.get_square(row, col);
+export function get_col(sq) {
+    const ret = wasm.get_col(sq);
     return ret >>> 0;
 }
 
@@ -351,15 +361,6 @@ export function get_square_from_algebraic(coord) {
     const ptr0 = passStringToWasm0(coord, wasm.__wbindgen_export, wasm.__wbindgen_export2);
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.get_square_from_algebraic(ptr0, len0);
-    return ret >>> 0;
-}
-
-/**
- * @param {number} sq
- * @returns {number}
- */
-export function get_col(sq) {
-    const ret = wasm.get_col(sq);
     return ret >>> 0;
 }
 
@@ -424,10 +425,11 @@ export class EngineClient {
     }
     /**
      * @param {number} time
+     * @param {number} depth
      * @returns {number}
      */
-    make_search(time) {
-        const ret = wasm.engineclient_make_search(this.__wbg_ptr, time);
+    make_search(time, depth) {
+        const ret = wasm.engineclient_make_search(this.__wbg_ptr, time, depth);
         return ret >>> 0;
     }
     /**
