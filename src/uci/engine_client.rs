@@ -2,7 +2,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use crate::{Board, Engine};
 use crate::movegen::MoveGen;
 use crate::mv::{create_move_from_algebraic, Move};
-use crate::nnue::{load_fc1_from_raw, load_fc2_from_raw};
+use crate::nnue::load_default_weights;
 use crate::terminal::check_terminal;
 use crate::types::{Piece, Side, Square};
 
@@ -16,17 +16,22 @@ struct EngineClient {
 impl EngineClient {
     #[wasm_bindgen(constructor)]
     pub fn new(tt_size_mb: usize) -> Self {
-        let w1 = load_fc1_from_raw();
-        let w2 = load_fc2_from_raw();
+        let (w1, w2) = load_default_weights();
 
         let engine = Engine::new(tt_size_mb, &w1, &w2);
 
-        Self { engine, move_gen: MoveGen::new() }
+        Self {
+            engine,
+            move_gen: MoveGen::new(),
+        }
     }
 
     #[wasm_bindgen]
     pub fn set_position_and_moves(&mut self, fen: &str, moves: Vec<u32>) {
-        let moves = moves.into_iter().map(|mv_u32| Move::from_u32(mv_u32)).collect();
+        let moves = moves
+            .into_iter()
+            .map(|mv_u32| Move::from_u32(mv_u32))
+            .collect();
         self.engine.set_position_and_moves(fen, moves);
     }
 
@@ -34,7 +39,6 @@ impl EngineClient {
     pub fn check_terminal_state(&mut self) -> Option<Side> {
         check_terminal(self.engine.get_board_mutable())
     }
-
 
     #[wasm_bindgen]
     pub fn check_terminal_state_for_fen(&mut self, fen: &str) -> Option<Side> {
@@ -61,7 +65,7 @@ impl EngineClient {
 
     #[wasm_bindgen]
     pub fn get_w2_first(&self) -> f32 {
-        self.engine.board().nnue.w2[0]
+        self.engine.board().nnue.w2[0] as f32
     }
 
     #[wasm_bindgen]
@@ -81,7 +85,7 @@ impl EngineClient {
 
     #[wasm_bindgen]
     pub fn move_str_to_num(&self, mv_str: &str) -> Result<u32, String> {
-        let mv = crate::mv::create_move_from_algebraic(mv_str)?;
+        let mv = create_move_from_algebraic(mv_str)?;
         Ok(mv.raw())
     }
 

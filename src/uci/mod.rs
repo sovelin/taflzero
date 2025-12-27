@@ -75,6 +75,7 @@ impl<O: UciOutput> UciController<O> {
             }
             "board" => {
                 self.send(&format!("{:?}", self.engine.board()));
+                self.send(&format!("Eval: {}", self.engine.board().get_eval()));
                 UciRunState::Continue
             }
             "go" => {

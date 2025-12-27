@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
-use wasm_bindgen::prelude::wasm_bindgen;
 use crate::board::fen::FenError;
 use crate::board::PRECOMPUTED;
-use crate::nnue::{calculate_nnue_index, Weights1, Weights2, HIDDEN, INPUTS, NNUE, STM_BIT};
+use crate::nnue::{calculate_nnue_index, Weights1, Weights2, NNUE, STM_BIT, load_default_weights};
 use super::zobrist::{ZOBRIST_DATA};
 use super::types::{OptionalSquare, Piece, Side, Square, ZobristHash};
 use super::constants::{SQS, ATTACKERS_MAX, DEFENDERS_MAX, BOARD_SIZE, HOLE, INITIAL_FEN};
@@ -27,6 +26,7 @@ pub struct Board {
 
 impl Board {
     pub fn new() -> Self {
+        let (w1, w2) = load_default_weights();
         Self {
             board: [Piece::EMPTY; SQS],
             attackers: [0; ATTACKERS_MAX],
@@ -41,7 +41,7 @@ impl Board {
             zobrist: 0,
             rep_table: HashMap::new(),
             last_move_to: HOLE,
-            nnue: NNUE::new(Box::new([[0.0; HIDDEN]; INPUTS]), Box::new([0.0; HIDDEN]))
+            nnue: NNUE::new(w1, w2),
         }
     }
 
