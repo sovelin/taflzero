@@ -3,7 +3,7 @@ use crate::board::constants::SQS;
 use crate::types::{Piece, Square};
 
 pub const INPUTS: usize = 364;
-pub const HIDDEN: usize = 128;
+pub const HIDDEN: usize = 256;
 
 pub const QA: i32 = 255;     // quant for layer 1
 pub const QB: i32 = 32;      // quant for layer 2
