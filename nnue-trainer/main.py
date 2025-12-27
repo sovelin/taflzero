@@ -73,7 +73,7 @@ def create_data_loader(manager: TrainDataManager, path: str, positions_count: in
     dataset = ChessDataset(path, manager, positions_count) \
         if not is_plain_dataset \
         else PlainChessDataset(path, manager, positions_count)
-    return DataLoader(dataset, batch_size=16384, num_workers=4)
+    return DataLoader(dataset, batch_size=16384, num_workers=6)
 
 
 def run_opposite_train_nnue(
@@ -201,9 +201,9 @@ if __name__ == '__main__':
 
 
     run_hnefatafl_train_nnue(
-        256,
-        "train_800M.csv.shuffled.fen",
-        "validate_800M.csv.shuffled.fen",
-        f"{TRAINS_DIR}/hnefatafl-364x256-gen4",
-        859750000
+        128,
+        "train_dataset_for_gen12.fen",
+        "validate_dataset_for_gen12.fen",
+        f"{TRAINS_DIR}/hnefatafl-364x128-fair-gen13",
+        150642133
     )

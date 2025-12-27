@@ -18,6 +18,7 @@ pub struct SearchData {
     pub killers: Killer,
     pub timer: Timer,
     pub time_limit: u64,
+    pub depth_limit: u32,
     cached_exceed: bool,
     time_exceeded_checks: u32,
     pub temperatures: Vec<Vec<i32>>,
@@ -54,6 +55,7 @@ impl SearchData {
             temperatures,
             temperature: 0,
             random_generator: StdRng::seed_from_u64(123456),
+            depth_limit: MAX_PLY as u32,
         }
     }
 
@@ -72,10 +74,11 @@ impl SearchData {
         self.cached_exceed
     }
 
-    pub fn start_timer(&mut self, time_limit_ms: u64) {
+    pub fn start_timer(&mut self, time_limit_ms: u64, depth: u32) {
         self.timer.start();
         self.time_limit = time_limit_ms;
         self.time_exceeded_checks = 0;
         self.cached_exceed = false;
+        self.depth_limit = depth;
     }
 }

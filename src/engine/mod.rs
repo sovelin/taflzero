@@ -48,8 +48,8 @@ impl Engine {
         }
     }
 
-    pub fn make_search(&mut self, time: u64, on_iteration: Option<&dyn Fn(SearchIterationResponse)>) -> SearchResponse {
-        self.search_data.start_timer(time);
+    pub fn make_search(&mut self, time: u64, depth: u32, on_iteration: Option<&dyn Fn(SearchIterationResponse)>) -> SearchResponse {
+        self.search_data.start_timer(time, depth);
         let res = search_root(&mut self.board, &mut self.search_data, &mut self.tt, on_iteration);
         self.best_move = Some(res.best_move);
         res

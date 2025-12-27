@@ -3,7 +3,7 @@ use crate::board::constants::SQS;
 use crate::types::{Piece, Square};
 
 pub const INPUTS: usize = 364;
-pub const HIDDEN: usize = 256;
+pub const HIDDEN: usize = 128;
 
 pub const QA: i32 = 255;     // quant for layer 1
 pub const QB: i32 = 32;      // quant for layer 2
@@ -12,6 +12,33 @@ pub const STM_BIT: usize = 363;
 
 pub static FC1_RAW: &str = include_str!("../../nnue-324x256-gen4/fc1.25.weights.csv");
 pub static FC2_RAW: &str = include_str!("../../nnue-324x256-gen4/fc2.25.weights.csv");
+
+// pub static FC1_RAW: &str = include_str!("../../nnue-fair-gen4-324x8/fc1.20.weights.csv");
+// pub static FC2_RAW: &str = include_str!("../../nnue-fair-gen4-324x8/fc2.20.weights.csv");
+
+// pub static FC1_RAW: &str = include_str!("../../nnue-fair-gen5-324x16/fc1.27.weights.csv");
+// pub static FC2_RAW: &str = include_str!("../../nnue-fair-gen5-324x16/fc2.27.weights.csv");
+
+// pub static FC1_RAW: &str = include_str!("../../nnue-fair-gen6-324x32/fc1.23.weights.csv");
+// pub static FC2_RAW: &str = include_str!("../../nnue-fair-gen6-324x32/fc2.23.weights.csv");
+
+// pub static FC1_RAW: &str = include_str!("../../nnue-fair-gen7-324x32/fc1.19.weights.csv");
+// pub static FC2_RAW: &str = include_str!("../../nnue-fair-gen7-324x32/fc2.19.weights.csv");
+
+// pub static FC1_RAW: &str = include_str!("../../nnue-fair-gen9-324x64/fc1.7.weights.csv");
+// pub static FC2_RAW: &str = include_str!("../../nnue-fair-gen9-324x64/fc2.7.weights.csv");
+
+// pub static FC1_RAW: &str = include_str!("../../nnue-fair-gen10-324x64/fc1.18.weights.csv");
+// pub static FC2_RAW: &str = include_str!("../../nnue-fair-gen10-324x64/fc2.18.weights.csv");
+
+// pub static FC1_RAW: &str = include_str!("../../nnue-fair-gen11-324x64/fc1.57.weights.csv");
+// pub static FC2_RAW: &str = include_str!("../../nnue-fair-gen11-324x64/fc2.57.weights.csv");
+
+// pub static FC1_RAW: &str = include_str!("../../nnue-fair-gen12-324x64/fc1.53.weights.csv");
+// pub static FC2_RAW: &str = include_str!("../../nnue-fair-gen12-324x64/fc2.53.weights.csv");
+
+// pub static FC1_RAW: &str = include_str!("../../nnue-fair-gen13-324x128/fc1.135.weights.csv");
+// pub static FC2_RAW: &str = include_str!("../../nnue-fair-gen13-324x128/fc2.135.weights.csv");
 
 
 

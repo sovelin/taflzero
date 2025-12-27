@@ -96,8 +96,8 @@ pub fn search_root(
 
     let mut local_best_move: Option<Move> = None;
 
-    for i in 1..MAX_PLY {
-        best_score = aspiration_window(board, search_data, tt, i as u32, best_score);
+    for i in 1..=search_data.depth_limit {
+        best_score = aspiration_window(board, search_data, tt, i, best_score);
 
         if search_data.time_exceeded() {
             break;

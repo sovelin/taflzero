@@ -210,7 +210,7 @@ fn play_random_game(rnd: &mut StdRng, game: &mut LearningGame, w1: &Weights1, w2
             };
         }
 
-        let bm = engine.make_search(5, None);
+        let bm = engine.make_search(1000000000, 2, None);
         if !bm.best_move.is_null() {
             engine.make_move(bm.best_move).unwrap();
             game.add_position(&engine.board());
@@ -257,14 +257,18 @@ pub fn play_random_games(num_games: usize, file_name: String) {
         learning_game.mark_winner(result.winner);
         batcher.add_game(learning_game);
 
-        if batcher.is_full() {
+        // if batcher.is_full() {
+        //     game_saved += batch_size;
+        //     println!("Saved {} positions to file...", game_saved);
+        //     batcher.save_to_file(file_name.as_str());
+        //     batcher.clear();
+        // } else if i % 10 == 0 {
+        //     batcher.print_fullness();
+        // }
             game_saved += batch_size;
             println!("Saved {} positions to file...", game_saved);
             batcher.save_to_file(file_name.as_str());
             batcher.clear();
-        } else if i % 10 == 0 {
-            batcher.print_fullness();
-        }
 
         total_moves += result.moves_count;
 

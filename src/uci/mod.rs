@@ -175,7 +175,7 @@ impl<O: UciOutput> UciController<O> {
         }
 
         let output = &self.output;
-        self.engine.make_search(movetime, Some(&|iteration: SearchIterationResponse| {
+        self.engine.make_search(movetime, MAX_PLY as u32, Some(&|iteration: SearchIterationResponse| {
             let msg = format!(
                 "info depth {} score {} nodes {} time {} speed {} bestmove {:?}",
                 iteration.depth,
@@ -232,6 +232,7 @@ use wasm_bindgen::{prelude::*, JsCast};
 #[cfg(target_arch = "wasm32")]
 use web_sys::{CustomEvent, CustomEventInit};
 use crate::board::constants::INITIAL_FEN;
+use crate::search::constants::MAX_PLY;
 
 #[cfg(target_arch = "wasm32")]
 fn broadcast(event_name: &str, msg: &str) {

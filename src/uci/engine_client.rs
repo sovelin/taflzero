@@ -44,8 +44,8 @@ impl EngineClient {
     }
 
     #[wasm_bindgen]
-    pub fn make_search(&mut self, time: u32) -> u32 {
-        let res = self.engine.make_search(time as u64, None);
+    pub fn make_search(&mut self, time: u32, depth: u32) -> u32 {
+        let res = self.engine.make_search(time as u64, depth, None);
         res.best_move.raw()
     }
 
