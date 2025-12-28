@@ -24,6 +24,7 @@ pub struct SearchData {
     pub temperatures: Vec<Vec<i32>>,
     pub temperature: usize,
     pub random_generator: StdRng,
+    pub tt_age: u8,
 }
 
 impl SearchData {
@@ -56,6 +57,7 @@ impl SearchData {
             temperature: 0,
             random_generator: StdRng::seed_from_u64(123456),
             depth_limit: MAX_PLY as u32,
+            tt_age: 0,
         }
     }
 

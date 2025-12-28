@@ -15,6 +15,7 @@ pub struct TTEntry {
     score: i32,
     flag: TTFlag,
     best_move: Move,
+    age: u8,
 }
 
 impl TTEntry {
@@ -45,6 +46,13 @@ impl TTEntry {
     pub fn depth(&self) -> u8 {
         self.depth
     }
+
+    pub fn priority(&self, current_age: u8) -> u16 {
+        let age_diff = current_age.wrapping_sub(self.age);
+        let age_score = 255u8 - age_diff;
+
+        (self.depth as u16) * 4 + age_score as u16
+    }
 }
 
 impl Default for TTEntry {
@@ -55,6 +63,7 @@ impl Default for TTEntry {
             score: 0,
             flag: TTFlag::Exact,
             best_move: Move::default(),
+            age: 0,
         }
     }
 }
@@ -83,7 +92,7 @@ impl TranspositionTable {
         &self.table[index]
     }
 
-    pub fn store(&mut self, key: u64, depth: u8, score: i32, flag: TTFlag, best_move: Move, height: u32) {
+    pub fn store(&mut self, key: u64, depth: u8, score: i32, flag: TTFlag, best_move: Move, height: u32, age: u8) {
         let score = if is_mate_score(score) {
             if score > 0 {
                 score + (height as i32)
@@ -96,12 +105,19 @@ impl TranspositionTable {
 
         let index = (key as usize) & self.mask;
 
-        self.table[index] = TTEntry {
+        let new_entry = TTEntry {
             key,
             depth,
             score,
             flag,
             best_move,
+            age,
         };
+
+        let old_entry = self.table[index];
+
+        if new_entry.priority(age) >= old_entry.priority(age) {
+            self.table[index] = new_entry;
+        }
     }
 }

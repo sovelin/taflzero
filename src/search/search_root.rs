@@ -126,6 +126,8 @@ pub fn search_root(
         }
     }
 
+    search_data.tt_age += 1;
+
     SearchResponse {
         best_move: local_best_move.unwrap_or_default(),
         score: best_score,

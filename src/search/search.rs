@@ -159,6 +159,7 @@ pub fn search(
         tt_type,
         tt_move,
         height,
+        search_data.tt_age,
     );
 
     alpha
