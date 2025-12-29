@@ -17,6 +17,7 @@ pub fn search(
     search_data: &mut SearchData,
     tt: &mut TranspositionTable,
 ) -> i32 {
+    search_data.nodes_searched += 1;
     if let Some(result) = check_terminal(board) {
         let score = if result == Side::DEFENDERS {
             MATE_SCORE - height as i32
@@ -84,10 +85,6 @@ pub fn search(
     while let Some(mv) = search_data.move_gens[height as usize].pick_move() {
         let bonus = if is_mate_score(alpha) {0} else { search_data.temperatures[height as usize][moves_count as usize] };
         moves_count += 1;
-
-
-
-        search_data.nodes_searched += 1;
 
         board.make_move(mv, &mut search_data.undos[height as usize]).unwrap();
 
@@ -161,6 +158,73 @@ pub fn search(
         height,
         search_data.tt_age,
     );
+
+    alpha
+}
+
+pub fn qsearch(
+    board: &mut Board,
+    mut alpha: i32,
+    mut beta: i32,
+    height: u32,
+    search_data: &mut SearchData,
+    tt: &mut TranspositionTable,
+) -> i32 {
+    search_data.nodes_searched += 1;
+    if let Some(result) = check_terminal(board) {
+        let score = if result == Side::DEFENDERS {
+            MATE_SCORE - height as i32
+        } else {
+            -MATE_SCORE + height as i32
+        };
+
+        return sided_evaluation(score, board.side_to_move);
+    }
+
+    let stand_pat = board.get_eval();
+
+    if stand_pat >= beta {
+        return beta;
+    }
+
+    if stand_pat > alpha {
+        alpha = stand_pat;
+    }
+
+    if search_data.time_exceeded() {
+        return 0;
+    }
+
+    search_data.capture_gens[height as usize].generate_captures(board);
+
+    for i in 0..search_data.capture_gens[height as usize].count {
+        let mv = search_data.capture_gens[height as usize].captures[i];
+
+        board.make_move(mv, &mut search_data.undos[height as usize]).unwrap();
+
+        let score = -qsearch(
+            board,
+            -beta,
+            -alpha,
+            height + 1,
+            search_data,
+            tt,
+        );
+
+        board.unmake_move(&mut search_data.undos[height as usize]).unwrap();
+
+        if  search_data.time_exceeded() {
+            return 0;
+        }
+
+        if score > alpha {
+            alpha = score;
+
+            if score >= beta {
+                break;
+            }
+        }
+    }
 
     alpha
 }

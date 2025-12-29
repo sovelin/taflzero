@@ -1,4 +1,4 @@
-mod is_capture_possible;
+pub mod is_capture_possible;
 mod mask_shield_captures;
 
 use crate::board::{Board, PRECOMPUTED};
