@@ -1,12 +1,30 @@
 use rand::Rng;
 use crate::board::Board;
 use crate::board::types::Side;
+use crate::board::utils::{get_col, get_row};
 use crate::evaluation::{sided_evaluation, MATE_SCORE};
 use crate::evaluation::terminal::check_terminal;
 use crate::is_mate_score;
 use crate::moves::mv::Move;
+use crate::types::Square;
 use super::search_data::SearchData;
 use super::transposition::{TTFlag, TranspositionTable};
+
+fn is_quiet(search_data: &mut SearchData, height: u32, mv: Move, board: &Board, is_capture: bool) -> bool {
+    let king_row = get_row(board.king_sq as Square);
+    let king_col = get_col(board.king_sq as Square);
+    let move_row = get_row(mv.to());
+    let move_col = get_col(mv.to());
+    let is_king_move = mv.from() == board.king_sq as Square;
+    let is_adjacent_to_king = (king_row as i32 - move_row as i32).abs() <= 1 && (king_col as i32 - move_col as i32).abs() <= 1;
+    let is_influencing_to_king = king_col == move_col || king_row == move_row;
+
+    search_data.killers.get(height as usize)[0] != mv
+        && search_data.killers.get(height as usize)[1] != mv
+        && !is_capture
+        && !is_king_move
+        && !is_adjacent_to_king
+        && !is_influencing_to_king }
 
 pub fn search(
     board: &mut Board,
@@ -86,9 +104,24 @@ pub fn search(
         let bonus = if is_mate_score(alpha) {0} else { search_data.temperatures[height as usize][moves_count as usize] };
         moves_count += 1;
 
+        // let is_quiet = search_data.killers.get(height as usize)[0] != mv
+        //     && search_data.killers.get(height as usize)[1] != mv;
+
+
+        let piece_count = board.attackers_count + board.defenders_count;
         board.make_move(mv, &mut search_data.undos[height as usize]).unwrap();
+        let piece_count_after = board.attackers_count + board.defenders_count;
+        let is_capture = piece_count_after < piece_count;
 
         let mut score: i32;
+
+        let is_lmr = !is_pv_node && depth >= 2 && moves_count > 1 && is_quiet(
+            search_data,
+            height,
+            mv,
+            board,
+            is_capture,
+        );
 
         if is_pv_node && moves_count == 1 {
             score = -search(
@@ -100,6 +133,28 @@ pub fn search(
                 search_data,
                 tt,
             );
+        } else if is_lmr {
+            score = -search(
+                board,
+                depth - 1 - 1,
+                -alpha - 1 + bonus,
+                -alpha + bonus,
+                height + 1,
+                search_data,
+                tt,
+            );
+
+            if score > alpha {
+                score = -search(
+                    board,
+                    depth - 1,
+                    -beta + bonus,
+                    -alpha + bonus,
+                    height + 1,
+                    search_data,
+                    tt,
+                );
+            }
         } else {
             score = -search(
                 board,
