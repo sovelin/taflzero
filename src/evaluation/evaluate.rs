@@ -98,6 +98,16 @@ fn evaluate_defenders_mobility(board: &Board, king_sq: Square) -> i32 {
 }
 
 #[inline]
+pub fn evaluate_king_mobility(board: &Board) -> i32 {
+	if board.king_sq < 0 {
+		return 0;
+	}
+
+	let king_sq = board.king_sq as Square;
+	possible_moves_count(board, king_sq) as i32
+}
+
+#[inline]
 fn evaluate_attackers_mobility(board: &Board) -> i32 {
 	let mut result = 0;
 	let limit = ATTACKERS_MOBILITY_SCORES.len() - 1;

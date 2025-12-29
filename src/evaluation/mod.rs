@@ -21,3 +21,5 @@ pub fn sided_evaluation(score: i32, side: Side) -> i32 {
         Side::ATTACKERS => -score,
     }
 }
+
+pub use evaluate::evaluate_king_mobility;

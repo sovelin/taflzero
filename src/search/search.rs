@@ -4,27 +4,35 @@ use crate::board::types::Side;
 use crate::board::utils::{get_col, get_row};
 use crate::evaluation::{sided_evaluation, MATE_SCORE};
 use crate::evaluation::terminal::check_terminal;
-use crate::is_mate_score;
+use crate::{evaluate_king_mobility, is_mate_score};
+use crate::masks::BOARD_SIZE;
 use crate::moves::mv::Move;
 use crate::types::Square;
 use super::search_data::SearchData;
 use super::transposition::{TTFlag, TranspositionTable};
 
+fn reductions(depth: u32, move_number: u32) -> u32 {
+    let reduction =
+        (depth as f32).log2().floor() as u32 + (move_number as f32).log2().floor() as u32 - 1;
+    std::cmp::max(0, std::cmp::min(reduction, depth - 2))
+}
+
 fn is_quiet(search_data: &mut SearchData, height: u32, mv: Move, board: &Board, is_capture: bool) -> bool {
-    let king_row = get_row(board.king_sq as Square);
-    let king_col = get_col(board.king_sq as Square);
-    let move_row = get_row(mv.to());
-    let move_col = get_col(mv.to());
     let is_king_move = mv.from() == board.king_sq as Square;
-    let is_adjacent_to_king = (king_row as i32 - move_row as i32).abs() <= 1 && (king_col as i32 - move_col as i32).abs() <= 1;
-    let is_influencing_to_king = king_col == move_col || king_row == move_row;
+
+    let is_edge_move = {
+        let row = get_row(mv.to());
+        let col = get_col(mv.to());
+        row == 0 || row == BOARD_SIZE - 1 || col == 0 || col == BOARD_SIZE - 1
+    };
+
+    let is_king_edged_move = is_king_move && is_edge_move;
 
     search_data.killers.get(height as usize)[0] != mv
         && search_data.killers.get(height as usize)[1] != mv
         && !is_capture
-        && !is_king_move
-        && !is_adjacent_to_king
-        && !is_influencing_to_king }
+        && !is_king_edged_move
+    }
 
 pub fn search(
     board: &mut Board,
@@ -104,18 +112,25 @@ pub fn search(
         let bonus = if is_mate_score(alpha) {0} else { search_data.temperatures[height as usize][moves_count as usize] };
         moves_count += 1;
 
-        // let is_quiet = search_data.killers.get(height as usize)[0] != mv
-        //     && search_data.killers.get(height as usize)[1] != mv;
-
 
         let piece_count = board.attackers_count + board.defenders_count;
+
+        let king_mobility_before = evaluate_king_mobility(board);
+
         board.make_move(mv, &mut search_data.undos[height as usize]).unwrap();
         let piece_count_after = board.attackers_count + board.defenders_count;
         let is_capture = piece_count_after < piece_count;
 
         let mut score: i32;
+        let king_mobility_after = evaluate_king_mobility(board);
 
-        let is_lmr = !is_pv_node && depth >= 2 && moves_count > 1 && is_quiet(
+        let is_king_mobility_improved =
+            board.side_to_move == Side::ATTACKERS && king_mobility_after > king_mobility_before ||
+            board.side_to_move == Side::DEFENDERS && king_mobility_after < king_mobility_before;
+
+        let is_lmr = !is_pv_node && depth >= 2 &&
+            !is_king_mobility_improved &&
+            is_quiet(
             search_data,
             height,
             mv,
