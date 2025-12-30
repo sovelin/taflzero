@@ -523,6 +523,13 @@ export class EngineClient {
         }
     }
     /**
+     * @returns {bigint}
+     */
+    get_zobrist_hash() {
+        const ret = wasm.engineclient_get_zobrist_hash(this.__wbg_ptr);
+        return BigInt.asUintN(64, ret);
+    }
+    /**
      * @param {number} from
      * @param {number} to
      * @returns {boolean}

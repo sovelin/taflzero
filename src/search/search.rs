@@ -119,7 +119,7 @@ pub fn search(
 
         board.make_move(mv, &mut search_data.undos[height as usize]).unwrap();
         let piece_count_after = board.attackers_count + board.defenders_count;
-        let is_capture = piece_count_after < piece_count;
+        let is_capture = false; // piece_count_after < piece_count;
 
         let mut score: i32;
         let king_mobility_after = evaluate_king_mobility(board);

@@ -41,6 +41,11 @@ impl EngineClient {
     }
 
     #[wasm_bindgen]
+    pub fn get_zobrist_hash(&self) -> u64 {
+        self.engine.board().zobrist
+    }
+
+    #[wasm_bindgen]
     pub fn check_terminal_state_for_fen(&mut self, fen: &str) -> Option<Side> {
         let board = self.engine.get_board_mutable();
         board.set_fen(fen).unwrap();

@@ -36,6 +36,7 @@ export class EngineClient {
   get_board_state(): any[];
   move_num_to_str(mv_num: number): string;
   move_str_to_num(mv_str: string): number;
+  get_zobrist_hash(): bigint;
   is_move_available(from: number, to: number): boolean;
   get_available_moves(from: number): Move[];
   check_terminal_state(): Side | undefined;
@@ -128,6 +129,7 @@ export interface InitOutput {
   readonly engineclient_get_board_str: (a: number, b: number) => void;
   readonly engineclient_get_fen: (a: number, b: number) => void;
   readonly engineclient_get_w2_first: (a: number) => number;
+  readonly engineclient_get_zobrist_hash: (a: number) => bigint;
   readonly engineclient_is_move_available: (a: number, b: number, c: number) => number;
   readonly engineclient_make_search: (a: number, b: number, c: number) => number;
   readonly engineclient_move_num_to_str: (a: number, b: number, c: number) => void;
