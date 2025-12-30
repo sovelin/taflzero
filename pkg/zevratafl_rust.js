@@ -268,6 +268,12 @@ function passArray32ToWasm0(arg, malloc) {
     WASM_VECTOR_LEN = arg.length;
     return ptr;
 }
+
+function _assertClass(instance, klass) {
+    if (!(instance instanceof klass)) {
+        throw new Error(`expected instance of ${klass.name}`);
+    }
+}
 /**
  * @returns {number}
  */
@@ -364,11 +370,6 @@ export function get_square_from_algebraic(coord) {
     return ret >>> 0;
 }
 
-function _assertClass(instance, klass) {
-    if (!(instance instanceof klass)) {
-        throw new Error(`expected instance of ${klass.name}`);
-    }
-}
 /**
  * @enum {0 | 1 | 2 | 3}
  */
@@ -645,6 +646,14 @@ export class EngineClient {
         const ptr0 = passStringToWasm0(fen, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
         wasm.engineclient_set_fen(this.__wbg_ptr, ptr0, len0);
+    }
+    /**
+     * @param {Move} mv
+     */
+    make_move(mv) {
+        _assertClass(mv, Move);
+        var ptr0 = mv.__destroy_into_raw();
+        wasm.engineclient_make_move(this.__wbg_ptr, ptr0);
     }
 }
 if (Symbol.dispose) EngineClient.prototype[Symbol.dispose] = EngineClient.prototype.free;

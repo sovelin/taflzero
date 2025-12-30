@@ -36,6 +36,7 @@ export const engineclient_get_fen: (a: number, b: number) => void;
 export const engineclient_get_w2_first: (a: number) => number;
 export const engineclient_get_zobrist_hash: (a: number) => bigint;
 export const engineclient_is_move_available: (a: number, b: number, c: number) => number;
+export const engineclient_make_move: (a: number, b: number) => void;
 export const engineclient_make_search: (a: number, b: number, c: number) => number;
 export const engineclient_move_num_to_str: (a: number, b: number, c: number) => void;
 export const engineclient_move_str_to_num: (a: number, b: number, c: number, d: number) => void;
