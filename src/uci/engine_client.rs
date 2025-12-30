@@ -142,4 +142,9 @@ impl EngineClient {
         }
         false
     }
+
+    #[wasm_bindgen]
+    pub fn make_move(&mut self, mv: Move) {
+        self.engine.make_move(mv).unwrap();
+    }
 }
