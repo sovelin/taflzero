@@ -17,7 +17,7 @@ fn reductions(depth: u32, move_number: u32) -> u32 {
     std::cmp::max(0, std::cmp::min(reduction, depth - 2))
 }
 
-fn is_quiet(search_data: &mut SearchData, height: u32, mv: Move, board: &Board, is_capture: bool) -> bool {
+fn is_quiet(search_data: &mut SearchData, height: u32, mv: Move, board: &Board) -> bool {
     let is_king_move = mv.from() == board.king_sq as Square;
 
     let is_edge_move = {
@@ -30,7 +30,6 @@ fn is_quiet(search_data: &mut SearchData, height: u32, mv: Move, board: &Board, 
 
     search_data.killers.get(height as usize)[0] != mv
         && search_data.killers.get(height as usize)[1] != mv
-        && !is_capture
         && !is_king_edged_move
     }
 
@@ -112,14 +111,9 @@ pub fn search(
         let bonus = if is_mate_score(alpha) {0} else { search_data.temperatures[height as usize][moves_count as usize] };
         moves_count += 1;
 
-
-        let piece_count = board.attackers_count + board.defenders_count;
-
         let king_mobility_before = evaluate_king_mobility(board);
 
         board.make_move(mv, &mut search_data.undos[height as usize]).unwrap();
-        let piece_count_after = board.attackers_count + board.defenders_count;
-        let is_capture = false; // piece_count_after < piece_count;
 
         let mut score: i32;
         let king_mobility_after = evaluate_king_mobility(board);
@@ -135,7 +129,6 @@ pub fn search(
             height,
             mv,
             board,
-            is_capture,
         );
 
         if is_pv_node && moves_count == 1 {
