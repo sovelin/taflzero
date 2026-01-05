@@ -1,6 +1,7 @@
 use crate::board::{get_side_by_piece, Board, PRECOMPUTED};
 use crate::board::constants::BOARD_SIZE;
 use crate::board::types::{Piece, Side, Square};
+use crate::board::utils::{get_col, get_row};
 use crate::moves::undo::{CapturedPiece, UndoMove};
 
 #[derive(Copy, Clone)]
@@ -135,8 +136,18 @@ fn captures_on_side(board: &mut Board, side: Side, which: ShieldSide, undo: &mut
     }
 }
 
-// ===== публичная функция: применить взятия стенкой щита =====
+fn is_edged_sq(sq: Square) -> bool {
+    let row = get_row(sq);
+    let col = get_col(sq);
+
+    row == 0 || row == BOARD_SIZE - 1 || col == 0 || col == BOARD_SIZE - 1
+}
+
 pub fn make_shield_wall_captures(board: &mut Board, to_sq: Square, undo: &mut UndoMove) {
+    if !is_edged_sq(to_sq) {
+        return;
+    }
+
     let sides = shield_sides(to_sq);
     if sides.is_empty() { return; }
 

@@ -122,14 +122,22 @@ pub fn search(
             board.side_to_move == Side::ATTACKERS && king_mobility_after > king_mobility_before ||
             board.side_to_move == Side::DEFENDERS && king_mobility_after < king_mobility_before;
 
-        let is_lmr = !is_pv_node && depth >= 2 &&
-            !is_king_mobility_improved &&
-            is_quiet(
+        let is_quiet = is_quiet(
             search_data,
             height,
             mv,
             board,
         );
+
+
+        if !is_pv_node && depth <= 2 && is_quiet && !is_king_mobility_improved && board.get_eval() + 200 < alpha {
+            board.unmake_move(&mut search_data.undos[height as usize]).unwrap();
+            continue;
+        }
+
+        let is_lmr = !is_pv_node && depth >= 2 &&
+            !is_king_mobility_improved &&
+            is_quiet;
 
         if is_pv_node && moves_count == 1 {
             score = -search(
