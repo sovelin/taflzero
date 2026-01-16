@@ -2,7 +2,6 @@ use crate::board::{Board, PRECOMPUTED};
 use crate::board::types::{Side, Square};
 use crate::evaluation::check_fort::check_fort;
 use crate::evaluation::defenders_is_surrounded::defenders_is_surrounded;
-use crate::evaluation::king_is_surrounded::king_is_surrounded;
 
 pub fn is_threefold_repetition(board: &Board) -> bool {
     if let Some(value) = board.rep_table.get(&board.zobrist) {
@@ -13,16 +12,16 @@ pub fn is_threefold_repetition(board: &Board) -> bool {
 }
 
 pub fn check_terminal(board: &mut Board) -> Option<Side> {
+    if board.king_sq == -1 {
+        return Some(Side::ATTACKERS);
+    }
+
     if is_threefold_repetition(board) {
         return Some(Side::ATTACKERS);
     }
 
     if PRECOMPUTED.corners_sq.contains(&(board.king_sq as Square)) {
         return Some(Side::DEFENDERS);
-    }
-
-    if king_is_surrounded(board) {
-        return Some(Side::ATTACKERS);
     }
 
     if defenders_is_surrounded(board) {
@@ -123,5 +122,14 @@ mod tests {
 
         let result = check_terminal(&mut board);
         assert_eq!(result, Some(Side::DEFENDERS));
+    }
+
+    #[test]
+    fn king_not_on_the_board_is_attacker_win() {
+        let mut board = Board::new();
+        board.set_piece(get_square_from_algebraic("b2"), Piece::DEFENDER).unwrap();
+        board.set_side(Side::DEFENDERS);
+        let result = check_terminal(&mut board);
+        assert_eq!(result, Some(Side::ATTACKERS));
     }
 }

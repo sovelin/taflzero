@@ -1,6 +1,5 @@
 use crate::board::types::Side;
 
-mod king_is_surrounded;
 mod defenders_is_surrounded;
 mod check_fort;
 pub mod terminal;

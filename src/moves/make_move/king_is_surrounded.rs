@@ -1,13 +1,8 @@
 use crate::board::{Board, PRECOMPUTED};
 use crate::board::types::Piece;
-//use web_sys::console;
 
 pub fn king_is_surrounded(board: &Board) -> bool {
     let king_sq = board.king_sq;
-
-    // console::log_1(&format!("{}", board.get_fen()).into());
-    // console::log_1(&format!("king_sq = {}", board.king_sq).into());
-
 
     if PRECOMPUTED.vertical_horizontal_neighbors.len() < 4 {
         return false;
@@ -19,7 +14,6 @@ pub fn king_is_surrounded(board: &Board) -> bool {
             surround_count += 1;
         }
     }
-
 
     surround_count >= 4
 }

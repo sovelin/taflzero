@@ -23,4 +23,4 @@ def update_graph(csv_file, refresh_interval=5):
 
         plt.pause(refresh_interval)
 
-update_graph("trains/hnefatafl-364x128-fair-gen13/train.csv")
+update_graph("trains/hnefatafl-364x64-fair-gen14/train.csv")

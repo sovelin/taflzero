@@ -1,12 +1,15 @@
 pub mod is_capture_possible;
 mod mask_shield_captures;
+pub mod king_is_surrounded;
 
 use crate::board::{Board, PRECOMPUTED};
-use crate::board::types::{OptionalSquare};
+use crate::board::types::OptionalSquare;
 use crate::moves::make_move::is_capture_possible::is_capture_possible;
+use crate::moves::make_move::king_is_surrounded::king_is_surrounded;
 use crate::moves::make_move::mask_shield_captures::make_shield_wall_captures;
 use crate::moves::mv::Move;
 use crate::moves::undo::{CapturedPiece, UndoMove};
+use crate::types::{Piece, Side, Square};
 
 impl Board {
     fn add_position_to_rep_table(&mut self) {
@@ -43,7 +46,23 @@ impl Board {
         make_shield_wall_captures(self, to, undo);
 
         self.last_move_to = to as OptionalSquare;
+
+        // Capture king special handling
+        if self.king_sq != -1 && self.side_to_move == Side::ATTACKERS && PRECOMPUTED.vertical_horizontal_neighbors[self.king_sq as usize].contains(
+            &to
+        ) && king_is_surrounded(self) {
+            // Capture the king
+            undo.add_captured_piece(CapturedPiece {
+                square: self.king_sq as Square,
+                piece: Piece::KING,
+            });
+
+            self.clear_piece(self.king_sq as Square);
+        }
+
         self.flip_side();
+
+
         self.add_position_to_rep_table();
         Ok(())
     }
@@ -479,6 +498,129 @@ mod tests {
             board.make_move(mv, &mut undo).expect("make move failed");
 
             assert_eq!(undo.captured_pieces_count, 0);
+        }
+    }
+
+    mod king_capture_rule {
+        use crate::Board;
+        use crate::board::utils::get_square_from_algebraic;
+        use crate::mv::create_move_from_algebraic;
+        use crate::types::{OptionalSquare, Piece, Side, Square};
+        use crate::undo::{CapturedPiece, UndoMove};
+
+        #[test]
+        fn king_capture_possible_not_near_throne()  {
+            let mut board = Board::new();
+            board.set_side(Side::ATTACKERS);
+            board.set_piece(get_square_from_algebraic("d5"), Piece::KING).unwrap();
+            board.set_piece(get_square_from_algebraic("d4"), Piece::ATTACKER).unwrap();
+            board.set_piece(get_square_from_algebraic("c5"), Piece::ATTACKER).unwrap();
+            board.set_piece(get_square_from_algebraic("e5"), Piece::ATTACKER).unwrap();
+            board.set_piece(get_square_from_algebraic("d7"), Piece::ATTACKER).unwrap();
+
+            // make move d7d6
+            let mv = create_move_from_algebraic("d7d6").unwrap();
+            let mut undo = UndoMove::new();
+            board.make_move(mv, &mut undo);
+            assert_eq!(undo.captured_pieces_count, 1);
+            assert_eq!(undo.captured_pieces()[0], CapturedPiece {
+                square: get_square_from_algebraic("d5"),
+                piece: Piece::KING
+            });
+        }
+
+        #[test]
+        fn king_capture_not_possible_near_throne() {
+            let mut board = Board::new();
+            board.set_side(Side::ATTACKERS);
+            board.set_piece(get_square_from_algebraic("e6"), Piece::KING).unwrap();
+            board.set_piece(get_square_from_algebraic("e5"), Piece::ATTACKER).unwrap();
+            board.set_piece(get_square_from_algebraic("e7"), Piece::ATTACKER).unwrap();
+            board.set_piece(get_square_from_algebraic("a6"), Piece::ATTACKER).unwrap();
+            println!("{:?}", board);
+            // make move e7e6
+            let mv = create_move_from_algebraic("a6d6").unwrap();
+            let mut undo = UndoMove::new();
+            board.make_move(mv, &mut undo);
+            assert_eq!(undo.captured_pieces_count, 1);
+            assert_eq!(undo.captured_pieces()[0], CapturedPiece {
+                square: get_square_from_algebraic("e6"),
+                piece: Piece::KING
+            });
+        }
+
+        #[test]
+        fn king_capture_impossible_if_not_surrounded() {
+            let mut board = Board::new();
+            board.set_side(Side::ATTACKERS);
+            board.set_piece(get_square_from_algebraic("e6"), Piece::KING).unwrap();
+            board.set_piece(get_square_from_algebraic("e5"), Piece::ATTACKER).unwrap();
+            board.set_piece(get_square_from_algebraic("a6"), Piece::ATTACKER).unwrap();
+            println!("{:?}", board);
+            // make move a6d6
+            let mv = create_move_from_algebraic("a6d6").unwrap();
+            let mut undo = UndoMove::new();
+            board.make_move(mv, &mut undo);
+            assert_eq!(undo.captured_pieces_count, 0);
+        }
+
+        #[test]
+        fn king_capture_impossible_if_not_surrounded_fully_by_attackers() {
+            let mut board = Board::new();
+            board.set_side(Side::ATTACKERS);
+            board.set_piece(get_square_from_algebraic("e6"), Piece::KING).unwrap();
+            board.set_piece(get_square_from_algebraic("e5"), Piece::ATTACKER).unwrap();
+            board.set_piece(get_square_from_algebraic("a6"), Piece::ATTACKER).unwrap();
+            board.set_piece(get_square_from_algebraic("e7"), Piece::DEFENDER).unwrap();
+            println!("{:?}", board);
+            // make move a6d6
+            let mv = create_move_from_algebraic("a6d6").unwrap();
+            let mut undo = UndoMove::new();
+            board.make_move(mv, &mut undo);
+            assert_eq!(undo.captured_pieces_count, 0);
+        }
+
+        #[test]
+        fn king_already_surrounded_but_not_capture_move() {
+            let mut board = Board::new();
+            board.set_side(Side::ATTACKERS);
+            board.set_piece(get_square_from_algebraic("e6"), Piece::KING).unwrap();
+            board.set_piece(get_square_from_algebraic("e5"), Piece::ATTACKER).unwrap();
+            board.set_piece(get_square_from_algebraic("e7"), Piece::ATTACKER).unwrap();
+            board.set_piece(get_square_from_algebraic("d6"), Piece::ATTACKER).unwrap();
+            board.set_piece(get_square_from_algebraic("f6"), Piece::ATTACKER).unwrap();
+            board.set_piece(get_square_from_algebraic("d1"), Piece::ATTACKER).unwrap();
+            println!("{:?}", board);
+            // make move e5e4
+            let mv = create_move_from_algebraic("d1e1").unwrap();
+            let mut undo = UndoMove::new();
+            board.make_move(mv, &mut undo);
+            assert_eq!(undo.captured_pieces_count, 0);
+        }
+
+        #[test]
+        fn king_is_removing_and_go_back_working_correctly() {
+            let mut board = Board::new();
+            board.set_side(Side::ATTACKERS);
+            board.set_piece(get_square_from_algebraic("e6"), Piece::KING).unwrap();
+            board.set_piece(get_square_from_algebraic("e5"), Piece::ATTACKER).unwrap();
+            board.set_piece(get_square_from_algebraic("e7"), Piece::ATTACKER).unwrap();
+            board.set_piece(get_square_from_algebraic("a6"), Piece::ATTACKER).unwrap();
+            println!("{:?}", board);
+            // make move e7e6
+            let mv = create_move_from_algebraic("a6d6").unwrap();
+            let mut undo = UndoMove::new();
+            board.make_move(mv, &mut undo);
+            assert_eq!(undo.captured_pieces_count, 1);
+            assert_eq!(undo.captured_pieces()[0], CapturedPiece {
+                square: get_square_from_algebraic("e6"),
+                piece: Piece::KING
+            });
+            assert_eq!(board.king_sq, -1);
+
+            // Now undo the move and check if king is restored
+            board.unmake_move(&mut undo).expect("undo move failed");
+            assert_eq!(board.king_sq, get_square_from_algebraic("e6") as OptionalSquare);
         }
     }
 }

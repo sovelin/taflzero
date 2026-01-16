@@ -210,7 +210,7 @@ fn play_random_game(rnd: &mut StdRng, game: &mut LearningGame, w1: &Weights1, w2
             };
         }
 
-        let bm = engine.make_search(1000000000, 2, None);
+        let bm = engine.make_search(1000000000, 3, None);
         if !bm.best_move.is_null() {
             engine.make_move(bm.best_move).unwrap();
             game.add_position(&engine.board());

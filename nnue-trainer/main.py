@@ -201,9 +201,9 @@ if __name__ == '__main__':
 
 
     run_hnefatafl_train_nnue(
-        128,
-        "train_dataset_for_gen12.fen",
-        "validate_dataset_for_gen12.fen",
-        f"{TRAINS_DIR}/hnefatafl-364x128-fair-gen13",
-        150642133
+        64,
+        "train_depth3.fen",
+        "validate_depth3.fen",
+        f"{TRAINS_DIR}/hnefatafl-364x64-fair-gen15",
+        108308576
     )

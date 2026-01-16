@@ -29,6 +29,19 @@ pub static FC2_RAW: &str = include_str!("../../nnue-324x256-gen4/fc2.25.weights.
 // pub static FC1_RAW: &str = include_str!("../../nnue-fair-gen11-324x64/fc1.57.weights.csv");
 // pub static FC2_RAW: &str = include_str!("../../nnue-fair-gen11-324x64/fc2.57.weights.csv");
 
+// pub static FC1_RAW: &str = include_str!("../../nnue-fair-gen12-324x64/fc1.53.weights.csv");
+// pub static FC2_RAW: &str = include_str!("../../nnue-fair-gen12-324x64/fc2.53.weights.csv");
+
+// pub static FC1_RAW: &str = include_str!("../../nnue-fair-gen14-324x64/fc1.31.weights.csv");
+// pub static FC2_RAW: &str = include_str!("../../nnue-fair-gen14-324x64/fc2.31.weights.csv");
+
+
+// pub static FC1_RAW: &str = include_str!("../../nnue-fair-gen13-324x128/fc1.24.weights.csv");
+// pub static FC2_RAW: &str = include_str!("../../nnue-fair-gen13-324x128/fc2.24.weights.csv");
+
+// pub static FC1_RAW: &str = include_str!("../../nnue-fair-gen15-324x64/fc1.8.weights.csv");
+// pub static FC2_RAW: &str = include_str!("../../nnue-fair-gen15-324x64/fc2.8.weights.csv");
+
 pub type Weights1 = Arc<[i16]>;
 pub type Weights2 = Arc<[i16]>;
 
