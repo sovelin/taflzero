@@ -44,9 +44,9 @@ impl Board {
             }
         }
 
+        self.last_move_to = to as OptionalSquare;
         make_shield_wall_captures(self, to, undo);
 
-        self.last_move_to = to as OptionalSquare;
 
         // Capture king special handling
         if self.king_sq != -1 && self.side_to_move == Side::ATTACKERS && PRECOMPUTED.vertical_horizontal_neighbors[self.king_sq as usize].contains(
@@ -623,6 +623,18 @@ mod tests {
             // Now undo the move and check if king is restored
             board.unmake_move(&mut undo).expect("undo move failed");
             assert_eq!(board.king_sq, get_square_from_algebraic("e6") as OptionalSquare);
+        }
+
+        #[test]
+        fn another_move_should_not_trigger_shield_wall() {
+            let mut board = Board::new();
+            // set fen
+            board.set_fen("3aaaa4/11/11/6a4/3aaaa3a/a2ad5a/3adka4/3adda4/4a1a4/5d1aa2/3a2adda1 a");
+            let mv = create_move_from_algebraic("d1e1").unwrap();
+            let mut undo = UndoMove::new();
+            board.make_move(mv, &mut undo).unwrap();
+
+            assert_eq!(undo.captured_pieces_count, 0);
         }
     }
 }

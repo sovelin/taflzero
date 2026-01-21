@@ -3,6 +3,7 @@ use crate::board::constants::BOARD_SIZE;
 use crate::board::types::{Piece, Side, Square};
 use crate::board::utils::{get_col, get_row};
 use crate::moves::undo::{CapturedPiece, UndoMove};
+use crate::types::OptionalSquare;
 
 #[derive(Copy, Clone)]
 pub enum ShieldSide { Top, Bottom, Left, Right }
@@ -90,6 +91,8 @@ fn captures_on_side(board: &mut Board, side: Side, which: ShieldSide, undo: &mut
 
     }
 
+    let mut start_sq: usize = 0;
+
     while let Some(next_sq) = it.and_then(next) {
         // Дошли до последней клетки ряда: финализируем текущую серию
         if is_last(next_sq) {
@@ -105,10 +108,16 @@ fn captures_on_side(board: &mut Board, side: Side, which: ShieldSide, undo: &mut
         } else if is_friend(board, side, next_sq) || is_always_friend(next_sq) {
             // своя фигура — закрываем серию, если >=2
             if seq.len() > 1 {
+                if board.last_move_to == start_sq as OptionalSquare || board.last_move_to == next_sq as OptionalSquare {
                 res.extend_from_slice(&seq);
+                }
                 seq.clear();
+                println!("Start: capture sequence at {:?}", start_sq);
+                println!("End: capture sequence at {:?}", next_sq);
             }
             seq_started = true;
+            start_sq = next_sq;
+            println!("start_sq: {:?}", start_sq);
         } else {
             // чужая фигура: проверяем “крышу”
             if !seq_started {
