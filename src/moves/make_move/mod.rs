@@ -23,6 +23,7 @@ impl Board {
     pub fn make_move(&mut self, mv: Move, undo: &mut UndoMove) -> Result<(), &'static str> {
         undo.clear_captured_pieces();
         undo.last_move_to = self.last_move_to;
+        undo.was_capture = false;
         undo.mv = mv;
 
         let from = mv.from();
@@ -64,6 +65,7 @@ impl Board {
 
 
         self.add_position_to_rep_table();
+        self.was_capture = undo.captured_pieces_count > 0;
         Ok(())
     }
 

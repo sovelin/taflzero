@@ -34,6 +34,7 @@ impl Board {
 
         // Update last move to
         self.last_move_to = undo.last_move_to;
+        self.was_capture = undo.was_capture;
 
         Ok(())
     }

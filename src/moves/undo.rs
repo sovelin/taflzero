@@ -23,6 +23,7 @@ pub struct UndoMove {
     pub _captured_pieces: [CapturedPiece; MAX_CAPTURED_PIECES as usize],
     pub mv: Move,
     pub last_move_to: OptionalSquare,
+    pub was_capture: bool,
 }
 
 impl UndoMove {
@@ -36,6 +37,7 @@ impl UndoMove {
             mv: Move::default(),
             last_move_to: HOLE,
             moved_piece: Piece::EMPTY,
+            was_capture: false,
         }
     }
 

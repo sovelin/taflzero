@@ -13,6 +13,10 @@ fn is_calculate_needed(board: &Board) -> bool {
         return false;
     }
 
+    if board.was_capture {
+        return true;
+    }
+
     let all_neighbors = &PRECOMPUTED.all_neighbors[board.last_move_to as usize];
 
     let mut attackers_nearby_count = 0;
@@ -68,6 +72,7 @@ mod tests {
     use crate::board::Board;
     use crate::board::types::Piece;
     use crate::board::utils::get_square_from_algebraic;
+    use crate::mv::create_move_from_algebraic;
     use super::defenders_is_surrounded;
 
     #[test]
@@ -157,5 +162,15 @@ mod tests {
 
         let is_surrounded = defenders_is_surrounded(&board);
         assert!(!is_surrounded);
+    }
+
+    #[test]
+    fn edge_case_when_capture_happen_with_surrounding() {
+        let mut board = Board::new();
+        board.set_fen("11/11/3aa5a/2akdaaa1a1/3a1d1da1d/4a2d1aa/4ad1daa1/2aaadda3/5aa4/11/6a4 a");
+        // make move
+        board.make_move_simple(create_move_from_algebraic("k9k8").unwrap()).unwrap();
+        let is_surrounded = defenders_is_surrounded(&board);
+        assert!(is_surrounded);
     }
 }

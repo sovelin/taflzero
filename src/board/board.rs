@@ -22,6 +22,7 @@ pub struct Board {
     pub rep_table: HashMap<ZobristHash, u8>,
     pub last_move_to: OptionalSquare,
     pub nnue: NNUE,
+    pub was_capture: bool,
 }
 
 impl Board {
@@ -42,6 +43,7 @@ impl Board {
             rep_table: HashMap::new(),
             last_move_to: HOLE,
             nnue: NNUE::new(w1, w2),
+            was_capture: false,
         }
     }
 
