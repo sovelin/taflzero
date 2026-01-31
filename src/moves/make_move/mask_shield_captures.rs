@@ -112,8 +112,6 @@ fn captures_on_side(board: &mut Board, side: Side, which: ShieldSide, undo: &mut
                 res.extend_from_slice(&seq);
                 }
                 seq.clear();
-                println!("Start: capture sequence at {:?}", start_sq);
-                println!("End: capture sequence at {:?}", next_sq);
             }
             seq_started = true;
             start_sq = next_sq;
