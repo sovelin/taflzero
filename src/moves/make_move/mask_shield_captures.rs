@@ -117,7 +117,6 @@ fn captures_on_side(board: &mut Board, side: Side, which: ShieldSide, undo: &mut
             }
             seq_started = true;
             start_sq = next_sq;
-            println!("start_sq: {:?}", start_sq);
         } else {
             // чужая фигура: проверяем “крышу”
             if !seq_started {
