@@ -196,7 +196,7 @@ fn play_random_game(rnd: &mut StdRng, game: &mut LearningGame, w1: &Weights1, w2
     loop {
         if is_threefold_repetition(&mut engine.board()) {
             return GameResult {
-                winner: Side::DEFENDERS,
+                winner: Side::ATTACKERS,
                 moves_count,
                 aborted: true,
             };
