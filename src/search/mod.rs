@@ -7,3 +7,4 @@ mod history;
 mod killer;
 mod moves_ordering;
 mod king_mobility_change;
+mod mcts;
