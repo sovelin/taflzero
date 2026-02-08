@@ -26,11 +26,11 @@ impl MCTSNode {
         }
     }
 
-    fn new_child(mv: Move, parent: NodeId, children: Vec<NodeId>, left_moves: Vec<Move>) -> MCTSNode {
+    fn new_child(mv: Move, parent: NodeId, left_moves: Vec<Move>) -> MCTSNode {
         MCTSNode {
             mv: Some(mv),
             parent: Some(parent),
-            children,
+            children: vec![],
             left_moves,
             visits: 0,
             wins: 0.0,
