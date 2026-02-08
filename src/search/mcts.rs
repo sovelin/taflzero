@@ -11,7 +11,7 @@ struct MCTSNode {
     children: Vec<NodeId>,
     parent: Option<NodeId>,
     left_moves: Vec<Move>,
-    visits: usize,
+    visits: f32,
     wins: f32,
 }
 
@@ -38,8 +38,8 @@ impl MCTSNode {
         }
     }
 
-    fn not_fully_expanded(&self) -> bool {
-        !self.left_moves.is_empty()
+    fn is_fully_expanded(&self) -> bool {
+        self.left_moves.is_empty()
     }
 }
 
@@ -56,11 +56,19 @@ impl MCTSTree {
         ] }
     }
 
-    fn get_node(&mut self, id: NodeId) -> &mut MCTSNode {
+    fn get_node(&self, id: NodeId) -> &MCTSNode {
+        &self.nodes[id]
+    }
+
+    fn get_node_mut(&mut self, id: NodeId) -> &mut MCTSNode {
         &mut self.nodes[id]
     }
 
-    fn get_root(&mut self) -> &mut MCTSNode {
+    fn get_root(&self) -> &MCTSNode {
+        &self.nodes[Self::ROOT_ID]
+    }
+
+    fn get_root_mut(&mut self) -> &mut MCTSNode {
         &mut self.nodes[Self::ROOT_ID]
     }
 }
@@ -69,6 +77,33 @@ fn get_left_moves(board: &Board, move_gen: &mut MoveGen) -> Vec<Move> {
     move_gen.generate_moves(board);
     move_gen.moves[0..move_gen.count].to_vec()
 }
+
+fn uct_select(tree: &MCTSTree, from: &MCTSNode) -> NodeId {
+    let mut best_score = f32::NEG_INFINITY;
+    let mut best_child: Option<NodeId> = None;
+
+    for id in from.children.iter() {
+        let child = tree.get_node(*id);
+
+        if child.visits == 0.0 {
+            return *id;
+        }
+
+        let q = child.wins / child.visits;
+        let c = 1.4f32;
+
+        let ln_parent = from.visits.max(1.0).ln();
+        let uct_value = q + c * (ln_parent / child.visits).sqrt();
+
+        if uct_value > best_score {
+            best_score = uct_value;
+            best_child = Some(*id);
+        }
+    }
+
+    best_child.expect("No child found!")
+}
+
 
 pub fn mcts_search(
     board: &mut Board,
@@ -81,7 +116,11 @@ pub fn mcts_search(
 
 
     while true {
+        let cur = tree.get_root();
         // 1) Selection
+        if cur.is_fully_expanded() {
+
+        }
 
     }
 }
