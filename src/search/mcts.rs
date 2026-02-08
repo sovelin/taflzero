@@ -1,4 +1,5 @@
 use crate::Board;
+use crate::movegen::MoveGen;
 use crate::mv::Move;
 use crate::search_data::SearchData;
 use crate::search_root::SearchIterationResponse;
@@ -64,14 +65,23 @@ impl MCTSTree {
     }
 }
 
+fn get_left_moves(board: &Board, move_gen: &mut MoveGen) -> Vec<Move> {
+    move_gen.generate_moves(board);
+    move_gen.moves[0..move_gen.count].to_vec()
+}
+
 pub fn mcts_search(
     board: &mut Board,
     search_data: &mut SearchData,
     on_iteration: Option<&dyn Fn(SearchIterationResponse)>,
 ) {
-    // go to the three
+    let mut mv_generator = MoveGen::new();
+    let left_moves = get_left_moves(board, &mut mv_generator);
+    let mut tree = MCTSTree::new(left_moves);
+
 
     while true {
         // 1) Selection
+
     }
 }
