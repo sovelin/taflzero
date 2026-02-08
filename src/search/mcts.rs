@@ -3,6 +3,7 @@ use crate::movegen::MoveGen;
 use crate::mv::Move;
 use crate::search_data::SearchData;
 use crate::search_root::SearchIterationResponse;
+use crate::undo::UndoMove;
 
 type NodeId = usize;
 
@@ -71,6 +72,10 @@ impl MCTSTree {
     fn get_root_mut(&mut self) -> &mut MCTSNode {
         &mut self.nodes[Self::ROOT_ID]
     }
+
+    fn get_root_id(&self) -> NodeId {
+        Self::ROOT_ID
+    }
 }
 
 fn get_left_moves(board: &Board, move_gen: &mut MoveGen) -> Vec<Move> {
@@ -78,7 +83,8 @@ fn get_left_moves(board: &Board, move_gen: &mut MoveGen) -> Vec<Move> {
     move_gen.moves[0..move_gen.count].to_vec()
 }
 
-fn uct_select(tree: &MCTSTree, from: &MCTSNode) -> NodeId {
+fn uct_select(tree: &MCTSTree, from_id: NodeId) -> NodeId {
+    let from = tree.get_node(from_id);
     let mut best_score = f32::NEG_INFINITY;
     let mut best_child: Option<NodeId> = None;
 
@@ -105,22 +111,55 @@ fn uct_select(tree: &MCTSTree, from: &MCTSNode) -> NodeId {
 }
 
 
+struct MovesStack {
+    undo: Vec<UndoMove>,
+}
+
+impl MovesStack {
+    fn new() -> Self {
+        MovesStack { undo: Vec::new() }
+    }
+
+    fn make_move(&mut self, board: &mut Board, mv: Move) {
+        let mut undo = UndoMove::new();
+        board.make_move(mv, &mut undo).expect("Failed to make move");
+        self.undo.push(undo);
+    }
+
+    fn unmake_last(&mut self, board: &mut Board) {
+        let mut last_mv = self.undo.pop().expect("UndoMove empty");
+        board.unmake_move(&mut last_mv).expect("Failed to make undo");
+    }
+
+    fn unmake_all(&mut self, board: &mut Board) {
+        while self.undo.len() > 0 {
+            self.unmake_last(board);
+        }
+    }
+}
+
 pub fn mcts_search(
     board: &mut Board,
     search_data: &mut SearchData,
+    on_iteration: Option<&dyn Fn(SearchIterationResponse)>,
     on_iteration: Option<&dyn Fn(SearchIterationResponse)>,
 ) {
     let mut mv_generator = MoveGen::new();
     let left_moves = get_left_moves(board, &mut mv_generator);
     let mut tree = MCTSTree::new(left_moves);
 
+    let mut move_stack = MovesStack::new();
 
-    while true {
-        let cur = tree.get_root();
+
+    loop {
+        let mut cur = tree.get_root_id();
         // 1) Selection
-        if cur.is_fully_expanded() {
-
+        while tree.get_node(cur).is_fully_expanded() {
+            cur = uct_select(&tree, cur);
+            let node = tree.get_node(cur);
+            move_stack.make_move(board, node.mv.expect("Move not found"));
         }
 
+        // 2) Expansion
     }
 }
