@@ -23,7 +23,7 @@ impl MCTSNode {
             parent: None,
             children: vec![],
             left_moves,
-            visits: 0,
+            visits: 0.0,
             wins: 0.0,
         }
     }
@@ -34,7 +34,7 @@ impl MCTSNode {
             parent: Some(parent),
             children: vec![],
             left_moves,
-            visits: 0,
+            visits: 0.0,
             wins: 0.0,
         }
     }
@@ -141,7 +141,6 @@ impl MovesStack {
 pub fn mcts_search(
     board: &mut Board,
     search_data: &mut SearchData,
-    on_iteration: Option<&dyn Fn(SearchIterationResponse)>,
     on_iteration: Option<&dyn Fn(SearchIterationResponse)>,
 ) {
     let mut mv_generator = MoveGen::new();
