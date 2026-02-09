@@ -204,8 +204,10 @@ pub fn mcts_search(
 
     let mut move_stack = MovesStack::new();
 
+    let mut iteration = 0;
 
     loop {
+        iteration += 1;
         let mut cur = tree.get_root_id();
         // 1) Selection
         while tree.get_node(cur).is_fully_expanded() && !tree.get_node(cur).children.is_empty() {
@@ -248,6 +250,10 @@ pub fn mcts_search(
             node_a.visits.partial_cmp(&node_b.visits).unwrap()
         }).expect("No children found");
 
-        println!("best_child_id: {:?}", best_child_id);
+        if iteration % 100 == 0 {
+            println!("best_child_id: {:?}", best_child_id);
+            println!("score: {}", tree.get_node(*best_child_id).wins / tree.get_node(*best_child_id).visits);
+            println!("move: {:?}", tree.get_node(*best_child_id).mv);
+        }
     }
 }

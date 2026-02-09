@@ -3,6 +3,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use crate::board::Board;
 use crate::evaluation::MATE_SCORE;
 use crate::is_mate_score;
+use crate::mcts::mcts_search;
 use crate::moves::mv::Move;
 use crate::search::constants::MAX_PLY;
 use crate::search::search::search;
@@ -88,6 +89,8 @@ pub fn search_root(
     tt: &mut TranspositionTable,
     on_iteration: Option<&dyn Fn(SearchIterationResponse)>,
 ) -> SearchResponse {
+    mcts_search(board, search_data, on_iteration);
+
     let mut best_score = 0;
 
     search_data.timer.start();
