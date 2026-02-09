@@ -119,7 +119,7 @@ fn uct_select(tree: &MCTSTree, from_id: NodeId) -> NodeId {
         }
 
         let q = child.wins / child.visits;
-        let c = 1.4f32;
+        let c = 3f32;
 
         let ln_parent = from.visits.max(1.0).ln();
         let uct_value = q + c * (ln_parent / child.visits).sqrt();
@@ -166,11 +166,13 @@ fn select_random_move(move_gen: &mut MoveGen, rnd_gen: &mut StdRng) -> Move {
     move_gen.moves[idx]
 }
 
-fn rollout(board: &mut Board, move_gen: &mut MoveGen, rnd_gen: &mut StdRng) -> Side {
+fn rollout(board: &mut Board, move_gen: &mut MoveGen, rnd_gen: &mut StdRng, limit: usize) -> Option<Side> {
     let mut stack = MovesStack::new();
     let mut res: Option<Side> = None;
 
+    let mut iteration = 0;
     loop {
+        iteration += 1;
         let is_terminal = check_terminal(board);
 
         if let Some(x) = is_terminal {
@@ -187,10 +189,15 @@ fn rollout(board: &mut Board, move_gen: &mut MoveGen, rnd_gen: &mut StdRng) -> S
 
         let mv = select_random_move(move_gen, rnd_gen);
         stack.make_move(board, mv);
+
+        if iteration >= limit {
+            stack.unmake_all(board);
+            return None;
+        }
     }
 
     stack.unmake_all(board);
-    res.expect("No side found")
+    Some(res.expect("No side found"))
 }
 
 pub fn mcts_search(
@@ -225,7 +232,7 @@ pub fn mcts_search(
         cur = tree.new_child(next_mv, cur, left_moves);
 
         // 3) Rollouts
-        let result = rollout(board, &mut mv_generator, &mut search_data.random_generator);
+        let result = rollout(board, &mut mv_generator, &mut search_data.random_generator, 500000);
 
         // 4) Backpropagation
 
@@ -234,26 +241,53 @@ pub fn mcts_search(
             let node = tree.get_node_mut(cur);
             node.visits += 1.0;
 
-            if result == board.side_to_move {
-                node.wins += 1.0;
+            if let Some(result) = result {
+                if result == board.side_to_move {
+                    node.wins += 1.0;
+                }
+            } else {
+                node.wins += 0.5;
             }
 
             cur = node.parent.expect("Parent not found");
         }
 
         // 5) print all
-        let root = tree.get_root();
-        let best_child_id = root.children.iter().max_by(|&&a, &&b| {
-            let node_a = tree.get_node(a);
-            let node_b = tree.get_node(b);
 
-            node_a.visits.partial_cmp(&node_b.visits).unwrap()
-        }).expect("No children found");
 
-        if iteration % 100 == 0 {
-            println!("best_child_id: {:?}", best_child_id);
-            println!("score: {}", tree.get_node(*best_child_id).wins / tree.get_node(*best_child_id).visits);
-            println!("move: {:?}", tree.get_node(*best_child_id).mv);
+        if iteration % 1000 == 0 {
+            let root = tree.get_root();
+
+            // сколько линий показывать
+            let top_n = 10;
+
+            // собираем и сортируем
+            let mut children: Vec<NodeId> = root.children.clone();
+            children.sort_by(|&a, &b| {
+                let va = tree.get_node(a).visits;
+                let vb = tree.get_node(b).visits;
+                vb.partial_cmp(&va).unwrap() // по убыванию
+            });
+
+            // печать
+            for (i, &child_id) in children.iter().take(top_n).enumerate() {
+                let node = tree.get_node(child_id);
+                let visits = node.visits;
+                let score = if visits > 0.0 {
+                    node.wins / visits
+                } else {
+                    0.0
+                };
+
+                println!(
+                    "#{:<2} visits={:<8.0} score={:.3} move={:?}",
+                    i + 1,
+                    visits,
+                    score,
+                    node.mv
+                );
+            }
+
         }
     }
 }
