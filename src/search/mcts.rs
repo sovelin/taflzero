@@ -1,8 +1,12 @@
+use rand::prelude::StdRng;
+use rand::Rng;
 use crate::Board;
 use crate::movegen::MoveGen;
 use crate::mv::Move;
 use crate::search_data::SearchData;
 use crate::search_root::SearchIterationResponse;
+use crate::terminal::check_terminal;
+use crate::types::Side;
 use crate::undo::UndoMove;
 
 type NodeId = usize;
@@ -87,11 +91,11 @@ impl MCTSTree {
         Self::ROOT_ID
     }
 
-    fn new_child(&mut self, mv: Move, parent: NodeId, left_moves: Vec<Move>) -> NodeId {
-        let parent = self.get_node_mut(parent);
-        let new_child = MCTSNode::new_child(mv, parent, left_moves);
+    fn new_child(&mut self, mv: Move, parent_id: NodeId, left_moves: Vec<Move>) -> NodeId {
         let index: NodeId = self.nodes.len();
+        let new_child = MCTSNode::new_child(mv, parent_id, left_moves);
         self.nodes.push(new_child);
+        let parent = self.get_node_mut(parent_id);
         parent.append_child(index);
         index
     }
@@ -157,6 +161,38 @@ impl MovesStack {
     }
 }
 
+fn select_random_move(move_gen: &mut MoveGen, rnd_gen: &mut StdRng) -> Move {
+    let idx = rnd_gen.gen_range(0..move_gen.count);
+    move_gen.moves[idx]
+}
+
+fn rollout(board: &mut Board, move_gen: &mut MoveGen, rnd_gen: &mut StdRng) -> Side {
+    let mut stack = MovesStack::new();
+    let mut res: Option<Side> = None;
+
+    loop {
+        let is_terminal = check_terminal(board);
+
+        if let Some(x) = is_terminal {
+            res = is_terminal;
+            break;
+        }
+
+        move_gen.generate_moves(board);
+
+        if move_gen.count == 0 {
+            res = Some(if board.side_to_move == Side::ATTACKERS {Side::DEFENDERS} else {Side::ATTACKERS});
+            break;
+        }
+
+        let mv = select_random_move(move_gen, rnd_gen);
+        stack.make_move(board, mv);
+    }
+
+    stack.unmake_all(board);
+    res.expect("No side found")
+}
+
 pub fn mcts_search(
     board: &mut Board,
     search_data: &mut SearchData,
@@ -172,7 +208,7 @@ pub fn mcts_search(
     loop {
         let mut cur = tree.get_root_id();
         // 1) Selection
-        while tree.get_node(cur).is_fully_expanded() {
+        while tree.get_node(cur).is_fully_expanded() && !tree.get_node(cur).children.is_empty() {
             cur = uct_select(&tree, cur);
             let node = tree.get_node(cur);
             move_stack.make_move(board, node.mv.expect("Move not found"));
@@ -185,5 +221,33 @@ pub fn mcts_search(
         let left_moves = get_left_moves(board, &mut mv_generator);
         node.remove_left_move(next_mv);
         cur = tree.new_child(next_mv, cur, left_moves);
+
+        // 3) Rollouts
+        let result = rollout(board, &mut mv_generator, &mut search_data.random_generator);
+
+        // 4) Backpropagation
+
+        while cur != tree.get_root_id() {
+            move_stack.unmake_last(board);
+            let node = tree.get_node_mut(cur);
+            node.visits += 1.0;
+
+            if result == board.side_to_move {
+                node.wins += 1.0;
+            }
+
+            cur = node.parent.expect("Parent not found");
+        }
+
+        // 5) print all
+        let root = tree.get_root();
+        let best_child_id = root.children.iter().max_by(|&&a, &&b| {
+            let node_a = tree.get_node(a);
+            let node_b = tree.get_node(b);
+
+            node_a.visits.partial_cmp(&node_b.visits).unwrap()
+        }).expect("No children found");
+
+        println!("best_child_id: {:?}", best_child_id);
     }
 }
