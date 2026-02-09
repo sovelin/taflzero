@@ -42,6 +42,16 @@ impl MCTSNode {
     fn is_fully_expanded(&self) -> bool {
         self.left_moves.is_empty()
     }
+
+    fn append_child(&mut self, node: NodeId) {
+        self.children.push(node);
+    }
+
+    fn remove_left_move(&mut self, mv: Move) {
+        if let Some(pos) = self.left_moves.iter().position(|&m| m == mv) {
+            self.left_moves.remove(pos);
+        }
+    }
 }
 
 struct MCTSTree {
@@ -75,6 +85,15 @@ impl MCTSTree {
 
     fn get_root_id(&self) -> NodeId {
         Self::ROOT_ID
+    }
+
+    fn new_child(&mut self, mv: Move, parent: NodeId, left_moves: Vec<Move>) -> NodeId {
+        let parent = self.get_node_mut(parent);
+        let new_child = MCTSNode::new_child(mv, parent, left_moves);
+        let index: NodeId = self.nodes.len();
+        self.nodes.push(new_child);
+        parent.append_child(index);
+        index
     }
 }
 
@@ -160,5 +179,11 @@ pub fn mcts_search(
         }
 
         // 2) Expansion
+        let node = tree.get_node_mut(cur);
+        let next_mv = node.left_moves[0];
+        move_stack.make_move(board, next_mv);
+        let left_moves = get_left_moves(board, &mut mv_generator);
+        node.remove_left_move(next_mv);
+        cur = tree.new_child(next_mv, cur, left_moves);
     }
 }
