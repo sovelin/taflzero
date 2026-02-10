@@ -242,7 +242,7 @@ pub fn mcts_search(
                 cur = tree.new_child(next_mv, cur, left_moves);
 
                 // 3) Rollouts
-                rollout(board, &mut mv_generator, &mut search_data.random_generator, 500000)
+                rollout(board, &mut mv_generator, &mut search_data.random_generator, 120)
             }
         };
 
@@ -260,7 +260,6 @@ pub fn mcts_search(
 
         // 4) Backpropagation
         loop {
-            // --- 1. Обновляем текущий узел
             let parent = {
                 let node = tree.get_node_mut(cur);
                 node.visits += 1.0;
