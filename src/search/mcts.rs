@@ -1,3 +1,4 @@
+use js_sys::Math::sqrt;
 use rand::prelude::StdRng;
 use rand::Rng;
 use crate::Board;
@@ -18,6 +19,7 @@ struct MCTSNode {
     left_moves: Vec<Move>,
     visits: f32,
     wins: f32,
+    prior: f32,
 }
 
 impl MCTSNode {
@@ -133,6 +135,32 @@ fn uct_select(tree: &MCTSTree, from_id: NodeId) -> NodeId {
     best_child.expect("No child found!")
 }
 
+fn puct_select(tree: &MCTSTree, from_id: NodeId) -> NodeId {
+    let from = tree.get_node(from_id);
+    let mut best_score = f32::NEG_INFINITY;
+    let mut best_child: Option<NodeId> = None;
+
+    for id in from.children.iter() {
+        let child = tree.get_node(*id);
+
+        if child.visits == 0.0 {
+            return *id;
+        }
+
+        let q = 1.0 - child.wins / child.visits;
+        let c = 1.4f32;
+
+        let puct_value = q + c * child.prior * from.visits.sqrt() / (1.0 + child.visits);
+
+        if puct_value > best_score {
+            best_score = puct_value;
+            best_child = Some(*id);
+        }
+    }
+
+    best_child.expect("No child found!")
+}
+
 
 struct MovesStack {
     undo: Vec<UndoMove>,
@@ -231,7 +259,7 @@ pub fn mcts_search(
         } else {
             let node = tree.get_node_mut(cur);
 
-            if node.left_moves.is_empty() { //5aka3/6a4/11/11/11/11/11/11/11/11/11 d
+            if node.left_moves.is_empty() {
                 Some(Side::opposite(board.side_to_move))
             } else {
                 let rnd_index = search_data.random_generator.gen_range(0..node.left_moves.len());
