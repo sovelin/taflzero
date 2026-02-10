@@ -3,7 +3,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use crate::board::Board;
 use crate::evaluation::MATE_SCORE;
 use crate::is_mate_score;
-use crate::mcts::mcts_search;
+use crate::mcts::mcts::mcts_search;
 use crate::moves::mv::Move;
 use crate::search::constants::MAX_PLY;
 use crate::search::search::search;
