@@ -231,19 +231,19 @@ pub fn mcts_search(
         } else {
             let node = tree.get_node_mut(cur);
 
-            if node.left_moves.is_empty() {
-                panic!("No moves left to expand!");
+            if node.left_moves.is_empty() { //5aka3/6a4/11/11/11/11/11/11/11/11/11 d
+                Some(Side::opposite(board.side_to_move))
+            } else {
+                let rnd_index = search_data.random_generator.gen_range(0..node.left_moves.len());
+                let next_mv = node.left_moves[rnd_index];
+                move_stack.make_move(board, next_mv);
+                let left_moves = get_left_moves(board, &mut mv_generator);
+                node.remove_left_move(next_mv);
+                cur = tree.new_child(next_mv, cur, left_moves);
+
+                // 3) Rollouts
+                rollout(board, &mut mv_generator, &mut search_data.random_generator, 500000)
             }
-
-            let rnd_index = search_data.random_generator.gen_range(0..node.left_moves.len());
-            let next_mv = node.left_moves[rnd_index];
-            move_stack.make_move(board, next_mv);
-            let left_moves = get_left_moves(board, &mut mv_generator);
-            node.remove_left_move(next_mv);
-            cur = tree.new_child(next_mv, cur, left_moves);
-
-            // 3) Rollouts
-            rollout(board, &mut mv_generator, &mut search_data.random_generator, 500000)
         };
 
         let leaf_player = if board.side_to_move == Side::ATTACKERS {
@@ -258,23 +258,32 @@ pub fn mcts_search(
         };
 
 
-
-
         // 4) Backpropagation
-        let mut is_reversed = false;
+        loop {
+            // --- 1. Обновляем текущий узел
+            let parent = {
+                let node = tree.get_node_mut(cur);
+                node.visits += 1.0;
+                node.wins += value;
+                node.parent
+            };
 
-        while cur != tree.get_root_id() {
+            if cur == tree.get_root_id() {
+                break;
+            }
+
             move_stack.unmake_last(board);
-            let node = tree.get_node_mut(cur);
-            node.visits += 1.0;
-            node.wins += if is_reversed { 1.0 - value } else { value };
-            cur = node.parent.expect("Parent not found");
-            is_reversed = !is_reversed;
+
+            cur = parent.expect("Parent not found");
+
+            value = 1.0 - value;
         }
 
         // 5) print all
         if iteration % 1000 == 0 {
             let root = tree.get_root();
+
+            // println!("Iteration: {}, root visits: {}, root wins: {}", iteration, root.visits, root.wins);
 
             let top_n = 10;
 
