@@ -1,4 +1,3 @@
-use js_sys::Math::sqrt;
 use rand::prelude::StdRng;
 use rand::Rng;
 use crate::Board;
