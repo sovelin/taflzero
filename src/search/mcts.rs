@@ -31,10 +31,11 @@ impl MCTSNode {
             left_moves,
             visits: 0.0,
             wins: 0.0,
+            prior: 0.0,
         }
     }
 
-    fn new_child(mv: Move, parent: NodeId, left_moves: Vec<Move>) -> MCTSNode {
+    fn new_child(mv: Move, parent: NodeId, left_moves: Vec<Move>, prior: f32) -> MCTSNode {
         MCTSNode {
             mv: Some(mv),
             parent: Some(parent),
@@ -42,6 +43,7 @@ impl MCTSNode {
             left_moves,
             visits: 0.0,
             wins: 0.0,
+            prior,
         }
     }
 
@@ -93,9 +95,9 @@ impl MCTSTree {
         Self::ROOT_ID
     }
 
-    fn new_child(&mut self, mv: Move, parent_id: NodeId, left_moves: Vec<Move>) -> NodeId {
+    fn new_child(&mut self, mv: Move, parent_id: NodeId, left_moves: Vec<Move>, prior: f32) -> NodeId {
         let index: NodeId = self.nodes.len();
-        let new_child = MCTSNode::new_child(mv, parent_id, left_moves);
+        let new_child = MCTSNode::new_child(mv, parent_id, left_moves, prior);
         self.nodes.push(new_child);
         let parent = self.get_node_mut(parent_id);
         parent.append_child(index);
@@ -267,7 +269,7 @@ pub fn mcts_search(
                 move_stack.make_move(board, next_mv);
                 let left_moves = get_left_moves(board, &mut mv_generator);
                 node.remove_left_move(next_mv);
-                cur = tree.new_child(next_mv, cur, left_moves);
+                cur = tree.new_child(next_mv, cur, left_moves, 0.0);
 
                 // 3) Rollouts
                 rollout(board, &mut mv_generator, &mut search_data.random_generator, 120)
