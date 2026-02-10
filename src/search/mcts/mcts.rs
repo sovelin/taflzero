@@ -11,7 +11,7 @@ use crate::undo::UndoMove;
 
 type NodeId = usize;
 
-struct MCTSNode {
+pub struct MCTSNode {
     mv: Option<Move>,
     children: Vec<NodeId>,
     parent: Option<NodeId>,
@@ -61,7 +61,7 @@ impl MCTSNode {
     }
 }
 
-struct MCTSTree {
+pub struct MCTSTree {
     nodes: Vec<MCTSNode>,
 }
 
