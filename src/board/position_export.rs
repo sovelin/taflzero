@@ -91,9 +91,6 @@ mod tests {
              ..........."
         );
 
-        // print board
-        println!("Board:\n{}", board);
-
         let bit_position = BitPosition::from_board(&board);
 
         // Check the first plane (attackers)
