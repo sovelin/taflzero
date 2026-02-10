@@ -119,7 +119,7 @@ fn uct_select(tree: &MCTSTree, from_id: NodeId) -> NodeId {
         }
 
         let q = child.wins / child.visits;
-        let c = 3f32;
+        let c = 1.4f32;
 
         let ln_parent = from.visits.max(1.0).ln();
         let uct_value = q + c * (ln_parent / child.visits).sqrt();
@@ -235,7 +235,8 @@ pub fn mcts_search(
                 panic!("No moves left to expand!");
             }
 
-            let next_mv = node.left_moves[0];
+            let rnd_index = search_data.random_generator.gen_range(0..node.left_moves.len());
+            let next_mv = node.left_moves[rnd_index];
             move_stack.make_move(board, next_mv);
             let left_moves = get_left_moves(board, &mut mv_generator);
             node.remove_left_move(next_mv);
