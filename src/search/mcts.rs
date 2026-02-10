@@ -224,52 +224,66 @@ pub fn mcts_search(
         }
 
         // 2) Expansion
-        let node = tree.get_node_mut(cur);
-        let next_mv = node.left_moves[0];
-        move_stack.make_move(board, next_mv);
-        let left_moves = get_left_moves(board, &mut mv_generator);
-        node.remove_left_move(next_mv);
-        cur = tree.new_child(next_mv, cur, left_moves);
+        let is_terminal = check_terminal(board);
 
-        // 3) Rollouts
-        let result = rollout(board, &mut mv_generator, &mut search_data.random_generator, 500000);
+        let result = if let Some(x) = is_terminal {
+            Some(x)
+        } else {
+            let node = tree.get_node_mut(cur);
+
+            if node.left_moves.is_empty() {
+                panic!("No moves left to expand!");
+            }
+
+            let next_mv = node.left_moves[0];
+            move_stack.make_move(board, next_mv);
+            let left_moves = get_left_moves(board, &mut mv_generator);
+            node.remove_left_move(next_mv);
+            cur = tree.new_child(next_mv, cur, left_moves);
+
+            // 3) Rollouts
+            rollout(board, &mut mv_generator, &mut search_data.random_generator, 500000)
+        };
+
+        let leaf_player = if board.side_to_move == Side::ATTACKERS {
+            Side::DEFENDERS
+        } else {
+            Side::ATTACKERS
+        };
+
+        let mut value = match result {
+            Some(w) => if w == leaf_player { 1.0 } else { 0.0 },
+            None => 0.5,
+        };
+
+
+
 
         // 4) Backpropagation
+        let mut is_reversed = false;
 
         while cur != tree.get_root_id() {
             move_stack.unmake_last(board);
             let node = tree.get_node_mut(cur);
             node.visits += 1.0;
-
-            if let Some(result) = result {
-                if result == board.side_to_move {
-                    node.wins += 1.0;
-                }
-            } else {
-                node.wins += 0.5;
-            }
-
+            node.wins += if is_reversed { 1.0 - value } else { value };
             cur = node.parent.expect("Parent not found");
+            is_reversed = !is_reversed;
         }
 
         // 5) print all
-
-
         if iteration % 1000 == 0 {
             let root = tree.get_root();
 
-            // сколько линий показывать
             let top_n = 10;
 
-            // собираем и сортируем
             let mut children: Vec<NodeId> = root.children.clone();
             children.sort_by(|&a, &b| {
                 let va = tree.get_node(a).visits;
                 let vb = tree.get_node(b).visits;
-                vb.partial_cmp(&va).unwrap() // по убыванию
+                vb.partial_cmp(&va).unwrap()
             });
 
-            // печать
             for (i, &child_id) in children.iter().take(top_n).enumerate() {
                 let node = tree.get_node(child_id);
                 let visits = node.visits;
