@@ -6,6 +6,7 @@ mod zobrist;
 mod tests;
 mod fen;
 mod precompute;
+mod position_export;
 
 pub use board::*;
 pub use precompute::*;
