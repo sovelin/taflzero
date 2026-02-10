@@ -147,7 +147,7 @@ fn puct_select(tree: &MCTSTree, from_id: NodeId) -> NodeId {
             return *id;
         }
 
-        let q = 1.0 - child.wins / child.visits;
+        let q = child.wins / child.visits;
         let c = 1.4f32;
 
         let puct_value = q + c * child.prior * from.visits.sqrt() / (1.0 + child.visits);
