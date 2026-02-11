@@ -3,7 +3,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use crate::board::Board;
 use crate::evaluation::MATE_SCORE;
 use crate::is_mate_score;
-use crate::mcts::mcts::{get_left_moves, mcts_search, MCTSTree};
+use crate::mcts::mcts::{mcts_search, MCTSTree};
 use crate::moves::mv::Move;
 use crate::search::constants::MAX_PLY;
 use crate::search::nn::NeuralNet;
@@ -90,9 +90,7 @@ pub fn search_root(
     tt: &mut TranspositionTable,
     on_iteration: Option<&dyn Fn(SearchIterationResponse)>,
 ) -> SearchResponse {
-    let mv_generator = &mut search_data.move_gens[0];
-    let left_moves = get_left_moves(board, mv_generator);
-    let mut tree = MCTSTree::new(left_moves);
+    let mut tree = MCTSTree::new();
     let mut nn = NeuralNet::new("./random_init.onnx");
 
     mcts_search(board, &mut tree, &mut nn, search_data, on_iteration);

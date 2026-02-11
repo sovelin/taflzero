@@ -1,14 +1,12 @@
-use rand::prelude::StdRng;
-use rand::Rng;
 use crate::Board;
 use crate::movegen::MoveGen;
 use crate::mv::Move;
 use crate::position_export::BitPosition;
+use crate::search::mcts::utils::move_to_policy_index;
 use crate::search::nn::NeuralNet;
 use crate::search_data::SearchData;
 use crate::search_root::SearchIterationResponse;
 use crate::terminal::check_terminal;
-use crate::types::Side;
 use crate::undo::UndoMove;
 
 type NodeId = usize;
@@ -17,19 +15,19 @@ pub struct MCTSNode {
     mv: Option<Move>,
     children: Vec<NodeId>,
     parent: Option<NodeId>,
-    left_moves: Vec<Move>,
+    expanded: bool,
     visits: f32,
     wins: f32,
     prior: f32,
 }
 
 impl MCTSNode {
-    fn new_root(left_moves: Vec<Move>) -> MCTSNode {
+    fn new_root() -> MCTSNode {
         MCTSNode {
             mv: None,
             parent: None,
             children: vec![],
-            left_moves,
+            expanded: false,
             visits: 0.0,
             wins: 0.0,
             prior: 0.0,
@@ -48,30 +46,24 @@ impl MCTSNode {
         self.mv
     }
 
-    fn new_child(mv: Move, parent: NodeId, left_moves: Vec<Move>, prior: f32) -> MCTSNode {
+    fn new_child(mv: Move, parent: NodeId, prior: f32) -> MCTSNode {
         MCTSNode {
             mv: Some(mv),
             parent: Some(parent),
             children: vec![],
-            left_moves,
+            expanded: false,
             visits: 0.0,
             wins: 0.0,
             prior,
         }
     }
 
-    fn is_fully_expanded(&self) -> bool {
-        self.left_moves.is_empty()
+    fn is_leaf(&self) -> bool {
+        !self.expanded
     }
 
     fn append_child(&mut self, node: NodeId) {
         self.children.push(node);
-    }
-
-    fn remove_left_move(&mut self, mv: Move) {
-        if let Some(pos) = self.left_moves.iter().position(|&m| m == mv) {
-            self.left_moves.remove(pos);
-        }
     }
 }
 
@@ -83,9 +75,9 @@ pub struct MCTSTree {
 impl MCTSTree {
     const ROOT_ID: NodeId = 0;
 
-    pub fn new(left_moves: Vec<Move>) -> Self {
+    pub fn new() -> Self {
         MCTSTree { nodes: vec![
-            MCTSNode::new_root(left_moves),
+            MCTSNode::new_root(),
         ], move_gen: MoveGen::new() }
     }
 
@@ -109,9 +101,9 @@ impl MCTSTree {
         Self::ROOT_ID
     }
 
-    fn new_child(&mut self, mv: Move, parent_id: NodeId, left_moves: Vec<Move>, prior: f32) -> NodeId {
+    fn new_child(&mut self, mv: Move, parent_id: NodeId, prior: f32) -> NodeId {
         let index: NodeId = self.nodes.len();
-        let new_child = MCTSNode::new_child(mv, parent_id, left_moves, prior);
+        let new_child = MCTSNode::new_child(mv, parent_id, prior);
         self.nodes.push(new_child);
         let parent = self.get_node_mut(parent_id);
         parent.append_child(index);
@@ -124,49 +116,19 @@ pub fn get_left_moves(board: &Board, move_gen: &mut MoveGen) -> Vec<Move> {
     move_gen.moves[0..move_gen.count].to_vec()
 }
 
-fn uct_select(tree: &MCTSTree, from_id: NodeId) -> NodeId {
-    let from = tree.get_node(from_id);
-    let mut best_score = f32::NEG_INFINITY;
-    let mut best_child: Option<NodeId> = None;
-
-    for id in from.children.iter() {
-        let child = tree.get_node(*id);
-
-        if child.visits == 0.0 {
-            return *id;
-        }
-
-        let q = child.wins / child.visits;
-        let c = 1.4f32;
-
-        let ln_parent = from.visits.max(1.0).ln();
-        let uct_value = q + c * (ln_parent / child.visits).sqrt();
-
-        if uct_value > best_score {
-            best_score = uct_value;
-            best_child = Some(*id);
-        }
-    }
-
-    best_child.expect("No child found!")
-}
-
 fn puct_select(tree: &MCTSTree, from_id: NodeId) -> NodeId {
     let from = tree.get_node(from_id);
     let mut best_score = f32::NEG_INFINITY;
     let mut best_child: Option<NodeId> = None;
 
+    let sqrt_parent = from.visits.sqrt();
+    let c = 1.4f32;
+
     for id in from.children.iter() {
         let child = tree.get_node(*id);
 
-        if child.visits == 0.0 {
-            return *id;
-        }
-
-        let q = child.wins / child.visits;
-        let c = 1.4f32;
-
-        let puct_value = q + c * child.prior * from.visits.sqrt() / (1.0 + child.visits);
+        let q = if child.visits > 0.0 { child.wins / child.visits } else { 0.0 };
+        let puct_value = q + c * child.prior * sqrt_parent / (1.0 + child.visits);
 
         if puct_value > best_score {
             best_score = puct_value;
@@ -177,6 +139,12 @@ fn puct_select(tree: &MCTSTree, from_id: NodeId) -> NodeId {
     best_child.expect("No child found!")
 }
 
+fn softmax(logits: &[f32]) -> Vec<f32> {
+    let max = logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+    let exps: Vec<f32> = logits.iter().map(|&x| (x - max).exp()).collect();
+    let sum: f32 = exps.iter().sum();
+    exps.iter().map(|&x| x / sum).collect()
+}
 
 struct MovesStack {
     undo: Vec<UndoMove>,
@@ -205,43 +173,32 @@ impl MovesStack {
     }
 }
 
-fn select_random_move(move_gen: &mut MoveGen, rnd_gen: &mut StdRng) -> Move {
-    let idx = rnd_gen.gen_range(0..move_gen.count);
-    move_gen.moves[idx]
-}
+fn expand_node(
+    board: &mut Board,
+    tree: &mut MCTSTree,
+    node_id: NodeId,
+    nn: &mut NeuralNet,
+    move_gen: &mut MoveGen,
+) -> f32 {
+    let position = BitPosition::from_board(board);
+    let nn_out = nn.evaluate_position(&position);
 
-fn rollout(board: &mut Board, move_gen: &mut MoveGen, rnd_gen: &mut StdRng, limit: usize) -> Option<Side> {
-    let mut stack = MovesStack::new();
-    let mut res: Option<Side> = None;
+    let moves = get_left_moves(board, move_gen);
 
-    let mut iteration = 0;
-    loop {
-        iteration += 1;
-        let is_terminal = check_terminal(board);
+    if !moves.is_empty() {
+        let logits: Vec<f32> = moves.iter()
+            .map(|mv| nn_out.policy[move_to_policy_index(*mv) as usize])
+            .collect();
+        let priors = softmax(&logits);
 
-        if let Some(x) = is_terminal {
-            res = is_terminal;
-            break;
-        }
-
-        move_gen.generate_moves(board);
-
-        if move_gen.count == 0 {
-            res = Some(if board.side_to_move == Side::ATTACKERS {Side::DEFENDERS} else {Side::ATTACKERS});
-            break;
-        }
-
-        let mv = select_random_move(move_gen, rnd_gen);
-        stack.make_move(board, mv);
-
-        if iteration >= limit {
-            stack.unmake_all(board);
-            return None;
+        for (i, &mv) in moves.iter().enumerate() {
+            tree.new_child(mv, node_id, priors[i]);
         }
     }
 
-    stack.unmake_all(board);
-    Some(res.expect("No side found"))
+    tree.get_node_mut(node_id).expanded = true;
+
+    nn_out.value
 }
 
 pub fn mcts_search(
@@ -255,49 +212,42 @@ pub fn mcts_search(
     let mut move_stack = MovesStack::new();
     let mut iteration = 0;
 
+    // Expand root
+    if tree.get_root().is_leaf() {
+        expand_node(board, tree, MCTSTree::ROOT_ID, nn, &mut mv_generator);
+    }
+
     loop {
         iteration += 1;
         let mut cur = tree.get_root_id();
-        // 1) Selection
-        while tree.get_node(cur).is_fully_expanded() && !tree.get_node(cur).children.is_empty() {
-            cur = uct_select(&tree, cur);
+
+        // 1) Selection — descend using PUCT until we hit a leaf
+        while !tree.get_node(cur).is_leaf() && !tree.get_node(cur).children.is_empty() {
+            cur = puct_select(&tree, cur);
             let node = tree.get_node(cur);
             move_stack.make_move(board, node.mv.expect("Move not found"));
         }
 
-        // 2) Expansion
+        // 2) Expansion + Evaluation
         let is_terminal = check_terminal(board);
 
         let result: f32 = if let Some(x) = is_terminal {
+            tree.get_node_mut(cur).expanded = true;
             if board.side_to_move == x {
                 1.0
             } else {
                 -1.0
             }
+        } else if tree.get_node(cur).children.is_empty() && tree.get_node(cur).expanded {
+            // No legal moves — loss
+            -1.0
         } else {
-            let node = tree.get_node_mut(cur);
-
-            if node.left_moves.is_empty() {
-                -1.0
-            } else {
-                let rnd_index = search_data.random_generator.gen_range(0..node.left_moves.len());
-                let next_mv = node.left_moves[rnd_index];
-                move_stack.make_move(board, next_mv);
-                let left_moves = get_left_moves(board, &mut mv_generator);
-                node.remove_left_move(next_mv);
-                cur = tree.new_child(next_mv, cur, left_moves, 0.0);
-
-                // 3) Simulation (Neural Net evaluation)
-                let position = BitPosition::from_board(board);
-                let res = nn.evaluate_position(&position);
-                res.value
-            }
+            expand_node(board, tree, cur, nn, &mut mv_generator)
         };
 
+        // 3) Backpropagation
         let mut value = -result;
 
-
-        // 4) Backpropagation
         loop {
             let parent = {
                 let node = tree.get_node_mut(cur);
@@ -311,16 +261,13 @@ pub fn mcts_search(
             }
 
             move_stack.unmake_last(board);
-
             cur = parent.expect("Parent not found");
-
             value = -value;
         }
 
-        // 5) print all
+        // 4) Print top moves
         if iteration % 1000 == 0 {
             let root = tree.get_root();
-
             let top_n = 10;
 
             let mut children: Vec<NodeId> = root.children.clone();
@@ -340,14 +287,14 @@ pub fn mcts_search(
                 };
 
                 println!(
-                    "#{:<2} visits={:<8.0} score={:.3} move={:?}",
+                    "#{:<2} visits={:<8.0} score={:.3} prior={:.3} move={:?}",
                     i + 1,
                     visits,
                     score,
+                    node.prior,
                     node.mv
                 );
             }
-
         }
     }
 }
