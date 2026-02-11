@@ -93,50 +93,10 @@ pub fn search_root(
     let mut tree = MCTSTree::new();
     let mut nn = NeuralNet::new("./random_init.onnx");
 
-    mcts_search(board, &mut tree, &mut nn, search_data, on_iteration);
-
-    let mut best_score = 0;
-
-    search_data.timer.start();
-    search_data.nodes_searched = 0;
-    search_data.best_move = None;
-
-    let mut local_best_move: Option<Move> = None;
-
-    for i in 1..=search_data.depth_limit {
-        best_score = aspiration_window(board, search_data, tt, i, best_score);
-
-        if search_data.time_exceeded() {
-            break;
-        }
-
-        let time_elapsed = search_data.timer.elapsed_ms();
-        local_best_move = search_data.best_move;
-
-        if let Some(callback) = on_iteration {
-            let best_move = search_data.best_move.unwrap_or_default();
-
-            let speed = if time_elapsed > 0 {
-                (search_data.nodes_searched * 1000) / time_elapsed
-            } else {
-                0
-            };
-
-            callback(SearchIterationResponse {
-                depth: i as i32,
-                mv: best_move,
-                score: best_score,
-                nodes: search_data.nodes_searched,
-                time: time_elapsed,
-                speed,
-            });
-        }
-    }
-
-    search_data.tt_age += 1;
+    let best_move = mcts_search(board, &mut tree, &mut nn, search_data, on_iteration);
 
     SearchResponse {
-        best_move: local_best_move.unwrap_or_default(),
-        score: best_score,
+        best_move: best_move.unwrap_or_default(),
+        score: 0,
     }
 }

@@ -201,16 +201,50 @@ fn expand_node(
     nn_out.value
 }
 
+#[allow(dead_code)]
+fn debug_print_top_moves(tree: &MCTSTree, top_n: usize) {
+    let root = tree.get_root();
+    let mut children: Vec<NodeId> = root.children.clone();
+    children.sort_by(|&a, &b| {
+        let va = tree.get_node(a).visits;
+        let vb = tree.get_node(b).visits;
+        vb.partial_cmp(&va).unwrap()
+    });
+
+    for (i, &child_id) in children.iter().take(top_n).enumerate() {
+        let node = tree.get_node(child_id);
+        let visits = node.visits;
+        let score = if visits > 0.0 { node.wins / visits } else { 0.0 };
+
+        println!(
+            "#{:<2} visits={:<8.0} score={:.3} prior={:.3} move={:?}",
+            i + 1, visits, score, node.prior, node.mv
+        );
+    }
+}
+
+fn get_best_child(tree: &MCTSTree) -> Option<NodeId> {
+    let root = tree.get_root();
+    root.children.iter()
+        .max_by(|&&a, &&b| {
+            let va = tree.get_node(a).visits;
+            let vb = tree.get_node(b).visits;
+            va.partial_cmp(&vb).unwrap()
+        })
+        .copied()
+}
+
 pub fn mcts_search(
     board: &mut Board,
     tree: &mut MCTSTree,
     nn: &mut NeuralNet,
     search_data: &mut SearchData,
     on_iteration: Option<&dyn Fn(SearchIterationResponse)>,
-) {
+) -> Option<Move> {
     let mut mv_generator = MoveGen::new();
     let mut move_stack = MovesStack::new();
-    let mut iteration = 0;
+    let mut iteration: u64 = 0;
+    let mut last_report_ms: u64 = 0;
 
     // Expand root
     if tree.get_root().is_leaf() {
@@ -218,6 +252,11 @@ pub fn mcts_search(
     }
 
     loop {
+        // Check time limit
+        if search_data.time_exceeded() {
+            break;
+        }
+
         iteration += 1;
         let mut cur = tree.get_root_id();
 
@@ -265,36 +304,33 @@ pub fn mcts_search(
             value = -value;
         }
 
-        // 4) Print top moves
-        if iteration % 1000 == 0 {
-            let root = tree.get_root();
-            let top_n = 10;
+        // 4) Report every second
+        let elapsed = search_data.timer.elapsed_ms();
+        if elapsed >= last_report_ms + 1000 {
+            last_report_ms = elapsed;
 
-            let mut children: Vec<NodeId> = root.children.clone();
-            children.sort_by(|&a, &b| {
-                let va = tree.get_node(a).visits;
-                let vb = tree.get_node(b).visits;
-                vb.partial_cmp(&va).unwrap()
-            });
+            if let Some(callback) = on_iteration {
+                if let Some(best_id) = get_best_child(tree) {
+                    let best = tree.get_node(best_id);
+                    let score = if best.visits > 0.0 {
+                        (best.wins / best.visits * 1000.0) as i32
+                    } else {
+                        0
+                    };
+                    let speed = if elapsed > 0 { iteration * 1000 / elapsed } else { 0 };
 
-            for (i, &child_id) in children.iter().take(top_n).enumerate() {
-                let node = tree.get_node(child_id);
-                let visits = node.visits;
-                let score = if visits > 0.0 {
-                    node.wins / visits
-                } else {
-                    0.0
-                };
-
-                println!(
-                    "#{:<2} visits={:<8.0} score={:.3} prior={:.3} move={:?}",
-                    i + 1,
-                    visits,
-                    score,
-                    node.prior,
-                    node.mv
-                );
+                    callback(SearchIterationResponse {
+                        depth: 0,
+                        mv: best.mv.unwrap_or_default(),
+                        score,
+                        nodes: iteration,
+                        time: elapsed,
+                        speed,
+                    });
+                }
             }
         }
     }
+
+    get_best_child(tree).map(|id| tree.get_node(id).mv.unwrap())
 }
