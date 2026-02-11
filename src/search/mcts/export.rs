@@ -82,19 +82,27 @@ pub struct PendingSample {
 
 impl PendingSample {
     pub fn write_to<W: Write>(&self, w: &mut W) -> Result<()> {
-        w.write_all(self.bit_position.as_bytes())?;
-        w.write_all(self.legal_mask.as_bytes())?;
-
+        // Keep the exact on-disk format, but serialize in-memory first so each sample
+        // is written as a single contiguous block.
         let policy_len = self.policy.len() as u16;
-        w.write_all(&policy_len.to_le_bytes())?;
+        let total_len = self.bit_position.as_bytes().len()
+            + self.legal_mask.as_bytes().len()
+            + 2
+            + (self.policy.len() * 4)
+            + 1;
+
+        let mut buf = Vec::with_capacity(total_len);
+        buf.extend_from_slice(self.bit_position.as_bytes());
+        buf.extend_from_slice(self.legal_mask.as_bytes());
+        buf.extend_from_slice(&policy_len.to_le_bytes());
 
         for t in &self.policy {
-            w.write_all(&t.move_index.to_le_bytes())?;
-            w.write_all(&t.visits.to_le_bytes())?;
+            buf.extend_from_slice(&t.move_index.to_le_bytes());
+            buf.extend_from_slice(&t.visits.to_le_bytes());
         }
 
-        w.write_all(&[self.value as u8])?;
-        Ok(())
+        buf.push(self.value as u8);
+        w.write_all(&buf)
     }
 
     pub fn set_value_from_result(&mut self, result: Option<Side>) {
