@@ -270,7 +270,7 @@ pub fn mcts_search(
         // 2) Expansion + Evaluation
         let is_terminal = check_terminal(board);
 
-        let result: f32 = if let Some(x) = is_terminal {
+        let mut result: f32 = if let Some(x) = is_terminal {
             tree.get_node_mut(cur).expanded = true;
             if board.side_to_move == x {
                 1.0
@@ -285,13 +285,13 @@ pub fn mcts_search(
         };
 
         // 3) Backpropagation
-        let mut value = -result;
 
         loop {
+            result = -result;
             let parent = {
                 let node = tree.get_node_mut(cur);
                 node.visits += 1.0;
-                node.wins += value;
+                node.wins += result;
                 node.parent
             };
 
@@ -301,7 +301,6 @@ pub fn mcts_search(
 
             move_stack.unmake_last(board);
             cur = parent.expect("Parent not found");
-            value = -value;
         }
 
         // 4) Report every second
