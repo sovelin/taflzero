@@ -2,9 +2,10 @@ use crate::Board;
 use crate::board::utils::get_square;
 use crate::types::{Piece, Side};
 
-struct BitPosition {
+#[repr(C)]
+pub struct BitPosition {
     planes: [u8; 16 * 3], // [attackers | defenders | king]
-    stm: bool,
+    pub stm: u8, // 1 for attackers, 0 for defenders
 }
 
 impl BitPosition {
@@ -34,7 +35,16 @@ impl BitPosition {
 
         Self {
             planes,
-            stm: board.side_to_move == Side::ATTACKERS,
+            stm: board.side_to_move as u8,
+        }
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        unsafe {
+            std::slice::from_raw_parts(
+                (self as *const BitPosition) as *const u8,
+                size_of::<BitPosition>(),
+            )
         }
     }
 }
@@ -143,9 +153,9 @@ mod tests {
     #[test]
     fn test_side_to_move() {
         let mut board = Board::new();
-        assert_eq!(BitPosition::from_board(&board).stm, true); // Attackers to move
+        assert_eq!(BitPosition::from_board(&board).stm, 0); // Attackers to move
 
         board.side_to_move = Side::DEFENDERS;
-        assert_eq!(BitPosition::from_board(&board).stm, false); // Defenders to move
+        assert_eq!(BitPosition::from_board(&board).stm, 1); // Defenders to move
     }
 }

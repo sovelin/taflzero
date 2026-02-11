@@ -1,8 +1,8 @@
 use crate::board::utils::{get_col, get_row};
 use crate::mv::Move;
 
-const DIRECTIONS: usize = 4;
-const MAX_DISTANCE: usize = 10;
+const DIRECTIONS: u16 = 4;
+const MAX_DISTANCE: u16 = 10;
 
 enum Direction {
     Up = 0,
@@ -47,9 +47,9 @@ fn get_distance(mv: Move) -> usize {
     ((from_row as isize - to_row as isize).abs() + (from_col as isize - to_col as isize).abs()) as usize
 }
 
-fn move_to_policy_index(mv: Move) -> usize {
-    let from = mv.from() as usize;
-    let direction = get_move_direction(mv) as usize;
+pub fn move_to_policy_index(mv: Move) -> u16 {
+    let from = mv.from() as u16;
+    let direction = get_move_direction(mv) as u16;
 
-    from * DIRECTIONS * MAX_DISTANCE + direction * MAX_DISTANCE + get_distance(mv)
+    from * DIRECTIONS * MAX_DISTANCE + direction * MAX_DISTANCE + get_distance(mv) as u16
 }

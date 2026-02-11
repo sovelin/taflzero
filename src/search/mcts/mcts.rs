@@ -34,6 +34,18 @@ impl MCTSNode {
         }
     }
 
+    pub fn children(&self) -> &Vec<NodeId> {
+        &self.children
+    }
+
+    pub fn visits(&self) -> f32 {
+        self.visits
+    }
+
+    pub fn mv(&self) -> Option<Move> {
+        self.mv
+    }
+
     fn new_child(mv: Move, parent: NodeId, left_moves: Vec<Move>, prior: f32) -> MCTSNode {
         MCTSNode {
             mv: Some(mv),
@@ -63,6 +75,7 @@ impl MCTSNode {
 
 pub struct MCTSTree {
     nodes: Vec<MCTSNode>,
+    pub move_gen: MoveGen,
 }
 
 impl MCTSTree {
@@ -71,10 +84,10 @@ impl MCTSTree {
     fn new(left_moves: Vec<Move>) -> Self {
         MCTSTree { nodes: vec![
             MCTSNode::new_root(left_moves),
-        ] }
+        ], move_gen: MoveGen::new() }
     }
 
-    fn get_node(&self, id: NodeId) -> &MCTSNode {
+    pub fn get_node(&self, id: NodeId) -> &MCTSNode {
         &self.nodes[id]
     }
 
@@ -82,7 +95,7 @@ impl MCTSTree {
         &mut self.nodes[id]
     }
 
-    fn get_root(&self) -> &MCTSNode {
+    pub fn get_root(&self) -> &MCTSNode {
         &self.nodes[Self::ROOT_ID]
     }
 
