@@ -13,12 +13,15 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> Vec<PendingSam
     let mut board: Board = Board::new();
     board.set_fen(INITIAL_FEN).expect("Invalid FEN");
 
-    let config = MCTSConfig::default_train();
+    let mut config = MCTSConfig::default_train();
     let game_result;
+    let mut move_number: usize = 0;
 
     loop {
+        config.temperature = if move_number < 20 { 1.0 } else { 0.0 };
         let mut mcts_tree = MCTSTree::new();
         let mv = mcts_search(&mut board, &mut mcts_tree, nn, search_data, None, Some(400), &config);
+        move_number += 1;
 
         if let Some(mv) = mv {
             res.push(mcts_tree.make_pending_sample(&board));
