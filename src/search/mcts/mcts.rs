@@ -81,7 +81,7 @@ pub struct MCTSTree {
 impl MCTSTree {
     const ROOT_ID: NodeId = 0;
 
-    fn new(left_moves: Vec<Move>) -> Self {
+    pub fn new(left_moves: Vec<Move>) -> Self {
         MCTSTree { nodes: vec![
             MCTSNode::new_root(left_moves),
         ], move_gen: MoveGen::new() }
@@ -117,7 +117,7 @@ impl MCTSTree {
     }
 }
 
-fn get_left_moves(board: &Board, move_gen: &mut MoveGen) -> Vec<Move> {
+pub fn get_left_moves(board: &Board, move_gen: &mut MoveGen) -> Vec<Move> {
     move_gen.generate_moves(board);
     move_gen.moves[0..move_gen.count].to_vec()
 }
@@ -244,6 +244,7 @@ fn rollout(board: &mut Board, move_gen: &mut MoveGen, rnd_gen: &mut StdRng, limi
 
 pub fn mcts_search(
     board: &mut Board,
+    tree: &mut MCTSTree,
     search_data: &mut SearchData,
     on_iteration: Option<&dyn Fn(SearchIterationResponse)>,
 ) {
