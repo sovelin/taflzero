@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import torch
+import pytest
 
 from az_micro_net import TaflAlphaZeroNet
 from training_utils import NEG_LARGE, alpha_zero_loss, masked_policy_logits, normalize_visit_counts
@@ -53,3 +54,17 @@ def test_alpha_zero_loss_is_finite() -> None:
     assert torch.isfinite(total)
     assert torch.isfinite(p_loss)
     assert torch.isfinite(v_loss)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is not available")
+def test_model_forward_on_cuda() -> None:
+    device = torch.device("cuda")
+    model = TaflAlphaZeroNet().to(device)
+
+    x = torch.randn(2, 6, 11, 11, device=device)
+    policy_logits, value = model(x)
+
+    assert policy_logits.is_cuda
+    assert value.is_cuda
+    assert policy_logits.shape == (2, 4840)
+    assert value.shape == (2, 1)
