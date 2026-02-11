@@ -3,6 +3,8 @@ use rand::Rng;
 use crate::Board;
 use crate::movegen::MoveGen;
 use crate::mv::Move;
+use crate::position_export::BitPosition;
+use crate::search::nn::NeuralNet;
 use crate::search_data::SearchData;
 use crate::search_root::SearchIterationResponse;
 use crate::terminal::check_terminal;
@@ -245,15 +247,12 @@ fn rollout(board: &mut Board, move_gen: &mut MoveGen, rnd_gen: &mut StdRng, limi
 pub fn mcts_search(
     board: &mut Board,
     tree: &mut MCTSTree,
+    nn: &mut NeuralNet,
     search_data: &mut SearchData,
     on_iteration: Option<&dyn Fn(SearchIterationResponse)>,
 ) {
     let mut mv_generator = MoveGen::new();
-    let left_moves = get_left_moves(board, &mut mv_generator);
-    let mut tree = MCTSTree::new(left_moves);
-
     let mut move_stack = MovesStack::new();
-
     let mut iteration = 0;
 
     loop {
@@ -269,13 +268,17 @@ pub fn mcts_search(
         // 2) Expansion
         let is_terminal = check_terminal(board);
 
-        let result = if let Some(x) = is_terminal {
-            Some(x)
+        let result: f32 = if let Some(x) = is_terminal {
+            if board.side_to_move == x {
+                1.0
+            } else {
+                -1.0
+            }
         } else {
             let node = tree.get_node_mut(cur);
 
             if node.left_moves.is_empty() {
-                Some(Side::opposite(board.side_to_move))
+                -1.0
             } else {
                 let rnd_index = search_data.random_generator.gen_range(0..node.left_moves.len());
                 let next_mv = node.left_moves[rnd_index];
@@ -285,20 +288,13 @@ pub fn mcts_search(
                 cur = tree.new_child(next_mv, cur, left_moves, 0.0);
 
                 // 3) Rollouts
-                rollout(board, &mut mv_generator, &mut search_data.random_generator, 120)
+                let position = BitPosition::from_board(board);
+                let res = nn.evaluate_position(&position);
+                res.value
             }
         };
 
-        let leaf_player = if board.side_to_move == Side::ATTACKERS {
-            Side::DEFENDERS
-        } else {
-            Side::ATTACKERS
-        };
-
-        let mut value = match result {
-            Some(w) => if w == leaf_player { 1.0 } else { 0.0 },
-            None => 0.5,
-        };
+        let mut value = -result;
 
 
         // 4) Backpropagation
@@ -318,15 +314,13 @@ pub fn mcts_search(
 
             cur = parent.expect("Parent not found");
 
-            value = 1.0 - value;
+            value = -value;
         }
 
         // 5) print all
         if iteration % 1000 == 0 {
             let root = tree.get_root();
-
-            // println!("Iteration: {}, root visits: {}, root wins: {}", iteration, root.visits, root.wins);
-
+            
             let top_n = 10;
 
             let mut children: Vec<NodeId> = root.children.clone();
