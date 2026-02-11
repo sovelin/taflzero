@@ -22,3 +22,22 @@ python -m pip install torch pytest
 python demo_train_step.py
 pytest -q
 ```
+
+## Стартовые веса в QNXX
+
+```bash
+python save_random_qnxx.py --out weights/random_init.qnxx --seed 42
+```
+
+Скрипт сохраняет случайно инициализированную сеть `TaflAlphaZeroNet` в файл
+`.qnxx` (чекпоинт с `state_dict` и метаданными), который можно использовать как
+стартовую точку обучения.
+
+## Загрузка QNXX
+
+```bash
+python load_qnxx.py --in weights/random_init.qnxx --device cpu
+```
+
+Скрипт загружает и валидирует `.qnxx`, поднимает `TaflAlphaZeroNet` и выводит
+краткую информацию о модели.
