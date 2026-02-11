@@ -1,5 +1,6 @@
 use zevratafl_rust::dataset::play_random_games;
 use zevratafl_rust::{ConsoleClient, UciRunState};
+use zevratafl_rust::gen_train_data::gen_train_data;
 
 fn generate_dataset(file_name: Option<String>) {
     match file_name {
@@ -20,10 +21,18 @@ fn main() {
     match args.next() {
         Some(cmd) if cmd == "dataset" => {
             let target = args.next();
-            generate_dataset(target);
+            // generate_dataset(target);
+            println!("{:?}", target);
+            if let Some(t) = target {
+                gen_train_data(&t);
+            } else {
+                println!("Generating dataset and printing to console");
+            }
         }
         Some(cmd) if cmd == "uci" => run_console_uci(),
-        Some(file_name) => generate_dataset(Some(file_name)),
+        Some(file_name) => {
+            gen_train_data(&file_name)
+        },
         None => run_console_uci(),
     }
 }

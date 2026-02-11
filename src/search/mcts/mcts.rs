@@ -240,6 +240,7 @@ pub fn mcts_search(
     nn: &mut NeuralNet,
     search_data: &mut SearchData,
     on_iteration: Option<&dyn Fn(SearchIterationResponse)>,
+    iter_max: Option<u64>,
 ) -> Option<Move> {
     let mut mv_generator = MoveGen::new();
     let mut move_stack = MovesStack::new();
@@ -258,6 +259,13 @@ pub fn mcts_search(
         }
 
         iteration += 1;
+
+        if let Some(max) = iter_max {
+            if iteration > max {
+                break;
+            }
+        }
+
         let mut cur = tree.get_root_id();
 
         // 1) Selection — descend using PUCT until we hit a leaf

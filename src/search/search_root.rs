@@ -93,7 +93,7 @@ pub fn search_root(
     let mut tree = MCTSTree::new();
     let mut nn = NeuralNet::new("./random_init.onnx");
 
-    let best_move = mcts_search(board, &mut tree, &mut nn, search_data, on_iteration);
+    let best_move = mcts_search(board, &mut tree, &mut nn, search_data, on_iteration, None);
 
     SearchResponse {
         best_move: best_move.unwrap_or_default(),

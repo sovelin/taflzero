@@ -1,4 +1,5 @@
-use std::fs::File;
+use std::fs::{OpenOptions};
+use std::io::BufWriter;
 use crate::Board;
 use crate::board::constants::INITIAL_FEN;
 use crate::mcts::export::PendingSample;
@@ -16,7 +17,7 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> Vec<PendingSam
 
     loop {
         let mut mcts_tree = MCTSTree::new();
-        let mv = mcts_search(&mut board, &mut mcts_tree, nn, search_data, None);
+        let mv = mcts_search(&mut board, &mut mcts_tree, nn, search_data, None, Some(400));
 
         if let Some(mv) = mv {
             res.push(mcts_tree.make_pending_sample(&board));
@@ -39,14 +40,25 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> Vec<PendingSam
     res
 }
 
-pub fn gen_train_data(output_path: &str, num_games: usize) {
+pub fn gen_train_data(output_path: &String) {
     let mut nn = NeuralNet::new("./random_init.onnx");
     let mut search_data = SearchData::new();
 
-    let file = File::create(output_path).expect("Failed to create output file");
+    let file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(output_path)
+        .expect("Could not open output file");
+
+    let mut writer = BufWriter::new(file);
 
     loop {
         let res = play_game(&mut nn, &mut search_data);
+        println!("Generated a game with {} samples", res.len());
+
+        for sample in res {
+            sample.write_to(&mut writer).expect("Cannot write sample");
+        }
 
     }
 }
