@@ -4,7 +4,7 @@ use crate::types::{Piece, Side};
 
 #[repr(C)]
 pub struct BitPosition {
-    planes: [u8; 16 * 3], // [attackers | defenders | king]
+    pub planes: [u8; 16 * 3], // [attackers | defenders | king]
     pub stm: u8, // 1 for attackers, 0 for defenders
 }
 

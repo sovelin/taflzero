@@ -1,18 +1,13 @@
 use ndarray::{Array, IxDyn};
 use ort::session::Session;
 use ort::value::Value;
+use crate::board::constants::SQS;
+use crate::PRECOMPUTED;
+use crate::masks::BOARD_SIZE;
+use crate::position_export::BitPosition;
 
-use crate::Board;
-use crate::board::utils::get_square;
-use crate::types::{Piece, Side};
-
-const BOARD_DIM: usize = 11;
 const NUM_PLANES: usize = 6;
 const POLICY_SIZE: usize = 4840;
-
-// Throne: center (5,5). Corners: (0,0), (0,10), (10,0), (10,10).
-const THRONE_SQ: usize = 5 * BOARD_DIM + 5;
-const CORNER_SQUARES: [usize; 4] = [0, 10, 110, 120];
 
 pub struct NnOutput {
     pub policy: [f32; POLICY_SIZE],
@@ -33,43 +28,56 @@ impl NeuralNet {
         Self { session }
     }
 
-    pub fn evaluate_position(&mut self, board: &Board) -> NnOutput {
-        let mut input = [0.0f32; NUM_PLANES * BOARD_DIM * BOARD_DIM];
+    fn fill_input(input: &mut [f32], pos: &BitPosition) {
+        debug_assert!(input.len() == NUM_PLANES * SQS);
 
-        for row in 0..BOARD_DIM {
-            for col in 0..BOARD_DIM {
-                let sq = get_square(row, col);
-                let idx = row * BOARD_DIM + col;
-
-                match board.board[sq] {
-                    Piece::ATTACKER => input[idx] = 1.0,
-                    Piece::DEFENDER => input[BOARD_DIM * BOARD_DIM + idx] = 1.0,
-                    Piece::KING => input[2 * BOARD_DIM * BOARD_DIM + idx] = 1.0,
-                    Piece::EMPTY => {}
+        // Planes 0-2: unpack bit planes (attackers, defenders, king)
+        for plane in 0..3 {
+            let base = plane * 16;
+            let out_offset = plane * SQS;
+            for idx in 0..SQS {
+                let byte = idx / 8;
+                let bit = idx % 8;
+                if (pos.planes[base + byte] >> bit) & 1 == 1 {
+                    input[out_offset + idx] = 1.0;
                 }
             }
         }
 
-        // Plane 3: side to move (all 1s if attackers)
-        let stm_val = if board.side_to_move == Side::ATTACKERS { 1.0f32 } else { 0.0f32 };
-        let stm_offset = 3 * BOARD_DIM * BOARD_DIM;
-        for i in 0..BOARD_DIM * BOARD_DIM {
+        // Plane 3: side to move (all 1s if attackers, stm == 1)
+        let stm_val = if pos.stm == 1 { 1.0f32 } else { 0.0f32 };
+        let stm_offset = 3 * SQS;
+        for i in 0..SQS {
             input[stm_offset + i] = stm_val;
         }
 
         // Plane 4: throne
-        let throne_offset = 4 * BOARD_DIM * BOARD_DIM;
-        input[throne_offset + THRONE_SQ] = 1.0;
+        let throne_offset = 4 * SQS;
+        input[throne_offset + PRECOMPUTED.throne_sq] = 1.0;
 
         // Plane 5: corners
-        let corners_offset = 5 * BOARD_DIM * BOARD_DIM;
-        for &sq in &CORNER_SQUARES {
+        let corners_offset = 5 * SQS;
+        for &sq in &PRECOMPUTED.corners_sq {
             input[corners_offset + sq] = 1.0;
+        }
+    }
+
+    pub fn evaluate_position(&mut self, pos: &BitPosition) -> NnOutput {
+        self.evaluate_batch(&[pos]).pop().unwrap()
+    }
+
+    pub fn evaluate_batch(&mut self, positions: &[&BitPosition]) -> Vec<NnOutput> {
+        let batch_size = positions.len();
+        let sample_size = NUM_PLANES * SQS;
+        let mut input_data = vec![0.0f32; batch_size * sample_size];
+
+        for (i, pos) in positions.iter().enumerate() {
+            Self::fill_input(&mut input_data[i * sample_size..(i + 1) * sample_size], pos);
         }
 
         let input_tensor = Array::from_shape_vec(
-            IxDyn(&[1, NUM_PLANES, BOARD_DIM, BOARD_DIM]),
-            input.to_vec(),
+            IxDyn(&[batch_size, NUM_PLANES, BOARD_SIZE, BOARD_SIZE]),
+            input_data,
         )
         .unwrap();
 
@@ -79,11 +87,14 @@ impl NeuralNet {
         let (_, policy_data) = outputs[0].try_extract_tensor::<f32>().unwrap();
         let (_, value_data) = outputs[1].try_extract_tensor::<f32>().unwrap();
 
-        let mut policy = [0.0f32; POLICY_SIZE];
-        policy.copy_from_slice(&policy_data[..POLICY_SIZE]);
+        let mut results = Vec::with_capacity(batch_size);
+        for i in 0..batch_size {
+            let mut policy = [0.0f32; POLICY_SIZE];
+            policy.copy_from_slice(&policy_data[i * POLICY_SIZE..(i + 1) * POLICY_SIZE]);
+            let value = value_data[i];
+            results.push(NnOutput { policy, value });
+        }
 
-        let value = value_data[0];
-
-        NnOutput { policy, value }
+        results
     }
 }
