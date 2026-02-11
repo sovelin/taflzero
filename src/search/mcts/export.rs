@@ -73,7 +73,7 @@ struct PolicyTarget {
     visits: u16,
 }
 
-struct PendingSample {
+pub struct PendingSample {
     bit_position: BitPosition,
     legal_mask: LegalMask,
     policy: Vec<PolicyTarget>,

@@ -1,3 +1,3 @@
 pub mod mcts;
-mod export;
+pub mod export;
 mod utils;
