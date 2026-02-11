@@ -16,16 +16,17 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> Vec<PendingSam
     let mut config = MCTSConfig::default_train();
     let game_result;
     let mut move_number: usize = 0;
+    let mut mcts_tree = MCTSTree::new();
 
     loop {
         config.temperature = if move_number < 20 { 1.0 } else { 0.0 };
-        let mut mcts_tree = MCTSTree::new();
         let mv = mcts_search(&mut board, &mut mcts_tree, nn, search_data, None, Some(400), &config);
         move_number += 1;
 
         if let Some(mv) = mv {
             res.push(mcts_tree.make_pending_sample(&board));
             board.make_move_simple(mv).expect("Make move failed");
+            mcts_tree.reroot(mv);
 
             if let Some(result) = check_terminal(&mut board) {
                 game_result = Some(result);

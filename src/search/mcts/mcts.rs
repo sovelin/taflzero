@@ -101,16 +101,15 @@ impl MCTSNode {
 
 pub struct MCTSTree {
     nodes: Vec<MCTSNode>,
+    root_id: NodeId,
     pub move_gen: MoveGen,
 }
 
 impl MCTSTree {
-    const ROOT_ID: NodeId = 0;
-
     pub fn new() -> Self {
         MCTSTree { nodes: vec![
             MCTSNode::new_root(),
-        ], move_gen: MoveGen::new() }
+        ], root_id: 0, move_gen: MoveGen::new() }
     }
 
     pub fn get_node(&self, id: NodeId) -> &MCTSNode {
@@ -122,15 +121,16 @@ impl MCTSTree {
     }
 
     pub fn get_root(&self) -> &MCTSNode {
-        &self.nodes[Self::ROOT_ID]
+        &self.nodes[self.root_id]
     }
 
     fn get_root_mut(&mut self) -> &mut MCTSNode {
-        &mut self.nodes[Self::ROOT_ID]
+        let id = self.root_id;
+        &mut self.nodes[id]
     }
 
     fn get_root_id(&self) -> NodeId {
-        Self::ROOT_ID
+        self.root_id
     }
 
     fn new_child(&mut self, mv: Move, parent_id: NodeId, prior: f32) -> NodeId {
@@ -140,6 +140,28 @@ impl MCTSTree {
         let parent = self.get_node_mut(parent_id);
         parent.append_child(index);
         index
+    }
+
+    /// Reroot to the child of current root that matches `mv`.
+    /// Returns true if found, false if tree was reset.
+    pub fn reroot(&mut self, mv: Move) -> bool {
+        let root = &self.nodes[self.root_id];
+        let child_id = root.children.iter()
+            .find(|&&id| self.nodes[id].mv == Some(mv))
+            .copied();
+
+        match child_id {
+            Some(id) => {
+                self.root_id = id;
+                true
+            }
+            None => {
+                self.nodes.clear();
+                self.nodes.push(MCTSNode::new_root());
+                self.root_id = 0;
+                false
+            }
+        }
     }
 }
 
@@ -326,14 +348,16 @@ pub fn mcts_search(
     let mut iteration: u64 = 0;
     let mut last_report_ms: u64 = 0;
 
+    let root_id = tree.get_root_id();
+
     // Expand root
     if tree.get_root().is_leaf() {
-        expand_node(board, tree, MCTSTree::ROOT_ID, nn, &mut mv_generator);
+        expand_node(board, tree, root_id, nn, &mut mv_generator);
     }
 
     // Add Dirichlet noise to root priors
     if config.dirichlet_alpha > 0.0 {
-        add_dirichlet_noise(tree, MCTSTree::ROOT_ID, config.dirichlet_alpha, config.dirichlet_epsilon);
+        add_dirichlet_noise(tree, root_id, config.dirichlet_alpha, config.dirichlet_epsilon);
     }
 
     loop {
