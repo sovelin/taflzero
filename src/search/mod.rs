@@ -8,3 +8,4 @@ mod killer;
 mod moves_ordering;
 mod king_mobility_change;
 pub mod mcts;
+mod nn;
