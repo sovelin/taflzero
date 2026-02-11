@@ -287,7 +287,7 @@ pub fn mcts_search(
                 node.remove_left_move(next_mv);
                 cur = tree.new_child(next_mv, cur, left_moves, 0.0);
 
-                // 3) Rollouts
+                // 3) Simulation (Neural Net evaluation)
                 let position = BitPosition::from_board(board);
                 let res = nn.evaluate_position(&position);
                 res.value
@@ -320,7 +320,7 @@ pub fn mcts_search(
         // 5) print all
         if iteration % 1000 == 0 {
             let root = tree.get_root();
-            
+
             let top_n = 10;
 
             let mut children: Vec<NodeId> = root.children.clone();
