@@ -1,3 +1,8 @@
+use std::hash::{BuildHasher, Hasher};
+use rand::distr::Distribution;
+use rand::rngs::StdRng;
+use rand::SeedableRng;
+use rand_distr::Gamma;
 use crate::Board;
 use crate::movegen::MoveGen;
 use crate::mv::Move;
@@ -10,6 +15,33 @@ use crate::terminal::check_terminal;
 use crate::undo::UndoMove;
 
 type NodeId = usize;
+
+pub struct MCTSConfig {
+    /// Dirichlet noise alpha (0.0 = no noise). Typical: 0.03 for large boards, 0.3 for small.
+    pub dirichlet_alpha: f32,
+    /// Fraction of noise mixed into root priors. Typical: 0.25.
+    pub dirichlet_epsilon: f32,
+    /// Temperature for final move selection. 0.0 = pick best, 1.0 = proportional to visits.
+    pub temperature: f32,
+}
+
+impl MCTSConfig {
+    pub fn default_play() -> Self {
+        MCTSConfig {
+            dirichlet_alpha: 0.0,
+            dirichlet_epsilon: 0.0,
+            temperature: 0.0,
+        }
+    }
+
+    pub fn default_train() -> Self {
+        MCTSConfig {
+            dirichlet_alpha: 0.3,
+            dirichlet_epsilon: 0.25,
+            temperature: 1.0,
+        }
+    }
+}
 
 pub struct MCTSNode {
     mv: Option<Move>,
@@ -223,15 +255,61 @@ fn debug_print_top_moves(tree: &MCTSTree, top_n: usize) {
     }
 }
 
-fn get_best_child(tree: &MCTSTree) -> Option<NodeId> {
+fn sample_dirichlet(alpha: f32, n: usize) -> Vec<f32> {
+    let gamma = Gamma::new(alpha as f64, 1.0).unwrap();
+    let mut rng = StdRng::seed_from_u64(std::hash::RandomState::new().build_hasher().finish());
+    let samples: Vec<f64> = (0..n).map(|_| gamma.sample(&mut rng)).collect();
+    let sum: f64 = samples.iter().sum();
+    samples.iter().map(|&x| (x / sum) as f32).collect()
+}
+
+fn add_dirichlet_noise(tree: &mut MCTSTree, node_id: NodeId, alpha: f32, epsilon: f32) {
+    let children: Vec<NodeId> = tree.get_node(node_id).children.clone();
+    if children.is_empty() {
+        return;
+    }
+    let noise = sample_dirichlet(alpha, children.len());
+    for (i, &child_id) in children.iter().enumerate() {
+        let child = tree.get_node_mut(child_id);
+        child.prior = (1.0 - epsilon) * child.prior + epsilon * noise[i];
+    }
+}
+
+fn get_best_child(tree: &MCTSTree, temperature: f32) -> Option<NodeId> {
     let root = tree.get_root();
-    root.children.iter()
-        .max_by(|&&a, &&b| {
-            let va = tree.get_node(a).visits;
-            let vb = tree.get_node(b).visits;
-            va.partial_cmp(&vb).unwrap()
-        })
-        .copied()
+    if root.children.is_empty() {
+        return None;
+    }
+
+    if temperature <= 0.0 {
+        // Greedy: pick most visited
+        return root.children.iter()
+            .max_by(|&&a, &&b| {
+                let va = tree.get_node(a).visits;
+                let vb = tree.get_node(b).visits;
+                va.partial_cmp(&vb).unwrap()
+            })
+            .copied();
+    }
+
+    // Temperature-based sampling proportional to visits^(1/T)
+    let inv_t = 1.0 / temperature;
+    let weights: Vec<f64> = root.children.iter()
+        .map(|&id| (tree.get_node(id).visits as f64).powf(inv_t as f64))
+        .collect();
+    let sum: f64 = weights.iter().sum();
+    let probs: Vec<f64> = weights.iter().map(|&w| w / sum).collect();
+
+    let mut rng = StdRng::seed_from_u64(std::hash::RandomState::new().build_hasher().finish());
+    let r: f64 = rand::distr::Uniform::new(0.0f64, 1.0).unwrap().sample(&mut rng);
+    let mut cumulative = 0.0;
+    for (i, &p) in probs.iter().enumerate() {
+        cumulative += p;
+        if r < cumulative {
+            return Some(root.children[i]);
+        }
+    }
+    Some(*root.children.last().unwrap())
 }
 
 pub fn mcts_search(
@@ -241,6 +319,7 @@ pub fn mcts_search(
     search_data: &mut SearchData,
     on_iteration: Option<&dyn Fn(SearchIterationResponse)>,
     iter_max: Option<u64>,
+    config: &MCTSConfig,
 ) -> Option<Move> {
     let mut mv_generator = MoveGen::new();
     let mut move_stack = MovesStack::new();
@@ -252,9 +331,14 @@ pub fn mcts_search(
         expand_node(board, tree, MCTSTree::ROOT_ID, nn, &mut mv_generator);
     }
 
+    // Add Dirichlet noise to root priors
+    if config.dirichlet_alpha > 0.0 {
+        add_dirichlet_noise(tree, MCTSTree::ROOT_ID, config.dirichlet_alpha, config.dirichlet_epsilon);
+    }
+
     loop {
-        // Check time limit
-        if search_data.time_exceeded() {
+        // Check time limit (skip if iter_max is set)
+        if iter_max.is_none() && search_data.time_exceeded() {
             break;
         }
 
@@ -317,7 +401,7 @@ pub fn mcts_search(
             last_report_ms = elapsed;
 
             if let Some(callback) = on_iteration {
-                if let Some(best_id) = get_best_child(tree) {
+                if let Some(best_id) = get_best_child(tree, 0.0) {
                     let best = tree.get_node(best_id);
                     let score = if best.visits > 0.0 {
                         (best.wins / best.visits * 1000.0) as i32
@@ -339,5 +423,5 @@ pub fn mcts_search(
         }
     }
 
-    get_best_child(tree).map(|id| tree.get_node(id).mv.unwrap())
+    get_best_child(tree, config.temperature).map(|id| tree.get_node(id).mv.unwrap())
 }

@@ -3,7 +3,7 @@ use std::io::BufWriter;
 use crate::Board;
 use crate::board::constants::INITIAL_FEN;
 use crate::mcts::export::PendingSample;
-use crate::mcts::mcts::{mcts_search, MCTSTree};
+use crate::mcts::mcts::{mcts_search, MCTSConfig, MCTSTree};
 use crate::search::nn::NeuralNet;
 use crate::search_data::SearchData;
 use crate::terminal::check_terminal;
@@ -13,11 +13,12 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> Vec<PendingSam
     let mut board: Board = Board::new();
     board.set_fen(INITIAL_FEN).expect("Invalid FEN");
 
+    let config = MCTSConfig::default_train();
     let game_result;
 
     loop {
         let mut mcts_tree = MCTSTree::new();
-        let mv = mcts_search(&mut board, &mut mcts_tree, nn, search_data, None, Some(400));
+        let mv = mcts_search(&mut board, &mut mcts_tree, nn, search_data, None, Some(400), &config);
 
         if let Some(mv) = mv {
             res.push(mcts_tree.make_pending_sample(&board));

@@ -3,7 +3,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use crate::board::Board;
 use crate::evaluation::MATE_SCORE;
 use crate::is_mate_score;
-use crate::mcts::mcts::{mcts_search, MCTSTree};
+use crate::mcts::mcts::{mcts_search, MCTSConfig, MCTSTree};
 use crate::moves::mv::Move;
 use crate::search::constants::MAX_PLY;
 use crate::search::nn::NeuralNet;
@@ -93,7 +93,8 @@ pub fn search_root(
     let mut tree = MCTSTree::new();
     let mut nn = NeuralNet::new("./random_init.onnx");
 
-    let best_move = mcts_search(board, &mut tree, &mut nn, search_data, on_iteration, None);
+    let config = MCTSConfig::default_play();
+    let best_move = mcts_search(board, &mut tree, &mut nn, search_data, on_iteration, None, &config);
 
     SearchResponse {
         best_move: best_move.unwrap_or_default(),
