@@ -3,6 +3,7 @@ use crate::{Board, Engine};
 use crate::movegen::MoveGen;
 use crate::mv::{create_move_from_algebraic, Move};
 use crate::nnue::load_default_weights;
+use crate::search::nn::NeuralNet;
 use crate::terminal::check_terminal;
 use crate::types::{Piece, Side, Square};
 
@@ -17,8 +18,9 @@ impl EngineClient {
     #[wasm_bindgen(constructor)]
     pub fn new(tt_size_mb: usize) -> Self {
         let (w1, w2) = load_default_weights();
+        let nn = NeuralNet::new("./gen1.onxx");
 
-        let engine = Engine::new(tt_size_mb, &w1, &w2);
+        let engine = Engine::new(tt_size_mb, &w1, &w2, nn);
 
         Self {
             engine,

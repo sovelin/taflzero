@@ -113,8 +113,7 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> Vec<PendingSam
     res
 }
 
-pub fn gen_train_data(output_path: &String) {
-    let mut nn = NeuralNet::new("./random_init.onnx");
+pub fn gen_train_data(output_path: &str, nn: &mut NeuralNet) {
     let mut search_data = SearchData::new();
 
     let file = OpenOptions::new()
@@ -126,7 +125,7 @@ pub fn gen_train_data(output_path: &String) {
     let mut writer = BufWriter::new(file);
 
     loop {
-        let res = play_game(&mut nn, &mut search_data);
+        let res = play_game(nn, &mut search_data);
         println!("Generated a game with {} samples", res.len());
 
         for sample in res {

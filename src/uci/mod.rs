@@ -3,6 +3,7 @@ pub mod constants;
 
 use crate::mv::create_move_from_algebraic;
 use crate::nnue::{load_fc1_from_raw, load_fc2_from_raw};
+use crate::search::nn::NeuralNet;
 use crate::search::search_root::SearchIterationResponse;
 use crate::Engine;
 
@@ -22,12 +23,12 @@ pub struct UciController<O: UciOutput> {
 }
 
 impl<O: UciOutput> UciController<O> {
-    pub fn new(tt_size_mb: usize, output: O) -> Self {
+    pub fn new(tt_size_mb: usize, output: O, nn: NeuralNet) -> Self {
         let w1 = load_fc1_from_raw();
         let w2 = load_fc2_from_raw();
 
         Self {
-            engine: Engine::new(tt_size_mb, &w1, &w2),
+            engine: Engine::new(tt_size_mb, &w1, &w2, nn),
             output,
         }
     }
@@ -211,9 +212,9 @@ pub struct ConsoleClient {
 }
 
 impl ConsoleClient {
-    pub fn new(tt_size_mb: usize) -> Self {
+    pub fn new(tt_size_mb: usize, nn: NeuralNet) -> Self {
         Self {
-            controller: UciController::new(tt_size_mb, ConsoleBridge),
+            controller: UciController::new(tt_size_mb, ConsoleBridge, nn),
         }
     }
 
@@ -282,8 +283,9 @@ impl WasmClient {
     #[wasm_bindgen(constructor)]
     pub fn new(event_name: String, tt_size: usize) -> Self {
         let bridge = WasmBridge::new(event_name);
+        let nn = NeuralNet::new("./gen1.onxx");
         Self {
-            controller: UciController::new(tt_size, bridge),
+            controller: UciController::new(tt_size, bridge, nn),
         }
     }
 

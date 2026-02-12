@@ -5,6 +5,7 @@ use crate::{Board, Engine};
 use crate::board::constants::INITIAL_FEN;
 use crate::movegen::MoveGen;
 use crate::nnue::{load_fc1_from_raw, load_fc2_from_raw, Weights1, Weights2};
+use crate::search::nn::NeuralNet;
 use crate::terminal::is_threefold_repetition;
 use crate::types::Side;
 
@@ -170,7 +171,8 @@ fn set_random_opening(engine: &mut Engine, rng: &mut StdRng, ply_count: usize) {
 }
 
 fn play_random_game(rnd: &mut StdRng, game: &mut LearningGame, w1: &Weights1, w2: &Weights2) -> GameResult {
-    let mut engine = Engine::new(1, w1, w2);
+    let nn = NeuralNet::new("./gen1.onxx");
+    let mut engine = Engine::new(1, w1, w2, nn);
     set_random_opening(&mut engine, rnd, 32);
     let to_remove = 0; // rnd.gen_range(0..12);
 

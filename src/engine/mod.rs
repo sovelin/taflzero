@@ -3,6 +3,7 @@ use wasm_bindgen::prelude::*;
 use crate::board::Board;
 use crate::mv::Move;
 use crate::nnue::{Weights1, Weights2};
+use crate::search::nn::NeuralNet;
 use crate::search::search_data::SearchData;
 use crate::search::search_root::{search_root, SearchIterationResponse, SearchResponse};
 use crate::search::transposition::TranspositionTable;
@@ -14,23 +15,26 @@ pub struct Engine {
     tt: TranspositionTable,
     search_data: SearchData,
     board: Board,
+    nn: NeuralNet,
     best_move: Option<Move>,
 }
 
 impl Engine {
-    pub fn new(tt_size_mb: usize, w1: &Weights1, w2: &Weights2) -> Self {
+    pub fn new(tt_size_mb: usize, w1: &Weights1, w2: &Weights2, nn: NeuralNet) -> Self {
         Self {
             tt: TranspositionTable::new(tt_size_mb),
             search_data: SearchData::new(),
             board: Board::new_with_nnue(w1.clone(), w2.clone()),
+            nn,
             best_move: None,
         }
     }
-    pub fn new_no_nnue(tt_size_mb: usize) -> Self {
+    pub fn new_no_nnue(tt_size_mb: usize, nn: NeuralNet) -> Self {
         Self {
             tt: TranspositionTable::new(tt_size_mb),
             search_data: SearchData::new(),
             board: Board::new(),
+            nn,
             best_move: None,
         }
     }
@@ -50,7 +54,7 @@ impl Engine {
 
     pub fn make_search(&mut self, time: u64, depth: u32, on_iteration: Option<&dyn Fn(SearchIterationResponse)>) -> SearchResponse {
         self.search_data.start_timer(time, depth);
-        let res = search_root(&mut self.board, &mut self.search_data, &mut self.tt, on_iteration);
+        let res = search_root(&mut self.board, &mut self.search_data, &mut self.tt, &mut self.nn, on_iteration);
         self.best_move = Some(res.best_move);
         res
     }
