@@ -35,7 +35,7 @@ def save_qnxx(model: TaflAlphaZeroNet, output_path: Path, seed: int | None = Non
 
 
 def load_qnxx(path: Path, device: torch.device | str | None = None) -> TaflAlphaZeroNet:
-    payload = torch.load(path, map_location=device or "cpu")
+    payload = torch.load(path, map_location=device or "cpu", weights_only=False)
     if not isinstance(payload, dict):
         raise ValueError("QNXX checkpoint payload must be a dict")
 
