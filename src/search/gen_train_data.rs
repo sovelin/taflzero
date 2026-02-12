@@ -1,17 +1,83 @@
 use std::fs::{OpenOptions};
 use std::io::BufWriter;
-use crate::Board;
-use crate::board::constants::INITIAL_FEN;
+use rand::prelude::StdRng;
+use rand::Rng;
+use crate::{Board, PRECOMPUTED};
 use crate::mcts::export::PendingSample;
 use crate::mcts::mcts::{mcts_search, MCTSConfig, MCTSTree};
+use crate::movegen::MoveGen;
 use crate::search::nn::NeuralNet;
 use crate::search_data::SearchData;
 use crate::terminal::check_terminal;
+use crate::types::{Piece, Side};
+
+fn set_piece_to_random_square(
+    board: &mut Board,
+    empty_squares: &mut Vec<usize>,
+    rnd: &mut StdRng,
+    piece: Piece,
+) {
+    if empty_squares.is_empty() {
+        return;
+    }
+
+    let idx = rnd.gen_range(0..empty_squares.len());
+    let sq = empty_squares.swap_remove(idx);
+
+    board.set_piece(sq, piece).expect("set_piece");
+}
+
+fn set_random_position(rnd: &mut StdRng) -> Board {
+    let mut board = Board::new();
+    let mut empty_squares: Vec<usize> = (0..board.board.len())
+        .filter(|&sq| board.board[sq] == Piece::EMPTY)
+        .filter(|&sq| !PRECOMPUTED.corners_sq.contains(&sq))
+        .collect();
+
+    let attacker_pieces_count = rnd.gen_range(24..=50);
+    let defender_pieces_count = rnd.gen_range(0..=12);
+
+    set_piece_to_random_square(
+        &mut board,
+        &mut empty_squares,
+        rnd,
+        Piece::KING,
+    );
+
+    for _ in 0..attacker_pieces_count {
+        set_piece_to_random_square(
+            &mut board,
+            &mut empty_squares,
+            rnd,
+            Piece::ATTACKER,
+        );
+    }
+
+    for _ in 0..defender_pieces_count {
+        set_piece_to_random_square(
+            &mut board,
+            &mut empty_squares,
+            rnd,
+            Piece::DEFENDER,
+        );
+    }
+
+    board
+}
+
 
 fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> Vec<PendingSample> {
+    let mut board = set_random_position(&mut search_data.random_generator);
+
+    // movegen
+    let mut move_gen = MoveGen::new();
+   move_gen.generate_moves(&board);
+    // print stm
+
+    print!("Legal moves: {}", move_gen.count);
+    println!("{}", board);
+
     let mut res = vec![];
-    let mut board: Board = Board::new();
-    board.set_fen(INITIAL_FEN).expect("Invalid FEN");
 
     let mut config = MCTSConfig::default_train();
     let game_result;
@@ -40,6 +106,17 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> Vec<PendingSam
 
     for sample in res.iter_mut() {
         sample.set_value_from_result(game_result);
+    }
+
+    // print game result
+    match game_result {
+        Some(terminal_result) => {
+            match terminal_result {
+                Side::ATTACKERS => println!("Attacker wins"),
+                Side::DEFENDERS => println!("Defender wins"),
+            }
+        },
+        None => println!("Game ended without terminal result"),
     }
 
     res
