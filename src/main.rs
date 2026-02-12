@@ -5,11 +5,13 @@ use zevratafl_rust::search::nn::NeuralNet;
 struct CliArgs {
     net_path: String,
     datagen_path: Option<String>,
+    datagen_count: Option<usize>,
 }
 
 fn parse_args() -> CliArgs {
     let mut net_path = String::from("./gen1.onxx");
     let mut datagen_path: Option<String> = None;
+    let mut datagen_count: Option<usize> = None;
     let mut args = std::env::args().skip(1);
 
     while let Some(arg) = args.next() {
@@ -30,23 +32,46 @@ fn parse_args() -> CliArgs {
                     std::process::exit(2);
                 }
             }
+            "--datagen-count" => {
+                if let Some(raw) = args.next() {
+                    match raw.parse::<usize>() {
+                        Ok(0) => {
+                            eprintln!("--datagen-count must be > 0");
+                            std::process::exit(2);
+                        }
+                        Ok(v) => datagen_count = Some(v),
+                        Err(_) => {
+                            eprintln!("Invalid value for --datagen-count: {raw}");
+                            std::process::exit(2);
+                        }
+                    }
+                } else {
+                    eprintln!("Missing value for --datagen-count");
+                    std::process::exit(2);
+                }
+            }
             _ => {
                 eprintln!("Unknown arg: {arg}");
-                eprintln!("Usage: zevratafl-rust [--net <model.onnx>] [--datagen <output.bin>]");
+                eprintln!("Usage: zevratafl-rust [--net <model.onnx>] [--datagen <output.bin>] [--datagen-count <games>]");
                 std::process::exit(2);
             }
         }
     }
 
-    CliArgs { net_path, datagen_path }
+    CliArgs { net_path, datagen_path, datagen_count }
 }
 
 fn main() {
     let cli = parse_args();
     let mut nn = NeuralNet::new(&cli.net_path);
 
+    if cli.datagen_count.is_some() && cli.datagen_path.is_none() {
+        eprintln!("--datagen-count can only be used together with --datagen");
+        std::process::exit(2);
+    }
+
     if let Some(path) = cli.datagen_path {
-        gen_train_data(&path, &mut nn);
+        gen_train_data(&path, &mut nn, cli.datagen_count);
         return;
     }
 

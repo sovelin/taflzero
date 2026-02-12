@@ -113,7 +113,7 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> Vec<PendingSam
     res
 }
 
-pub fn gen_train_data(output_path: &str, nn: &mut NeuralNet) {
+pub fn gen_train_data(output_path: &str, nn: &mut NeuralNet, game_limit: Option<usize>) {
     let mut search_data = SearchData::new();
 
     let file = OpenOptions::new()
@@ -123,14 +123,24 @@ pub fn gen_train_data(output_path: &str, nn: &mut NeuralNet) {
         .expect("Could not open output file");
 
     let mut writer = BufWriter::new(file);
+    let mut games_generated = 0usize;
 
     loop {
+        if let Some(limit) = game_limit {
+            if games_generated >= limit {
+                println!("Datagen finished: generated {} games", games_generated);
+                break;
+            }
+        }
+
         let res = play_game(nn, &mut search_data);
         println!("Generated a game with {} samples", res.len());
 
         for sample in res {
             sample.write_to(&mut writer).expect("Cannot write sample");
         }
+
+        games_generated += 1;
 
     }
 }
