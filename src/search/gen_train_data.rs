@@ -68,15 +68,6 @@ fn set_random_position(rnd: &mut StdRng) -> Board {
 
 fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> Vec<PendingSample> {
     let mut board = set_random_position(&mut search_data.random_generator);
-
-    // movegen
-    let mut move_gen = MoveGen::new();
-   move_gen.generate_moves(&board);
-    // print stm
-
-    print!("Legal moves: {}", move_gen.count);
-    println!("{}", board);
-
     let mut res = vec![];
 
     let mut config = MCTSConfig::default_train();

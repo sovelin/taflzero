@@ -91,7 +91,7 @@ pub fn search_root(
     on_iteration: Option<&dyn Fn(SearchIterationResponse)>,
 ) -> SearchResponse {
     let mut tree = MCTSTree::new();
-    let mut nn = NeuralNet::new("./random_init.onnx");
+    let mut nn = NeuralNet::new("./gen1.onxx");
 
     let config = MCTSConfig::default_play();
     let best_move = mcts_search(board, &mut tree, &mut nn, search_data, on_iteration, None, &config);
