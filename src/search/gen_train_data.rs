@@ -5,7 +5,6 @@ use rand::Rng;
 use crate::{Board, PRECOMPUTED};
 use crate::mcts::export::PendingSample;
 use crate::mcts::mcts::{mcts_search, MCTSConfig, MCTSTree};
-use crate::movegen::MoveGen;
 use crate::search::nn::NeuralNet;
 use crate::search_data::SearchData;
 use crate::terminal::check_terminal;
@@ -67,30 +66,54 @@ fn set_random_position(rnd: &mut StdRng) -> Board {
 
 
 fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> Vec<PendingSample> {
-    let mut board = set_random_position(&mut search_data.random_generator);
+    // let mut board = set_random_position(&mut search_data.random_generator);
+    let mut board = Board::new();
+    // board.setup_initial_position().expect("Setup initial position failed");
+    board.set_fen("1aaaaaaaaa1/3aaaaa3/11/aa3d3aa/a3ddd3a/aa1ddkdd1aa/a3ddd3a/aa3d3aa/11/3aaaaa3/1aaaaaaaaa1 a").expect("Set fen failed");
     let mut res = vec![];
 
     let mut config = MCTSConfig::default_train();
     let game_result;
     let mut move_number: usize = 0;
     let mut mcts_tree = MCTSTree::new();
+    let mut no_capture_counter = 0;
 
     loop {
-        config.temperature = if move_number < 20 { 1.0 } else { 0.0 };
+        config.temperature = if move_number < 40 { 1.0 } else { 0.0 };
         let mv = mcts_search(&mut board, &mut mcts_tree, nn, search_data, None, Some(400), &config);
         move_number += 1;
 
         if let Some(mv) = mv {
             res.push(mcts_tree.make_pending_sample(&board));
+            let pieces_count = board.attackers_count + board.defenders_count;
             board.make_move_simple(mv).expect("Make move failed");
+            let new_pieces_count = board.attackers_count + board.defenders_count;
+
+            if new_pieces_count != pieces_count {
+                // reset no capture counter
+                no_capture_counter = 0;
+            } else {
+                no_capture_counter += 1;
+            }
+
             mcts_tree.reroot(mv);
+
+            if no_capture_counter >= 800 {
+                // end the game as a draw
+                game_result = None;
+                break;
+            }
 
             if let Some(result) = check_terminal(&mut board) {
                 game_result = Some(result);
                 break;
             }
         } else {
-            game_result = None;
+            game_result = if board.side_to_move == Side::ATTACKERS {
+                Some(Side::DEFENDERS)
+            } else {
+                Some(Side::ATTACKERS)
+            };
             break;
         }
     }

@@ -52,10 +52,9 @@ def train(
         dataset,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=2,
+        num_workers=0,
         pin_memory=device.type == "cuda",
         drop_last=True,
-        persistent_workers=True,
     )
 
     total_samples = len(dataset)

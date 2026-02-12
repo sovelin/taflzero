@@ -447,5 +447,8 @@ pub fn mcts_search(
         }
     }
 
+    // print
+        //debug_print_top_moves(tree, 10);
+
     get_best_child(tree, config.temperature).map(|id| tree.get_node(id).mv.unwrap())
 }
