@@ -139,7 +139,7 @@ impl MCTSTree {
         let mut policy: Vec<PolicyTarget> = vec![];
 
 
-        for &child_id in &root.children() {
+        for &child_id in *&root.children() {
             let node = self.get_node(child_id);
             let visits_f = node.visits();
             let visits_u16 = visits_f.round().min(u16::MAX as f32) as u16;

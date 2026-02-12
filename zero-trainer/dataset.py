@@ -33,6 +33,7 @@ POLICY_SIZE = 4840
 
 BIT_POSITION_BYTES = 49  # 48 planes + 1 stm
 LEGAL_MASK_BYTES = 605   # ceil(4840 / 8)
+FIXED_HEADER = BIT_POSITION_BYTES + LEGAL_MASK_BYTES + 2  # 656 bytes before policy entries
 
 THRONE_SQ = 5 * 11 + 5   # 60
 CORNERS_SQ = [0, 10, 110, 120]
@@ -53,78 +54,92 @@ def _unpack_bits(data: bytes, num_bits: int) -> np.ndarray:
     return bits.astype(np.float32)
 
 
-def _parse_sample(buf: bytes, offset: int) -> tuple[dict, int]:
-    """Parse one sample from buffer at given offset. Returns (sample_dict, new_offset)."""
+def _build_offset_index(path: Path) -> np.ndarray:
+    """Scan the binary file and return an array of byte offsets for each sample.
+
+    Only reads the minimum needed (policy_len field) to compute sample sizes.
+    """
+    file_size = path.stat().st_size
+    offsets: list[int] = []
+    pos = 0
+    with open(path, "rb") as f:
+        while pos < file_size:
+            offsets.append(pos)
+            # Skip fixed header to reach policy_len
+            f.seek(pos + BIT_POSITION_BYTES + LEGAL_MASK_BYTES)
+            raw = f.read(2)
+            if len(raw) < 2:
+                break
+            policy_len = struct.unpack("<H", raw)[0]
+            # Advance past policy entries + value byte
+            pos += FIXED_HEADER + policy_len * 4 + 1
+    return np.array(offsets, dtype=np.int64)
+
+
+def _read_sample_at(f, offset: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Read and decode a single sample from an open file handle at the given offset."""
+    f.seek(offset)
+
     # BitPosition: 49 bytes
-    planes_bytes = buf[offset: offset + 48]
-    stm = buf[offset + 48]
-    offset += BIT_POSITION_BYTES
+    planes_bytes = f.read(48)
+    stm = f.read(1)[0]
 
     # LegalMask: 605 bytes
-    legal_mask_bytes = buf[offset: offset + LEGAL_MASK_BYTES]
-    offset += LEGAL_MASK_BYTES
+    legal_mask_bytes = f.read(LEGAL_MASK_BYTES)
 
     # policy_len: u16
-    policy_len = struct.unpack_from("<H", buf, offset)[0]
-    offset += 2
+    policy_len = struct.unpack("<H", f.read(2))[0]
 
     # PolicyTarget × N: each 4 bytes (move_index u16, visits u16)
-    policy_targets = []
-    for _ in range(policy_len):
-        move_index, visits = struct.unpack_from("<HH", buf, offset)
-        policy_targets.append((move_index, visits))
-        offset += 4
+    policy_raw = f.read(policy_len * 4)
 
     # value: i8
-    value = struct.unpack_from("<b", buf, offset)[0]
-    offset += 1
+    value = struct.unpack("<b", f.read(1))[0]
 
-    # Decode planes
+    # -- Decode planes --
     attackers = _unpack_bits(planes_bytes[0:16], SQS)
     defenders = _unpack_bits(planes_bytes[16:32], SQS)
     king = _unpack_bits(planes_bytes[32:48], SQS)
-
     stm_plane = np.full(SQS, float(stm), dtype=np.float32)
 
     board_planes = np.stack([
-        attackers,
-        defenders,
-        king,
-        stm_plane,
-        _THRONE_PLANE,
-        _CORNERS_PLANE,
+        attackers, defenders, king, stm_plane, _THRONE_PLANE, _CORNERS_PLANE,
     ]).reshape(NUM_PLANES, BOARD_SIZE, BOARD_SIZE)
 
-    # Legal mask
+    # -- Legal mask --
     legal_mask = _unpack_bits(legal_mask_bytes, POLICY_SIZE)
 
-    # Policy target: sparse visit counts → dense
+    # -- Policy target: sparse → dense, then normalize --
     policy_visits = np.zeros(POLICY_SIZE, dtype=np.float32)
-    for move_index, visits in policy_targets:
+    for i in range(policy_len):
+        off = i * 4
+        move_index = struct.unpack_from("<H", policy_raw, off)[0]
+        visits = struct.unpack_from("<H", policy_raw, off + 2)[0]
         policy_visits[move_index] = float(visits)
 
-    return {
-        "planes": board_planes,
-        "legal_mask": legal_mask,
-        "policy_visits": policy_visits,
-        "value": np.float32(value),
-    }, offset
+    visit_sum = policy_visits.sum()
+    if visit_sum > 0:
+        policy_visits /= visit_sum
 
-
-def parse_all_samples(path: Path) -> list[dict]:
-    """Read all samples from a binary file."""
-    data = path.read_bytes()
-    samples = []
-    offset = 0
-    while offset < len(data):
-        sample, offset = _parse_sample(data, offset)
-        samples.append(sample)
-    return samples
+    return (
+        torch.from_numpy(board_planes),
+        torch.from_numpy(legal_mask).bool(),
+        torch.from_numpy(policy_visits),
+        torch.tensor(np.float32(value)),
+    )
 
 
 class SelfPlayDataset(Dataset):
     """
-    PyTorch dataset over self-play samples with sliding window support.
+    PyTorch dataset that reads self-play samples lazily from disk.
+
+    Only an index of byte offsets is kept in memory.  Each __getitem__
+    call reads and decodes a single sample from the file, so RAM usage
+    stays constant regardless of dataset size.
+
+    Compatible with DataLoader(num_workers>0): each worker opens its
+    own file handle on first access (stored as an instance attribute
+    that lives in the worker process).
 
     Args:
         path: path to binary data file
@@ -132,29 +147,29 @@ class SelfPlayDataset(Dataset):
     """
 
     def __init__(self, path: Path | str, window_size: int = 0) -> None:
-        path = Path(path)
-        all_samples = parse_all_samples(path)
+        self._path = Path(path)
+        offsets = _build_offset_index(self._path)
 
-        if window_size > 0 and len(all_samples) > window_size:
-            all_samples = all_samples[-window_size:]
+        if window_size > 0 and len(offsets) > window_size:
+            offsets = offsets[-window_size:]
 
-        self.planes = np.stack([s["planes"] for s in all_samples])
-        self.legal_masks = np.stack([s["legal_mask"] for s in all_samples])
-        self.policy_visits = np.stack([s["policy_visits"] for s in all_samples])
-        self.values = np.array([s["value"] for s in all_samples], dtype=np.float32)
-
-        # Precompute pi targets (normalized visit counts)
-        visit_sums = self.policy_visits.sum(axis=1, keepdims=True)
-        visit_sums = np.maximum(visit_sums, 1e-8)
-        self.pi_targets = self.policy_visits / visit_sums
+        self._offsets = offsets
+        # File handle opened lazily per worker process
+        self._fh = None
 
     def __len__(self) -> int:
-        return len(self.values)
+        return len(self._offsets)
+
+    def _get_fh(self):
+        """Return an open file handle, creating one if needed (per-worker)."""
+        if self._fh is None:
+            self._fh = open(self._path, "rb")
+        return self._fh
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        return (
-            torch.from_numpy(self.planes[idx]),
-            torch.from_numpy(self.legal_masks[idx]).bool(),
-            torch.from_numpy(self.pi_targets[idx]),
-            torch.tensor(self.values[idx]),
-        )
+        fh = self._get_fh()
+        return _read_sample_at(fh, int(self._offsets[idx]))
+
+    def __del__(self) -> None:
+        if self._fh is not None:
+            self._fh.close()
