@@ -1,6 +1,7 @@
 use wasm_bindgen::prelude::*;
 
 use crate::board::Board;
+use crate::mcts::mcts::MCTSTree;
 use crate::mv::Move;
 use crate::nnue::{Weights1, Weights2};
 use crate::search::nn::NeuralNet;
@@ -17,6 +18,7 @@ pub struct Engine {
     board: Board,
     nn: NeuralNet,
     best_move: Option<Move>,
+    tree: MCTSTree,
 }
 
 impl Engine {
@@ -27,6 +29,7 @@ impl Engine {
             board: Board::new_with_nnue(w1.clone(), w2.clone()),
             nn,
             best_move: None,
+            tree: MCTSTree::new()
         }
     }
     pub fn new_no_nnue(tt_size_mb: usize, nn: NeuralNet) -> Self {
@@ -36,6 +39,7 @@ impl Engine {
             board: Board::new(),
             nn,
             best_move: None,
+            tree: MCTSTree::new()
         }
     }
 
@@ -54,7 +58,7 @@ impl Engine {
 
     pub fn make_search(&mut self, time: u64, depth: u32, on_iteration: Option<&dyn Fn(SearchIterationResponse)>) -> SearchResponse {
         self.search_data.start_timer(time, depth);
-        let res = search_root(&mut self.board, &mut self.search_data, &mut self.tt, &mut self.nn, on_iteration);
+        let res = search_root(&mut self.board, &mut self.search_data, &mut self.tt, &mut self.nn, on_iteration, &mut self.tree);
         self.best_move = Some(res.best_move);
         res
     }

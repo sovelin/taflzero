@@ -96,8 +96,6 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> Vec<PendingSam
                 no_capture_counter += 1;
             }
 
-            mcts_tree.reroot(mv);
-
             if no_capture_counter >= 800 {
                 // end the game as a draw
                 game_result = None;

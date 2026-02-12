@@ -12,6 +12,7 @@ use crate::search::nn::NeuralNet;
 use crate::search_data::SearchData;
 use crate::search_root::SearchIterationResponse;
 use crate::terminal::check_terminal;
+use crate::types::ZobristHash;
 use crate::undo::UndoMove;
 
 type NodeId = usize;
@@ -51,10 +52,12 @@ pub struct MCTSNode {
     visits: f32,
     wins: f32,
     prior: f32,
+    zobrist_hash: ZobristHash
+    ,
 }
 
 impl MCTSNode {
-    fn new_root() -> MCTSNode {
+    fn new_root(zobrist_hash: ZobristHash) -> MCTSNode {
         MCTSNode {
             mv: None,
             parent: None,
@@ -63,6 +66,7 @@ impl MCTSNode {
             visits: 0.0,
             wins: 0.0,
             prior: 0.0,
+            zobrist_hash,
         }
     }
 
@@ -78,7 +82,7 @@ impl MCTSNode {
         self.mv
     }
 
-    fn new_child(mv: Move, parent: NodeId, prior: f32) -> MCTSNode {
+    fn new_child(mv: Move, parent: NodeId, prior: f32, zobrist_hash: ZobristHash) -> MCTSNode {
         MCTSNode {
             mv: Some(mv),
             parent: Some(parent),
@@ -87,6 +91,7 @@ impl MCTSNode {
             visits: 0.0,
             wins: 0.0,
             prior,
+            zobrist_hash
         }
     }
 
@@ -99,17 +104,16 @@ impl MCTSNode {
     }
 }
 
+const ROOT_ID: NodeId = 0;
+
 pub struct MCTSTree {
     nodes: Vec<MCTSNode>,
-    root_id: NodeId,
     pub move_gen: MoveGen,
 }
 
 impl MCTSTree {
     pub fn new() -> Self {
-        MCTSTree { nodes: vec![
-            MCTSNode::new_root(),
-        ], root_id: 0, move_gen: MoveGen::new() }
+        MCTSTree { nodes: vec![], move_gen: MoveGen::new() }
     }
 
     pub fn get_node(&self, id: NodeId) -> &MCTSNode {
@@ -121,21 +125,20 @@ impl MCTSTree {
     }
 
     pub fn get_root(&self) -> &MCTSNode {
-        &self.nodes[self.root_id]
+        &self.nodes[ROOT_ID]
     }
 
     fn get_root_mut(&mut self) -> &mut MCTSNode {
-        let id = self.root_id;
-        &mut self.nodes[id]
+        &mut self.nodes[ROOT_ID]
     }
 
     fn get_root_id(&self) -> NodeId {
-        self.root_id
+        ROOT_ID
     }
 
-    fn new_child(&mut self, mv: Move, parent_id: NodeId, prior: f32) -> NodeId {
+    fn new_child(&mut self, mv: Move, parent_id: NodeId, prior: f32, zobrist_hash: ZobristHash) -> NodeId {
         let index: NodeId = self.nodes.len();
-        let new_child = MCTSNode::new_child(mv, parent_id, prior);
+        let new_child = MCTSNode::new_child(mv, parent_id, prior, zobrist_hash);
         self.nodes.push(new_child);
         let parent = self.get_node_mut(parent_id);
         parent.append_child(index);
@@ -144,25 +147,71 @@ impl MCTSTree {
 
     /// Reroot to the child of current root that matches `mv`.
     /// Returns true if found, false if tree was reset.
-    pub fn reroot(&mut self, mv: Move) -> bool {
-        let root = &self.nodes[self.root_id];
-        let child_id = root.children.iter()
-            .find(|&&id| self.nodes[id].mv == Some(mv))
-            .copied();
+    pub fn reroot(&mut self, zobrist: ZobristHash) {
+        let Some(old_root_id) = self.nodes
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| n.zobrist_hash == zobrist)
+            .max_by(|(_, a), (_, b)| a.visits.partial_cmp(&b.visits).unwrap())
+            .map(|(i, _)| i)
+        else {
+            self.nodes.clear();
+            self.nodes.push(MCTSNode::new_root(zobrist));
+            return;
+        };
 
-        match child_id {
-            Some(id) => {
-                self.root_id = id;
-                true
+        let mut stack = vec![old_root_id];
+        let mut mapping = std::collections::HashMap::new();
+        let mut new_nodes = Vec::new();
+
+        while let Some(old_id) = stack.pop() {
+            if mapping.contains_key(&old_id) {
+                continue;
             }
-            None => {
-                self.nodes.clear();
-                self.nodes.push(MCTSNode::new_root());
-                self.root_id = 0;
-                false
+
+            let new_id = new_nodes.len();
+            mapping.insert(old_id, new_id);
+
+            let old_node = &self.nodes[old_id];
+
+            new_nodes.push(MCTSNode {
+                mv: old_node.mv,
+                parent: None,
+                children: vec![],
+                expanded: old_node.expanded,
+                visits: old_node.visits,
+                wins: old_node.wins,
+                prior: old_node.prior,
+                zobrist_hash: old_node.zobrist_hash,
+            });
+
+            for &child in &old_node.children {
+                stack.push(child);
             }
         }
+
+        for (old_id, &new_id) in &mapping {
+            let old_node = &self.nodes[*old_id];
+            let new_node = &mut new_nodes[new_id];
+
+            if let Some(old_parent) = old_node.parent {
+                if let Some(&mapped_parent) = mapping.get(&old_parent) {
+                    new_node.parent = Some(mapped_parent);
+                }
+            }
+
+            for &old_child in &old_node.children {
+                if let Some(&mapped_child) = mapping.get(&old_child) {
+                    new_node.children.push(mapped_child);
+                }
+            }
+        }
+
+        new_nodes[0].mv = None;
+        new_nodes[0].parent = None;
+        self.nodes = new_nodes;
     }
+
 }
 
 pub fn get_left_moves(board: &Board, move_gen: &mut MoveGen) -> Vec<Move> {
@@ -245,8 +294,12 @@ fn expand_node(
             .collect();
         let priors = softmax(&logits);
 
+        let mut undo = UndoMove::new();
         for (i, &mv) in moves.iter().enumerate() {
-            tree.new_child(mv, node_id, priors[i]);
+            board.make_move(mv, &mut undo).expect("Failed to make move");
+            let zobrist = board.zobrist;
+            board.unmake_move(&mut undo).expect("Failed to unmake move");
+            tree.new_child(mv, node_id, priors[i], zobrist);
         }
     }
 
@@ -343,6 +396,7 @@ pub fn mcts_search(
     iter_max: Option<u64>,
     config: &MCTSConfig,
 ) -> Option<Move> {
+    tree.reroot(board.zobrist);
     let mut mv_generator = MoveGen::new();
     let mut move_stack = MovesStack::new();
     let mut iteration: u64 = 0;

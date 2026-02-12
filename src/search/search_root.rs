@@ -90,11 +90,11 @@ pub fn search_root(
     tt: &mut TranspositionTable,
     nn: &mut NeuralNet,
     on_iteration: Option<&dyn Fn(SearchIterationResponse)>,
+    tree: &mut MCTSTree,
 ) -> SearchResponse {
-    let mut tree = MCTSTree::new();
 
     let config = MCTSConfig::default_play();
-    let best_move = mcts_search(board, &mut tree, nn, search_data, on_iteration, None, &config);
+    let best_move = mcts_search(board, tree, nn, search_data, on_iteration, None, &config);
 
     SearchResponse {
         best_move: best_move.unwrap_or_default(),
