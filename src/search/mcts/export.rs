@@ -106,7 +106,7 @@ impl PendingSample {
     }
 
     pub fn set_value_from_result(&mut self, result: Option<Side>) {
-        let stm_side = if self.bit_position.stm == 0 { Side::DEFENDERS } else { Side::ATTACKERS };
+        let stm_side = if self.bit_position.stm == 0 { Side::ATTACKERS } else { Side::DEFENDERS };
         self.value = compute_value(stm_side, result);
     }
 }
