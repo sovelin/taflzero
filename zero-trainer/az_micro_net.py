@@ -9,15 +9,16 @@ from torch import Tensor, nn
 class ResidualBlock(nn.Module):
     def __init__(self, channels: int = 8) -> None:
         super().__init__()
-        self.conv1 = nn.Conv2d(channels, channels, kernel_size=3, padding=1, bias=True)
+        self.conv1 = nn.Conv2d(channels, channels, kernel_size=3, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(channels)
+        self.conv2 = nn.Conv2d(channels, channels, kernel_size=3, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(channels)
         self.relu = nn.ReLU(inplace=True)
-        self.conv2 = nn.Conv2d(channels, channels, kernel_size=3, padding=1, bias=True)
 
     def forward(self, x: Tensor) -> Tensor:
         residual = x
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = self.conv2(x)
+        x = self.relu(self.bn1(self.conv1(x)))
+        x = self.bn2(self.conv2(x))
         x = x + residual
         x = self.relu(x)
         return x
@@ -30,17 +31,27 @@ class TaflAlphaZeroNet(nn.Module):
         super().__init__()
 
         self.stem = nn.Sequential(
-            nn.Conv2d(in_channels, trunk_channels, kernel_size=3, padding=1, bias=True),
+            nn.Conv2d(in_channels, trunk_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(trunk_channels),
             nn.ReLU(inplace=True),
         )
 
         self.trunk = nn.Sequential(*[ResidualBlock(trunk_channels) for _ in range(num_blocks)])
 
-        # Policy head: Conv1x1(8 -> 40), flatten 40 * 11 * 11 = 4840
-        self.policy_head = nn.Conv2d(trunk_channels, 40, kernel_size=1, bias=True)
+        # Policy head: Conv1x1 -> BN -> ReLU -> Conv1x1, flatten 40 * 11 * 11 = 4840
+        self.policy_head = nn.Sequential(
+            nn.Conv2d(trunk_channels, trunk_channels, kernel_size=1, bias=False),
+            nn.BatchNorm2d(trunk_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(trunk_channels, 40, kernel_size=1, bias=True),
+        )
 
-        # Value head: Conv1x1(8 -> 1), flatten 121 -> 64 -> 1 -> tanh
-        self.value_conv = nn.Conv2d(trunk_channels, 1, kernel_size=1, bias=True)
+        # Value head: Conv1x1 -> BN -> ReLU -> flatten 121 -> 64 -> 1 -> tanh
+        self.value_head = nn.Sequential(
+            nn.Conv2d(trunk_channels, 1, kernel_size=1, bias=False),
+            nn.BatchNorm2d(1),
+            nn.ReLU(inplace=True),
+        )
         self.value_mlp = nn.Sequential(
             nn.Linear(11 * 11, 64),
             nn.ReLU(inplace=True),
@@ -53,6 +64,6 @@ class TaflAlphaZeroNet(nn.Module):
         x = self.trunk(x)
 
         policy_logits = self.policy_head(x).flatten(start_dim=1)
-        value = self.value_conv(x).flatten(start_dim=1)
+        value = self.value_head(x).flatten(start_dim=1)
         value = self.value_mlp(value)
         return policy_logits, value
