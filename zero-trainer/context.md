@@ -1,44 +1,42 @@
-# 🧠 Проект: Tafl AlphaZero (микросеть)
+# 🧠 Project: Tafl AlphaZero (Micro Network)
 
-## 🎯 Цель
+## 🎯 Goal
+Implement an AlphaZero-style neural network for Tafl:
 
-Реализовать AlphaZero-подобную сеть для Tafl:
-
-- вход: позиция 11×11  
-- выход: policy (4840 ходов) + value  
-- используется с MCTS (PUCT)  
-- обучается на self-play  
+- Input: 11×11 board position
+- Output: policy (4840 moves) + value
+- Used together with MCTS (PUCT)
+- Trained via self-play
 
 ---
 
-# 📐 Архитектура сети
+# 📐 Network Architecture
 
-## 📥 Вход
+## 📥 Input
 
-Размер: **6 × 11 × 11**
+Shape: **6 × 11 × 11**
 
-Каналы:
+Channels:
 
-1. Attackers (битовая карта)
+1. Attackers (bitboard plane)
 2. Defenders
 3. King
-4. Side-to-move (плоскость из 0/1)
-5. Corners (4 клетки)
-6. Throne (центр)
+4. Side-to-move (full plane of 0/1)
+5. Corners (4 escape squares)
+6. Throne (center square)
 
-Все каналы float32 (0.0 / 1.0).
+All channels are `float32` containing only `0.0` or `1.0`.
 
 ---
 
-## 🏗 Тело сети (trunk)
+## 🏗 Trunk
 
-- Начальная свёртка:  
+- Initial convolution  
   `Conv2d(6 → 8, kernel=3, padding=1)`
 - ReLU
+- 3 residual blocks
 
-- 3 residual блока
-
-Каждый residual блок:
+Each residual block:
 
 ```
 Conv2d(8 → 8, 3×3)
@@ -48,86 +46,118 @@ Skip connection
 ReLU
 ```
 
-Всего:  
-C = 8 каналов  
-Depth = 3 residual blocks  
+Summary:
 
-Это маленькая сеть для проверки гипотезы.
+- Channels (C) = 8
+- Depth = 3 residual blocks
+
+This is intentionally a **very small network** to validate the AlphaZero pipeline.
 
 ---
 
-# 🎯 Policy head
+# 🎯 Policy Head
 
-Цель: 4840 ходов (121 клетки × 4 направления × 10 дистанций)
+Target: **4840 possible moves**
 
-### Структура:
+Reasoning:
+
+- 121 board squares (origins)
+- 4 directions
+- 10 distances
+
+121 × 4 × 10 = **4840**
+
+### Structure
 
 ```
 Conv1x1(8 → 40)
-→ reshape в (40 × 11 × 11)
-→ flatten в 4840
+reshape → (40 × 11 × 11)
+flatten → 4840 logits
 ```
 
-Почему 40?
+Why 40 channels?
 
-Потому что:
-- 4 направления × 10 дистанций = 40 типов движения  
-- каждая клетка = origin  
-- 40 × 121 = 4840  
+Because:
 
-Это spatial policy head, а не FC на 4840.
+- 4 directions × 10 distances = 40 move types
+- Each board cell acts as the origin square
+
+Therefore the policy is **spatial**, not a fully-connected layer to 4840.
 
 ---
 
-# 🎯 Value head
+# 🎯 Value Head
 
-Структура:
+Structure:
 
 ```
 Conv1x1(8 → 1)
-→ flatten (121)
-→ Linear(121 → 64)
-→ ReLU
-→ Linear(64 → 1)
-→ tanh
+flatten (121)
+Linear(121 → 64)
+ReLU
+Linear(64 → 1)
+tanh
 ```
 
-Выход: scalar в диапазоне [-1, +1]
+Output: scalar in range **[-1, +1]**
 
-- +1 = победа текущей стороны  
-- -1 = поражение  
-- 0 = ничья / неопределённость  
+- +1 → current player wins
+- −1 → current player loses
+- 0 → draw / uncertain
 
 ---
 
-# 📊 Loss функция
+# 📊 Loss Function
 
-Общий loss:
+Total loss:
 
 ```
 Loss = PolicyLoss + ValueLoss
 ```
 
-## Policy loss
+## Policy Loss
 
-Cross-entropy между:
+Cross-entropy between:
 
-- π_target (распределение из MCTS visits)
-- softmax(logits) сети
+- π_target — probability distribution derived from MCTS visit counts
+- network softmax(logits)
 
-Перед softmax:
+Before softmax:
+illegal moves are masked:
 
-- нелегальные ходы маскируются (logits = -inf)
+```
+logits = -inf for illegal actions
+```
 
-## Value loss
+## Value Loss
 
-MSE между:
+Mean Squared Error:
 
-- value_pred
-- value_target (результат партии с точки зрения side-to-move)
+```
+(value_pred − value_target)^2
+```
 
-## Код экспорта
-```python
+where `value_target` is the final game result from the perspective of the side-to-move.
+
+---
+
+# 📦 Training Sample Export Format
+
+Binary layout:
+
+```
+[BitPosition]          49 bytes
+[LegalMask]            605 bytes
+[policy_len]           u16
+[PolicyTarget × N]     N * 4 bytes
+[value]                i8
+```
+
+---
+
+# 🧩 Rust Export Code
+
+```rust
 use crate::Board;
 use crate::mcts::mcts::MCTSTree;
 use crate::mcts::utils::move_to_policy_index;
@@ -194,8 +224,6 @@ fn compute_value(side_to_move: Side, result: Option<Side>) -> i8 {
     }
 }
 
-
-
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct PolicyTarget {
@@ -228,7 +256,9 @@ impl PendingSample {
     }
 
     pub fn set_value_from_result(&mut self, result: Option<Side>) {
-        let stm_side = if self.bit_position.stm == 0 { Side::DEFENDERS } else { Side::ATTACKERS };
+        let stm_side =
+            if self.bit_position.stm == 0 { Side::DEFENDERS } else { Side::ATTACKERS };
+
         self.value = compute_value(stm_side, result);
     }
 }
@@ -247,28 +277,18 @@ impl MCTSTree {
         legal_mask
     }
 
-    /*
-    Format:
-
-    [BitPosition]          49 bytes
-    [LegalMask]            605 bytes
-    [policy_len]           u16
-    [PolicyTarget × N]     N * 4 bytes
-    [value]                i8
-     */
     pub fn make_pending_sample(&mut self, board: &Board) -> PendingSample {
         let root = self.get_root();
         let mut policy: Vec<PolicyTarget> = vec![];
 
-
-        for &child_id in *&root.children() {
+        for &child_id in root.children() {
             let node = self.get_node(child_id);
             let visits_f = node.visits();
             let visits_u16 = visits_f.round().min(u16::MAX as f32) as u16;
 
             if let Some(mv) = node.mv() {
                 if visits_u16 == 0 {
-                    continue; // skip moves that were not visited
+                    continue;
                 }
 
                 let move_index = move_to_policy_index(mv);
@@ -281,10 +301,10 @@ impl MCTSTree {
         }
 
         PendingSample {
-            bit_position:  BitPosition::from_board(board),
+            bit_position: BitPosition::from_board(board),
             legal_mask: self.build_legal_mask_from_board(board),
             policy,
-            value: 0, // to be set later
+            value: 0,
         }
     }
 }

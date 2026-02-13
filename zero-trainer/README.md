@@ -1,21 +1,21 @@
 # zero-trainer: tiny Tafl AlphaZero net demo
 
-Минимальный тестовый проект с нейросетью из `context.md`:
+A minimal test project implementing the neural network described in `context.md`.
 
-- вход: `6 x 11 x 11`
-- выход: `policy logits (4840)` + `value (-1..1)`
-- policy loss: cross-entropy по `pi_target` от MCTS visits
+- input: `6 x 11 x 11`
+- output: `policy logits (4840)` + `value (-1..1)`
+- policy loss: cross-entropy using `pi_target` from MCTS visit counts
 - value loss: MSE
-- поддержка `legal_mask` перед `softmax`
+- supports `legal_mask` applied before `softmax`
 
-## Файлы
+## Files
 
-- `az_micro_net.py` - модель (stem + 3 residual blocks + policy/value heads)
-- `training_utils.py` - маскирование, нормализация visits, лоссы
-- `demo_train_step.py` - демонстрационный forward + 1 шаг обучения
-- `test_az_micro_net.py` - базовые тесты
+- `az_micro_net.py` — model (stem + 3 residual blocks + policy/value heads)
+- `training_utils.py` — masking, visit normalization, and losses
+- `demo_train_step.py` — demonstration forward pass + one training step
+- `test_az_micro_net.py` — basic tests
 
-## Запуск
+## Run
 
 ```bash
 python -m pip install torch pytest
@@ -23,21 +23,19 @@ python demo_train_step.py
 pytest -q
 ```
 
-## Стартовые веса в QNXX
+## Initial Weights in QNXX
 
 ```bash
 python save_random_qnxx.py --out weights/random_init.qnxx --seed 42
 ```
 
-Скрипт сохраняет случайно инициализированную сеть `TaflAlphaZeroNet` в файл
-`.qnxx` (чекпоинт с `state_dict` и метаданными), который можно использовать как
-стартовую точку обучения.
+The script saves a randomly initialized `TaflAlphaZeroNet` into a `.qnxx` file  
+(a checkpoint containing `state_dict` and metadata), which can be used as a starting point for training.
 
-## Загрузка QNXX
+## Loading QNXX
 
 ```bash
 python load_qnxx.py --in weights/random_init.qnxx --device cpu
 ```
 
-Скрипт загружает и валидирует `.qnxx`, поднимает `TaflAlphaZeroNet` и выводит
-краткую информацию о модели.
+The script loads and validates the `.qnxx` file, constructs `TaflAlphaZeroNet`, and prints basic model information.
