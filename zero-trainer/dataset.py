@@ -117,6 +117,11 @@ def _read_sample_at(f, offset: int) -> tuple[torch.Tensor, torch.Tensor, torch.T
         visits = struct.unpack_from("<H", policy_raw, off + 2)[0]
         policy_visits[move_index] = float(visits)
 
+    # Sharpen visit distribution with temperature (lower = sharper)
+    POLICY_TARGET_TEMP = 0.3
+    if POLICY_TARGET_TEMP != 1.0:
+        policy_visits = np.power(policy_visits, 1.0 / POLICY_TARGET_TEMP)
+
     visit_sum = policy_visits.sum()
     if visit_sum > 0:
         policy_visits /= visit_sum
