@@ -1,4 +1,5 @@
 use ndarray::{Array, IxDyn};
+use ort::execution_providers::DirectMLExecutionProvider;
 use ort::session::Session;
 use ort::value::Value;
 use crate::board::constants::SQS;
@@ -21,6 +22,8 @@ pub struct NeuralNet {
 impl NeuralNet {
     pub fn new(path: &str) -> Self {
         let session = Session::builder()
+            .unwrap()
+            .with_execution_providers([DirectMLExecutionProvider::default().build()])
             .unwrap()
             .commit_from_file(path)
             .expect("Unable to commit neural net");

@@ -24,6 +24,8 @@ pub struct MCTSConfig {
     pub dirichlet_epsilon: f32,
     /// Temperature for final move selection. 0.0 = pick best, 1.0 = proportional to visits.
     pub temperature: f32,
+    /// Number of leaves to collect before batched NN evaluation.
+    pub batch_size: usize,
 }
 
 impl MCTSConfig {
@@ -32,6 +34,7 @@ impl MCTSConfig {
             dirichlet_alpha: 0.0,
             dirichlet_epsilon: 0.0,
             temperature: 0.0,
+            batch_size: 8,
         }
     }
 
@@ -40,6 +43,7 @@ impl MCTSConfig {
             dirichlet_alpha: 0.3,
             dirichlet_epsilon: 0.25,
             temperature: 1.0,
+            batch_size: 8,
         }
     }
 }
@@ -52,8 +56,8 @@ pub struct MCTSNode {
     visits: f32,
     wins: f32,
     prior: f32,
-    zobrist_hash: ZobristHash
-    ,
+    zobrist_hash: ZobristHash,
+    virtual_loss: f32,
 }
 
 impl MCTSNode {
@@ -67,6 +71,7 @@ impl MCTSNode {
             wins: 0.0,
             prior: 0.0,
             zobrist_hash,
+            virtual_loss: 0.0,
         }
     }
 
@@ -91,7 +96,8 @@ impl MCTSNode {
             visits: 0.0,
             wins: 0.0,
             prior,
-            zobrist_hash
+            zobrist_hash,
+            virtual_loss: 0.0,
         }
     }
 
@@ -183,6 +189,7 @@ impl MCTSTree {
                 wins: old_node.wins,
                 prior: old_node.prior,
                 zobrist_hash: old_node.zobrist_hash,
+                virtual_loss: 0.0,
             });
 
             for &child in &old_node.children {
@@ -224,14 +231,20 @@ fn puct_select(tree: &MCTSTree, from_id: NodeId) -> NodeId {
     let mut best_score = f32::NEG_INFINITY;
     let mut best_child: Option<NodeId> = None;
 
-    let sqrt_parent = from.visits.sqrt();
+    let parent_effective = from.visits + from.virtual_loss;
+    let sqrt_parent = parent_effective.sqrt();
     let c = 1.4f32;
 
     for id in from.children.iter() {
         let child = tree.get_node(*id);
 
-        let q = if child.visits > 0.0 { child.wins / child.visits } else { 0.0 };
-        let puct_value = q + c * child.prior * sqrt_parent / (1.0 + child.visits);
+        let effective_visits = child.visits + child.virtual_loss;
+        let q = if effective_visits > 0.0 {
+            (child.wins - child.virtual_loss) / effective_visits
+        } else {
+            0.0
+        };
+        let puct_value = q + c * child.prior * sqrt_parent / (1.0 + effective_visits);
 
         if puct_value > best_score {
             best_score = puct_value;
@@ -387,6 +400,135 @@ fn get_best_child(tree: &MCTSTree, temperature: f32) -> Option<NodeId> {
     Some(*root.children.last().unwrap())
 }
 
+/// Data collected for a single leaf during batched selection.
+struct PendingLeaf {
+    node_id: NodeId,
+    path: Vec<NodeId>,
+    terminal_value: Option<f32>,
+    position: Option<BitPosition>,
+    legal_moves: Vec<Move>,
+    child_zobrists: Vec<ZobristHash>,
+}
+
+/// Apply virtual loss along the path (makes nodes look worse to encourage diversity).
+fn apply_virtual_loss(tree: &mut MCTSTree, path: &[NodeId]) {
+    for &node_id in path {
+        let node = tree.get_node_mut(node_id);
+        node.virtual_loss += 1.0;
+    }
+}
+
+/// Remove virtual loss along the path.
+fn remove_virtual_loss(tree: &mut MCTSTree, path: &[NodeId]) {
+    for &node_id in path {
+        let node = tree.get_node_mut(node_id);
+        node.virtual_loss -= 1.0;
+    }
+}
+
+/// Select a single leaf, collecting the path and board state info.
+/// Returns None if no selection is possible (e.g. root has no children).
+fn select_leaf(
+    board: &mut Board,
+    tree: &MCTSTree,
+    move_stack: &mut MovesStack,
+    move_gen: &mut MoveGen,
+) -> Option<PendingLeaf> {
+    let mut cur = tree.get_root_id();
+    let mut path = vec![cur];
+
+    // Descend via PUCT until we hit a leaf
+    while !tree.get_node(cur).is_leaf() && !tree.get_node(cur).children.is_empty() {
+        cur = puct_select(tree, cur);
+        path.push(cur);
+        let node = tree.get_node(cur);
+        move_stack.make_move(board, node.mv.expect("Move not found"));
+    }
+
+    // Check if this is a terminal position
+    let is_terminal = check_terminal(board);
+
+    let pending = if let Some(winner) = is_terminal {
+        let value = if board.side_to_move == winner { 1.0 } else { -1.0 };
+        PendingLeaf {
+            node_id: cur,
+            path,
+            terminal_value: Some(value),
+            position: None,
+            legal_moves: vec![],
+            child_zobrists: vec![],
+        }
+    } else if tree.get_node(cur).children.is_empty() && tree.get_node(cur).expanded {
+        // Expanded but no legal moves — loss
+        PendingLeaf {
+            node_id: cur,
+            path,
+            terminal_value: Some(-1.0),
+            position: None,
+            legal_moves: vec![],
+            child_zobrists: vec![],
+        }
+    } else {
+        // Need NN evaluation — collect position and legal moves
+        let position = BitPosition::from_board(board);
+        let moves = get_left_moves(board, move_gen);
+
+        let mut child_zobrists = Vec::with_capacity(moves.len());
+        let mut undo = UndoMove::new();
+        for &mv in &moves {
+            board.make_move(mv, &mut undo).expect("Failed to make move");
+            child_zobrists.push(board.zobrist);
+            board.unmake_move(&mut undo).expect("Failed to unmake move");
+        }
+
+        PendingLeaf {
+            node_id: cur,
+            path,
+            terminal_value: None,
+            position: Some(position),
+            legal_moves: moves,
+            child_zobrists,
+        }
+    };
+
+    // Unmake all moves back to root
+    move_stack.unmake_all(board);
+
+    Some(pending)
+}
+
+/// Expand a node using pre-computed NN output, legal moves, and child zobrists.
+fn expand_with_nn_output(
+    tree: &mut MCTSTree,
+    node_id: NodeId,
+    policy: &[f32; 4840],
+    legal_moves: &[Move],
+    child_zobrists: &[ZobristHash],
+) {
+    if !legal_moves.is_empty() {
+        let logits: Vec<f32> = legal_moves.iter()
+            .map(|mv| policy[move_to_policy_index(*mv) as usize])
+            .collect();
+        let priors = softmax(&logits);
+
+        for (i, &mv) in legal_moves.iter().enumerate() {
+            tree.new_child(mv, node_id, priors[i], child_zobrists[i]);
+        }
+    }
+    tree.get_node_mut(node_id).expanded = true;
+}
+
+/// Backpropagate a result from a leaf node up to the root.
+fn backpropagate(tree: &mut MCTSTree, path: &[NodeId], mut result: f32) {
+    // Path goes from root to leaf. We iterate from leaf to root.
+    for &node_id in path.iter().rev() {
+        result = -result;
+        let node = tree.get_node_mut(node_id);
+        node.visits += 1.0;
+        node.wins += result;
+    }
+}
+
 pub fn mcts_search(
     board: &mut Board,
     tree: &mut MCTSTree,
@@ -403,8 +545,9 @@ pub fn mcts_search(
     let mut last_report_ms: u64 = 0;
 
     let root_id = tree.get_root_id();
+    let batch_size = config.batch_size.max(1);
 
-    // Expand root
+    // Expand root (single eval, not batched)
     if tree.get_root().is_leaf() {
         expand_node(board, tree, root_id, nn, &mut mv_generator);
     }
@@ -415,65 +558,98 @@ pub fn mcts_search(
     }
 
     loop {
-        // Check time limit (skip if iter_max is set)
+        // Check time limit
         if iter_max.is_none() && search_data.time_exceeded() {
             break;
         }
 
-        iteration += 1;
-
+        // Check iteration limit
         if let Some(max) = iter_max {
-            if iteration > max {
+            if iteration >= max {
                 break;
             }
         }
 
-        let mut cur = tree.get_root_id();
+        // --- Collect batch of leaves ---
+        let mut pending_leaves: Vec<PendingLeaf> = Vec::with_capacity(batch_size);
+        let remaining = if let Some(max) = iter_max {
+            (max - iteration) as usize
+        } else {
+            batch_size
+        };
+        let this_batch = batch_size.min(remaining);
 
-        // 1) Selection — descend using PUCT until we hit a leaf
-        while !tree.get_node(cur).is_leaf() && !tree.get_node(cur).children.is_empty() {
-            cur = puct_select(&tree, cur);
-            let node = tree.get_node(cur);
-            move_stack.make_move(board, node.mv.expect("Move not found"));
+        for _ in 0..this_batch {
+            if let Some(leaf) = select_leaf(board, tree, &mut move_stack, &mut mv_generator) {
+                apply_virtual_loss(tree, &leaf.path);
+
+                // If we selected the same leaf again (all paths converge), flush early
+                let dominated = leaf.terminal_value.is_none()
+                    && pending_leaves.iter().any(|p| p.node_id == leaf.node_id);
+                pending_leaves.push(leaf);
+                if dominated {
+                    break;
+                }
+            } else {
+                break;
+            }
         }
 
-        // 2) Expansion + Evaluation
-        let is_terminal = check_terminal(board);
+        if pending_leaves.is_empty() {
+            break;
+        }
 
-        let mut result: f32 = if let Some(x) = is_terminal {
-            tree.get_node_mut(cur).expanded = true;
-            if board.side_to_move == x {
-                1.0
-            } else {
-                -1.0
-            }
-        } else if tree.get_node(cur).children.is_empty() && tree.get_node(cur).expanded {
-            // No legal moves — loss
-            -1.0
+        // --- Batch NN evaluation for non-terminal leaves ---
+        let nn_indices: Vec<usize> = pending_leaves.iter().enumerate()
+            .filter(|(_, l)| l.terminal_value.is_none() && l.position.is_some())
+            .map(|(i, _)| i)
+            .collect();
+
+        let nn_results = if !nn_indices.is_empty() {
+            let positions: Vec<&BitPosition> = nn_indices.iter()
+                .map(|&i| pending_leaves[i].position.as_ref().unwrap())
+                .collect();
+            nn.evaluate_batch(&positions)
         } else {
-            expand_node(board, tree, cur, nn, &mut mv_generator)
+            vec![]
         };
 
-        // 3) Backpropagation
+        // --- Expand and backpropagate ---
+        let mut nn_result_idx = 0;
 
-        loop {
-            result = -result;
-            let parent = {
-                let node = tree.get_node_mut(cur);
-                node.visits += 1.0;
-                node.wins += result;
-                node.parent
+        for leaf in &pending_leaves {
+            // Remove virtual loss
+            remove_virtual_loss(tree, &leaf.path);
+
+            let result = if let Some(terminal_val) = leaf.terminal_value {
+                // Terminal — mark expanded
+                tree.get_node_mut(leaf.node_id).expanded = true;
+                terminal_val
+            } else {
+                // Use NN output to expand
+                let nn_out = &nn_results[nn_result_idx];
+                nn_result_idx += 1;
+
+                // Guard against duplicate expansion if two leaves hit the same node
+                if !tree.get_node(leaf.node_id).expanded {
+                    expand_with_nn_output(
+                        tree,
+                        leaf.node_id,
+                        &nn_out.policy,
+                        &leaf.legal_moves,
+                        &leaf.child_zobrists,
+                    );
+                }
+
+                nn_out.value
             };
 
-            if cur == tree.get_root_id() {
-                break;
-            }
-
-            move_stack.unmake_last(board);
-            cur = parent.expect("Parent not found");
+            backpropagate(tree, &leaf.path, result);
         }
 
-        // 4) Report every second
+        iteration += pending_leaves.len() as u64;
+
+        // Report every second
         let elapsed = search_data.timer.elapsed_ms();
         if elapsed >= last_report_ms + 1000 {
             last_report_ms = elapsed;
@@ -500,9 +676,6 @@ pub fn mcts_search(
             }
         }
     }
-
-    // print
-        //debug_print_top_moves(tree, 10);
 
     get_best_child(tree, config.temperature).map(|id| tree.get_node(id).mv.unwrap())
 }
