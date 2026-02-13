@@ -34,7 +34,7 @@ impl MCTSConfig {
             dirichlet_alpha: 0.0,
             dirichlet_epsilon: 0.0,
             temperature: 0.0,
-            batch_size: 64,
+            batch_size: 8,
         }
     }
 
@@ -43,7 +43,7 @@ impl MCTSConfig {
             dirichlet_alpha: 0.05,//0.3,
             dirichlet_epsilon: 0.25,
             temperature: 1.0,
-            batch_size: 64,
+            batch_size: 8,
         }
     }
 }
