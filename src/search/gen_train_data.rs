@@ -179,13 +179,14 @@ pub fn gen_train_data(output_path: &str, nn: &mut NeuralNet, game_limit: Option<
 
         let total_saved = attacker_wins_saved + defender_wins_saved + draws_saved;
         let atk_pct = if total_saved > 0 { attacker_wins_saved as f64 / total_saved as f64 * 100.0 } else { 0.0 };
+        let avg_game_len = if games_saved > 0 { positions_generated as f64 / games_saved as f64 } else { 0.0 };
         let result_str = match game_result {
             Some(Side::ATTACKERS) => "ATK WIN",
             Some(Side::DEFENDERS) => "DEF WIN",
             None => "DRAW",
         };
-        println!("{} | game #{} ({} samples) | atk={} def={} draw={} | atk%={:.1}% | positions={}",
-            result_str, games_saved, res.len(), attacker_wins_saved, defender_wins_saved, draws_saved, atk_pct, positions_generated);
+        println!("{} | game #{} ({} samples) | atk={} def={} draw={} | atk%={:.1}% | avg_len={:.1} | positions={}",
+            result_str, games_saved, res.len(), attacker_wins_saved, defender_wins_saved, draws_saved, atk_pct, avg_game_len, positions_generated);
 
         for sample in res {
             sample.write_to(&mut writer).expect("Cannot write sample");
