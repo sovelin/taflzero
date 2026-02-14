@@ -17,6 +17,7 @@ function parseArgs(argv) {
         batch: 256,
         lr: 1e-3,
         weightDecay: 1e-4,
+        defenderWeight: 0.25,
         debugEngine: false,
         workers: 1,
     };
@@ -38,6 +39,7 @@ function parseArgs(argv) {
         else if (a === "--batch") args.batch = intArg(next(), a, 1);
         else if (a === "--lr") args.lr = floatArg(next(), a, 0);
         else if (a === "--weight-decay") args.weightDecay = floatArg(next(), a, 0);
+        else if (a === "--defender-weight") args.defenderWeight = floatArg(next(), a, 0);
         else if (a === "--workers") args.workers = intArg(next(), a, 1);
         else if (a === "--debug-engine") args.debugEngine = true;
         else if (a === "--help" || a === "-h") {
@@ -89,7 +91,7 @@ function printHelp() {
             "  --weights-dir <dir>       Where genN.onnx/genN.onxx are saved (default: zero-trainer/weights)",
             "",
             "Train args forwarded to train.py:",
-            "  --window <N> --steps <N> --batch <N> --lr <F> --weight-decay <F>",
+            "  --window <N> --steps <N> --batch <N> --lr <F> --weight-decay <F> --defender-weight <F>",
             "",
             "Runtime:",
             "  --workers <N>             Parallel engine processes for datagen (default: 1)",
@@ -210,6 +212,8 @@ async function main() {
             String(args.lr),
             "--weight-decay",
             String(args.weightDecay),
+            "--defender-weight",
+            String(args.defenderWeight),
         ];
         if (currentCheckpoint) {
             trainArgs.push("--checkpoint", currentCheckpoint);

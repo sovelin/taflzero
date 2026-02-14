@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, random_split
 
 from az_micro_net import TaflAlphaZeroNet
 from dataset import SelfPlayDataset
@@ -33,14 +33,71 @@ def infinite_dataloader(loader: DataLoader):
         yield from loader
 
 
+@torch.no_grad()
+def compute_val_loss(
+    model: TaflAlphaZeroNet,
+    val_loader: DataLoader,
+    device: torch.device,
+    max_batches: int = 10,
+) -> tuple[float, float, float]:
+    """Compute average validation loss over a few batches."""
+    model.eval()
+    total_loss = 0.0
+    total_p = 0.0
+    total_v = 0.0
+    n = 0
+    for planes, legal_mask, pi_target, value_target in itertools.islice(val_loader, max_batches):
+        planes = planes.to(device)
+        legal_mask = legal_mask.to(device)
+        pi_target = pi_target.to(device)
+        value_target = value_target.to(device)
+
+        policy_logits, value_pred = model(planes)
+        loss, p_loss, v_loss = alpha_zero_loss(
+            policy_logits=policy_logits,
+            value_pred=value_pred,
+            pi_target=pi_target,
+            value_target=value_target,
+            legal_mask=legal_mask,
+        )
+        total_loss += loss.item()
+        total_p += p_loss.item()
+        total_v += v_loss.item()
+        n += 1
+
+    model.train()
+    if n == 0:
+        return 0.0, 0.0, 0.0
+    return total_loss / n, total_p / n, total_v / n
+
+
+def compute_sample_weights(
+    planes: torch.Tensor, value_target: torch.Tensor, defender_weight: float,
+) -> torch.Tensor:
+    """Compute per-sample weights: defender-win positions get lower weight.
+
+    stm=0 → attackers, stm=1 → defenders.  value=+1 → stm won, -1 → stm lost.
+    Defender win: (stm==0 & value<0) | (stm==1 & value>0).
+    """
+    stm = planes[:, 3, 0, 0]  # (B,) 0.0=attackers, 1.0=defenders
+    # attacker-perspective value: positive if attackers won
+    atk_value = value_target * (1.0 - 2.0 * stm)
+    is_defender_win = atk_value < 0
+    weights = torch.ones_like(value_target)
+    weights[is_defender_win] = defender_weight
+    return weights
+
+
 def train(
     model: TaflAlphaZeroNet,
-    dataset: SelfPlayDataset,
+    train_dataset,
+    val_dataset,
     *,
     steps: int,
     batch_size: int,
     lr: float,
     weight_decay: float,
+    defender_weight: float,
     device: torch.device,
 ) -> None:
     model.to(device)
@@ -49,7 +106,7 @@ def train(
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
 
     loader = DataLoader(
-        dataset,
+        train_dataset,
         batch_size=batch_size,
         shuffle=True,
         num_workers=0,
@@ -57,9 +114,18 @@ def train(
         drop_last=True,
     )
 
-    total_samples = len(dataset)
-    print(f"Training: {steps} steps, {total_samples} samples, batch={batch_size}, lr={lr}")
-    print(f"Device: {device}")
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=0,
+        pin_memory=device.type == "cuda",
+        drop_last=True,
+    )
+
+    total_samples = len(train_dataset)
+    print(f"Training: {steps} steps, {total_samples} train / {len(val_dataset)} val samples, batch={batch_size}, lr={lr}")
+    print(f"Device: {device}, defender_weight={defender_weight}")
     print()
 
     running_loss = 0.0
@@ -77,12 +143,14 @@ def train(
 
         policy_logits, value_pred = model(planes)
 
+        weights = compute_sample_weights(planes, value_target, defender_weight)
         total_loss, p_loss, v_loss = alpha_zero_loss(
             policy_logits=policy_logits,
             value_pred=value_pred,
             pi_target=pi_target,
             value_target=value_target,
             legal_mask=legal_mask,
+            sample_weights=weights,
         )
 
         optimizer.zero_grad(set_to_none=True)
@@ -100,9 +168,12 @@ def train(
             avg_v = running_v / LOG_INTERVAL
             speed = LOG_INTERVAL * batch_size / dt
 
+            val_loss, val_p, val_v = compute_val_loss(model, val_loader, device)
+
             print(
                 f"Step {step:5d}/{steps}  "
                 f"loss={avg_loss:.4f}  policy={avg_p:.4f}  value={avg_v:.4f}  "
+                f"val_loss={val_loss:.4f}  val_p={val_p:.4f}  val_v={val_v:.4f}  "
                 f"{speed:.0f} samples/s"
             )
 
@@ -123,6 +194,7 @@ def main() -> None:
     parser.add_argument("--batch", type=int, default=256, help="Batch size")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
     parser.add_argument("--weight-decay", type=float, default=1e-4, help="Weight decay (L2 regularization)")
+    parser.add_argument("--defender-weight", type=float, default=0.25, help="Loss weight for defender-win samples (1.0 = no reweighting)")
     args = parser.parse_args()
 
     if not args.data.exists():
@@ -148,18 +220,26 @@ def main() -> None:
         print("No samples found!", file=sys.stderr)
         sys.exit(1)
 
-    # Auto-calculate steps: ~1 pass over the data
-    steps = args.steps if args.steps > 0 else max(1, len(dataset) // args.batch)
+    # Split into train/val (90/10)
+    val_size = max(1, len(dataset) // 10)
+    train_size = len(dataset) - val_size
+    train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+    print(f"Split: {train_size} train / {val_size} val")
+
+    # Auto-calculate steps: ~1 pass over the training data
+    steps = args.steps if args.steps > 0 else max(1, train_size // args.batch)
     print(f"Steps: {steps}")
 
     # Train
     train(
         model,
-        dataset,
+        train_dataset,
+        val_dataset,
         steps=steps,
         batch_size=args.batch,
         lr=args.lr,
         weight_decay=args.weight_decay,
+        defender_weight=args.defender_weight,
         device=device,
     )
 

@@ -27,7 +27,7 @@ class ResidualBlock(nn.Module):
 class TaflAlphaZeroNet(nn.Module):
     """Input: (B, 6, 11, 11). Outputs: policy logits (B, 4840), value (B, 1)."""
 
-    def __init__(self, in_channels: int = 6, trunk_channels: int = 32, num_blocks: int = 5) -> None:
+    def __init__(self, in_channels: int = 6, trunk_channels: int = 64, num_blocks: int = 6) -> None:
         super().__init__()
 
         self.stem = nn.Sequential(

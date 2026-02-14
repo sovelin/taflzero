@@ -55,7 +55,10 @@ def normalize_visit_counts(visit_counts: Tensor, legal_mask: Tensor) -> Tensor:
     return pi
 
 
-def policy_loss(policy_logits: Tensor, pi_target: Tensor, legal_mask: Tensor) -> Tensor:
+def policy_loss(
+    policy_logits: Tensor, pi_target: Tensor, legal_mask: Tensor,
+    sample_weights: Tensor | None = None,
+) -> Tensor:
     """
     Cross-entropy with soft target pi_target:
         -sum_a pi_target(a) * log softmax(masked_logits)_a
@@ -66,10 +69,16 @@ def policy_loss(policy_logits: Tensor, pi_target: Tensor, legal_mask: Tensor) ->
         )
     masked_logits = masked_policy_logits(policy_logits, legal_mask)
     log_probs = F.log_softmax(masked_logits, dim=1)
-    return -(pi_target * log_probs).sum(dim=1).mean()
+    per_sample = -(pi_target * log_probs).sum(dim=1)
+    if sample_weights is not None:
+        return (per_sample * sample_weights).sum() / sample_weights.sum()
+    return per_sample.mean()
 
 
-def value_loss(value_pred: Tensor, value_target: Tensor) -> Tensor:
+def value_loss(
+    value_pred: Tensor, value_target: Tensor,
+    sample_weights: Tensor | None = None,
+) -> Tensor:
     """
     MSE loss for value head.
 
@@ -79,7 +88,10 @@ def value_loss(value_pred: Tensor, value_target: Tensor) -> Tensor:
     """
     if value_target.ndim == 1:
         value_target = value_target.unsqueeze(1)
-    return F.mse_loss(value_pred, value_target)
+    per_sample = (value_pred - value_target).pow(2).squeeze(1)
+    if sample_weights is not None:
+        return (per_sample * sample_weights).sum() / sample_weights.sum()
+    return per_sample.mean()
 
 
 def alpha_zero_loss(
@@ -88,8 +100,9 @@ def alpha_zero_loss(
     pi_target: Tensor,
     value_target: Tensor,
     legal_mask: Tensor,
+    sample_weights: Tensor | None = None,
 ) -> tuple[Tensor, Tensor, Tensor]:
-    p_loss = policy_loss(policy_logits, pi_target, legal_mask)
-    v_loss = value_loss(value_pred, value_target)
+    p_loss = policy_loss(policy_logits, pi_target, legal_mask, sample_weights)
+    v_loss = value_loss(value_pred, value_target, sample_weights)
     total = p_loss + v_loss
     return total, p_loss, v_loss

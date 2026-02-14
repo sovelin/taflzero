@@ -149,7 +149,7 @@ pub fn gen_train_data(output_path: &str, nn: &mut NeuralNet, game_limit: Option<
     let mut defender_wins_saved = 0usize;
     let mut draws_saved = 0usize;
     let mut defender_wins_skipped = 0usize;
-    const DEFENDER_WIN_KEEP_EVERY: usize = 4; // keep 1 out of every 4 defender wins
+    const DEFENDER_WIN_KEEP_EVERY: usize = 1; // 1 = keep all, N>1 = keep 1 out of every N defender wins
 
     loop {
         if let Some(limit) = game_limit {
