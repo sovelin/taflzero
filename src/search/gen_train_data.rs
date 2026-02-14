@@ -68,13 +68,13 @@ fn set_random_position(rnd: &mut StdRng) -> Board {
 fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> Vec<PendingSample> {
     // let mut board = set_random_position(&mut search_data.random_generator);
     let mut board = Board::new();
-    //board.setup_initial_position().expect("Setup initial position failed");
+    board.setup_initial_position().expect("Setup initial position failed");
 
     // Aggressive setup for start
-    board.set_fen("1aaaaaaaaa1/3aaaaa3/11/aa3d3aa/a3ddd3a/aa1ddkdd1aa/a3ddd3a/aa3d3aa/11/3aaaaa3/1aaaaaaaaa1 a").expect("Set fen failed");
+    // board.set_fen("1aaaaaaaaa1/3aaaaa3/11/aa3d3aa/a3ddd3a/aa1ddkdd1aa/a3ddd3a/aa3d3aa/11/3aaaaa3/1aaaaaaaaa1 a").expect("Set fen failed");
 
     //board.set_fen("2aaaaaaa2/4aaa4/11/aa3d3aa/a3ddd3a/aa1ddkdd1aa/a3ddd3a/aa3d3aa/11/3aaaaa3/2aaaaaaa2 a").expect("Set fen failed");
-    //board.set_fen("2aaaaaaa2/5a5/11/aa3d3aa/a3ddd3a/aa1ddkdd1aa/a3ddd3a/aa3d3aa/11/4aaa4/2aaaaaaa2 a").expect("Set fen failed");
+   // board.set_fen("2aaaaaaa2/5a5/11/aa3d3aa/a3ddd3a/aa1ddkdd1aa/a3ddd3a/aa3d3aa/11/4aaa4/2aaaaaaa2 a").expect("Set fen failed");
 
 
     let mut res = vec![];
@@ -86,8 +86,8 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> Vec<PendingSam
     let mut no_capture_counter = 0;
 
     loop {
-        config.temperature = if move_number < 20 { 1.0 } else { 0.0 };
-        let mv = mcts_search(&mut board, &mut mcts_tree, nn, search_data, None, Some(800), &config);
+        config.temperature = if move_number < 40 { 1.0 } else { 0.0 };
+        let mv = mcts_search(&mut board, &mut mcts_tree, nn, search_data, None, Some(100), &config);
         move_number += 1;
 
         if let Some(mv) = mv {
