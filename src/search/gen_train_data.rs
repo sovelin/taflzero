@@ -65,7 +65,7 @@ fn set_random_position(rnd: &mut StdRng) -> Board {
 }
 
 
-fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> Vec<PendingSample> {
+fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> (Vec<PendingSample>, Option<Side>) {
     // let mut board = set_random_position(&mut search_data.random_generator);
     let mut board = Board::new();
     board.setup_initial_position().expect("Setup initial position failed");
@@ -87,6 +87,9 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> Vec<PendingSam
 
     loop {
         config.temperature = if move_number < 40 { 1.0 } else { 0.0 };
+        // if board.side_to_move == Side::DEFENDERS {
+        //     mcts_tree = MCTSTree::new();
+        // }
         let mv = mcts_search(&mut board, &mut mcts_tree, nn, search_data, None, Some(100), &config);
         move_number += 1;
 
@@ -127,18 +130,7 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> Vec<PendingSam
         sample.set_value_from_result(game_result);
     }
 
-    // print game result
-    match game_result {
-        Some(terminal_result) => {
-            match terminal_result {
-                Side::ATTACKERS => println!("Attacker wins"),
-                Side::DEFENDERS => println!("Defender wins"),
-            }
-        },
-        None => println!("Game ended without terminal result"),
-    }
-
-    res
+    (res, game_result)
 }
 
 pub fn gen_train_data(output_path: &str, nn: &mut NeuralNet, game_limit: Option<usize>) {
@@ -152,18 +144,48 @@ pub fn gen_train_data(output_path: &str, nn: &mut NeuralNet, game_limit: Option<
 
     let mut writer = BufWriter::new(file);
     let mut positions_generated = 0usize;
+    let mut games_saved = 0usize;
+    let mut attacker_wins_saved = 0usize;
+    let mut defender_wins_saved = 0usize;
+    let mut draws_saved = 0usize;
+    let mut defender_wins_skipped = 0usize;
+    const DEFENDER_WIN_KEEP_EVERY: usize = 4; // keep 1 out of every 4 defender wins
 
     loop {
         if let Some(limit) = game_limit {
             if positions_generated >= limit {
-                println!("Datagen finished: generated {} games", positions_generated);
+                println!("Datagen finished: generated {} positions", positions_generated);
                 break;
             }
         }
 
-        let res = play_game(nn, &mut search_data);
+        let (res, game_result) = play_game(nn, &mut search_data);
+        let is_defender_win = game_result == Some(Side::DEFENDERS);
+
+        if is_defender_win {
+            defender_wins_skipped += 1;
+            if defender_wins_skipped % DEFENDER_WIN_KEEP_EVERY != 0 {
+                continue;
+            }
+        }
+
         positions_generated += res.len();
-        println!("Generated a game with {} samples", res.len());
+        games_saved += 1;
+        match game_result {
+            Some(Side::ATTACKERS) => attacker_wins_saved += 1,
+            Some(Side::DEFENDERS) => defender_wins_saved += 1,
+            None => draws_saved += 1,
+        }
+
+        let total_saved = attacker_wins_saved + defender_wins_saved + draws_saved;
+        let atk_pct = if total_saved > 0 { attacker_wins_saved as f64 / total_saved as f64 * 100.0 } else { 0.0 };
+        let result_str = match game_result {
+            Some(Side::ATTACKERS) => "ATK WIN",
+            Some(Side::DEFENDERS) => "DEF WIN",
+            None => "DRAW",
+        };
+        println!("{} | game #{} ({} samples) | atk={} def={} draw={} | atk%={:.1}% | positions={}",
+            result_str, games_saved, res.len(), attacker_wins_saved, defender_wins_saved, draws_saved, atk_pct, positions_generated);
 
         for sample in res {
             sample.write_to(&mut writer).expect("Cannot write sample");
