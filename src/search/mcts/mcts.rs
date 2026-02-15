@@ -235,6 +235,15 @@ fn puct_select(tree: &MCTSTree, from_id: NodeId) -> NodeId {
     let sqrt_parent = parent_effective.sqrt();
     let c = 1.4f32;
 
+    // FPU reduction: unvisited children are assumed worse than parent average
+    const FPU_REDUCTION: f32 = 0.3;
+    let parent_q = if from.visits > 0.0 {
+        from.wins / from.visits
+    } else {
+        0.0
+    };
+    let fpu_value = parent_q - FPU_REDUCTION;
+
     for id in from.children.iter() {
         let child = tree.get_node(*id);
 
@@ -242,7 +251,7 @@ fn puct_select(tree: &MCTSTree, from_id: NodeId) -> NodeId {
         let q = if effective_visits > 0.0 {
             (child.wins - child.virtual_loss) / effective_visits
         } else {
-            0.0
+            fpu_value
         };
         let puct_value = q + c * child.prior * sqrt_parent / (1.0 + effective_visits);
 

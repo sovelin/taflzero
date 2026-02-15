@@ -90,7 +90,13 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> (Vec<PendingSa
         // if board.side_to_move == Side::DEFENDERS {
         //     mcts_tree = MCTSTree::new();
         // }
-        let mv = mcts_search(&mut board, &mut mcts_tree, nn, search_data, None, Some(100), &config);
+        let iterations = if board.side_to_move == Side::ATTACKERS {
+            100
+        } else {
+            100
+        };
+
+        let mv = mcts_search(&mut board, &mut mcts_tree, nn, search_data, None, Some(iterations), &config);
         move_number += 1;
 
         if let Some(mv) = mv {
