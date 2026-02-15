@@ -238,7 +238,7 @@ fn puct_select(tree: &MCTSTree, from_id: NodeId) -> NodeId {
     // FPU reduction: unvisited children are assumed worse than parent average
     const FPU_REDUCTION: f32 = 0.3;
     let parent_q = if from.visits > 0.0 {
-        from.wins / from.visits
+        -(from.wins / from.visits)
     } else {
         0.0
     };
