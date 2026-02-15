@@ -63,7 +63,9 @@ class TaflAlphaZeroNet(nn.Module):
         x = self.stem(x)
         x = self.trunk(x)
 
-        policy_logits = self.policy_head(x).flatten(start_dim=1)
+        # permute to square-major order: (B,40,11,11) -> (B,11,11,40) -> (B,4840)
+        # matches Rust index: from_square * 40 + move_type
+        policy_logits = self.policy_head(x).permute(0, 2, 3, 1).flatten(start_dim=1)
         value = self.value_head(x).flatten(start_dim=1)
         value = self.value_mlp(value)
         return policy_logits, value
