@@ -7,7 +7,7 @@ use crate::mcts::export::PendingSample;
 use crate::mcts::mcts::{mcts_search, MCTSConfig, MCTSTree};
 use crate::search::nn::NeuralNet;
 use crate::search_data::SearchData;
-use crate::terminal::check_terminal;
+use crate::terminal::{check_terminal, is_threefold_repetition};
 use crate::types::{Piece, Side};
 
 fn set_piece_to_random_square(
@@ -86,14 +86,14 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> (Vec<PendingSa
     let mut no_capture_counter = 0;
 
     loop {
-        config.temperature = if move_number < 40 { 1.0 } else { 0.0 };
+        config.temperature = if move_number < 30 { 1.0 } else { 0.0 };
         // if board.side_to_move == Side::DEFENDERS {
         //     mcts_tree = MCTSTree::new();
         // }
         let iterations = if board.side_to_move == Side::ATTACKERS {
-            100
+            400
         } else {
-            100
+            400
         };
 
         let mv = mcts_search(&mut board, &mut mcts_tree, nn, search_data, None, Some(iterations), &config);
@@ -112,8 +112,14 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> (Vec<PendingSa
                 no_capture_counter += 1;
             }
 
-            if no_capture_counter >= 800 {
+            if no_capture_counter >= 200 || move_number >= 300 {
                 // end the game as a draw
+                game_result = None;
+                break;
+            }
+
+            // Treat threefold repetition as draw for training
+            if is_threefold_repetition(&board) {
                 game_result = None;
                 break;
             }
@@ -126,6 +132,9 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> (Vec<PendingSa
             game_result = if board.side_to_move == Side::ATTACKERS {
                 Some(Side::DEFENDERS)
             } else {
+                // print board
+                println!("Board:\n{}", board);
+
                 Some(Side::ATTACKERS)
             };
             break;
