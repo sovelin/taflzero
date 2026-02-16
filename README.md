@@ -5,11 +5,11 @@ wasm-pack build --target web --release
 
 Self-play + training loop (current settings):
 
-- Network: `TaflAlphaZeroNet` with `trunk_channels=16`, `num_blocks=2`
-- MCTS iterations per move: `300`
+- Network: `TaflAlphaZeroNet` with `trunk_channels=32`, `num_blocks=6`
+- MCTS iterations per move: `300` (after some time switch to `600` for attackers and `300` for defenders)
 - Self-play per generation: `--games-per-gen 50000` (currently counts positions, not games)
 - Dataset window: `--window 500000` positions
-- Training: `--steps 1500`, `--batch 512`, `--lr 1e-3`
+- Training: `--steps 3000`, `--batch 512`, `--lr 1e-3` (lr could be slightly less)
 - Defender reweighting: `--defender-weight 1.0`
 - Policy target temperature: `POLICY_TARGET_TEMP = 0.5` (see `zero-trainer/dataset.py`)
 - Temperature: first 60 moves 1.0; after 0.0
