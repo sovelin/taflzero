@@ -50,7 +50,7 @@ def iter_samples(fh):
         val = fh.read(1)
         if len(val) < 1:
             return
-        yield legal, policy_raw, policy_len
+        yield stm[0], legal, policy_raw, policy_len
 
 
 def main() -> None:
@@ -76,6 +76,29 @@ def main() -> None:
     legal_moves_list = []
     policy_len_list = []
 
+    side_stats = {
+        0: {
+            "entropies": [],
+            "entropies_norm": [],
+            "max_probs": [],
+            "top5_probs": [],
+            "n_eff": [],
+            "visited_frac": [],
+            "legal_moves_list": [],
+            "policy_len_list": [],
+        },
+        1: {
+            "entropies": [],
+            "entropies_norm": [],
+            "max_probs": [],
+            "top5_probs": [],
+            "n_eff": [],
+            "visited_frac": [],
+            "legal_moves_list": [],
+            "policy_len_list": [],
+        },
+    }
+
     samples = 0
     used = 0
 
@@ -91,7 +114,7 @@ def main() -> None:
             total = None
             start_at = 0
 
-        for legal, policy_raw, policy_len in iter_samples(f):
+        for stm, legal, policy_raw, policy_len in iter_samples(f):
             samples += 1
             if samples <= start_at:
                 continue
@@ -103,6 +126,9 @@ def main() -> None:
             legal_moves = popcount_bytes(legal)
             legal_moves_list.append(legal_moves)
             policy_len_list.append(policy_len)
+            if stm in side_stats:
+                side_stats[stm]["legal_moves_list"].append(legal_moves)
+                side_stats[stm]["policy_len_list"].append(policy_len)
 
             if policy_len == 0:
                 continue
@@ -148,6 +174,18 @@ def main() -> None:
             n_eff.append(math.exp(h))
             visited_frac.append(policy_len / legal_moves if legal_moves > 0 else 0.0)
 
+            if stm in side_stats:
+                sstats = side_stats[stm]
+                sstats["entropies"].append(h)
+                if legal_moves > 1:
+                    sstats["entropies_norm"].append(h / math.log(legal_moves))
+                else:
+                    sstats["entropies_norm"].append(0.0)
+                sstats["max_probs"].append(p1)
+                sstats["top5_probs"].append(top5)
+                sstats["n_eff"].append(math.exp(h))
+                sstats["visited_frac"].append(policy_len / legal_moves if legal_moves > 0 else 0.0)
+
             used += 1
 
     def fmt_stats(name, xs):
@@ -177,6 +215,25 @@ def main() -> None:
         low_max = sum(1 for x in max_probs if x < 0.1) / len(max_probs)
         print(f"max_prob < 0.10: {low_max * 100:.1f}%")
         low_max2 = sum(1 for x in max_probs if x < 0.05) / len(max_probs)
+        print(f"max_prob < 0.05: {low_max2 * 100:.1f}%")
+
+    for stm in (0, 1):
+        sstats = side_stats[stm]
+        if not sstats["entropies"]:
+            continue
+        print()
+        print(f"--- side_to_move={stm} ---")
+        fmt_stats("legal_moves", sstats["legal_moves_list"])
+        fmt_stats("policy_len", sstats["policy_len_list"])
+        fmt_stats("visited_frac", sstats["visited_frac"])
+        fmt_stats("entropy", sstats["entropies"])
+        fmt_stats("entropy_norm", sstats["entropies_norm"])
+        fmt_stats("max_prob", sstats["max_probs"])
+        fmt_stats("top5_prob", sstats["top5_probs"])
+        fmt_stats("n_eff", sstats["n_eff"])
+        low_max = sum(1 for x in sstats["max_probs"] if x < 0.1) / len(sstats["max_probs"])
+        print(f"max_prob < 0.10: {low_max * 100:.1f}%")
+        low_max2 = sum(1 for x in sstats["max_probs"] if x < 0.05) / len(sstats["max_probs"])
         print(f"max_prob < 0.05: {low_max2 * 100:.1f}%")
 
 
