@@ -1,6 +1,28 @@
 ## Cmd for build
 wasm-pack build --target web --release
 
+# Current Zero Training Pipeline
+
+Self-play + training loop (current settings):
+
+- Network: `TaflAlphaZeroNet` with `trunk_channels=16`, `num_blocks=2`
+- MCTS iterations per move: `300`
+- Self-play per generation: `--games-per-gen 50000` (currently counts positions, not games)
+- Dataset window: `--window 500000` positions
+- Training: `--steps 1500`, `--batch 512`, `--lr 1e-3`
+- Defender reweighting: `--defender-weight 1.0`
+- Policy target temperature: `POLICY_TARGET_TEMP = 0.5` (see `zero-trainer/dataset.py`)
+
+Example:
+
+```
+node orchestrate-zero.mjs --iterations 30 --games-per-gen 50000 --window 500000 --steps 1500 --batch 512 --lr 1e-3 --defender-weight 1.0 --workers 24 --start-net .\zero-trainer\weights\random_init.onnx
+```
+
+Notes:
+- MCTS and self-play settings live in `src/search/gen_train_data.rs` and `src/search/mcts/mcts.rs`.
+- `--games-per-gen` is passed to Rust and currently limits positions generated, not games.
+
 # Train net 32 channels and 6 residual blocks
 
 ```
