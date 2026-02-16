@@ -12,6 +12,7 @@ Self-play + training loop (current settings):
 - Training: `--steps 1500`, `--batch 512`, `--lr 1e-3`
 - Defender reweighting: `--defender-weight 1.0`
 - Policy target temperature: `POLICY_TARGET_TEMP = 0.5` (see `zero-trainer/dataset.py`)
+- Temperature: first 60 moves 1.0; after 0.0
 
 Example:
 

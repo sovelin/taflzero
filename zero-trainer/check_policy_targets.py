@@ -59,6 +59,7 @@ def main() -> None:
     ap.add_argument("--policy-temp", type=float, default=0.5, help="Same temp as dataset.py (default 0.5)")
     ap.add_argument("--max-samples", type=int, default=0, help="0 = no limit")
     ap.add_argument("--every", type=int, default=1, help="Only analyze every Nth sample")
+    ap.add_argument("--tail", type=int, default=0, help="Only analyze the last N samples (0 = all)")
     args = ap.parse_args()
 
     if args.policy_temp <= 0:
@@ -79,8 +80,21 @@ def main() -> None:
     used = 0
 
     with open(args.path, "rb") as f:
+        if args.tail and args.tail > 0:
+            # Count total samples to compute tail window.
+            total = 0
+            for _ in iter_samples(f):
+                total += 1
+            start_at = max(0, total - args.tail)
+            f.seek(0)
+        else:
+            total = None
+            start_at = 0
+
         for legal, policy_raw, policy_len in iter_samples(f):
             samples += 1
+            if samples <= start_at:
+                continue
             if samples % args.every != 0:
                 continue
             if args.max_samples and used >= args.max_samples:
