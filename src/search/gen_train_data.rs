@@ -3,7 +3,10 @@ use std::io::BufWriter;
 use rand::prelude::StdRng;
 use rand::Rng;
 use crate::{Board, PRECOMPUTED};
-use crate::mcts::export::PendingSample;
+use crate::movegen::MoveGen;
+use crate::mcts::export::{LegalMask, PendingSample};
+use crate::mcts::utils::move_to_policy_index;
+use crate::position_export::BitPosition;
 use crate::mcts::mcts::{mcts_search, MCTSConfig, MCTSTree};
 use crate::search::nn::NeuralNet;
 use crate::search_data::SearchData;
@@ -86,14 +89,14 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> (Vec<PendingSa
     let mut no_capture_counter = 0;
 
     loop {
-        config.temperature = if move_number < 30 { 1.0 } else { 0.0 };
+        config.temperature = if move_number < 60 { 1.0 } else { 0.0 };
         // if board.side_to_move == Side::DEFENDERS {
         //     mcts_tree = MCTSTree::new();
         // }
         let iterations = if board.side_to_move == Side::ATTACKERS {
-            400
+            200
         } else {
-            400
+            200
         };
 
         let mv = mcts_search(&mut board, &mut mcts_tree, nn, search_data, None, Some(iterations), &config);
@@ -112,17 +115,17 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> (Vec<PendingSa
                 no_capture_counter += 1;
             }
 
-            if no_capture_counter >= 200 || move_number >= 300 {
+            if no_capture_counter >= 200 || move_number >= 700 {
                 // end the game as a draw
                 game_result = None;
                 break;
             }
 
             // Treat threefold repetition as draw for training
-            if is_threefold_repetition(&board) {
-                game_result = None;
-                break;
-            }
+            // if is_threefold_repetition(&board) {
+            //     game_result = None;
+            //     break;
+            // }
 
             if let Some(result) = check_terminal(&mut board) {
                 game_result = Some(result);
@@ -208,4 +211,44 @@ pub fn gen_train_data(output_path: &str, nn: &mut NeuralNet, game_limit: Option<
         }
 
     }
+}
+
+pub fn dump_single_sample(output_path: &str) {
+    let mut board = Board::new();
+    board.setup_initial_position().expect("Setup initial position failed");
+
+    let mut move_gen = MoveGen::new();
+    move_gen.generate_moves(&board);
+    if move_gen.count == 0 {
+        panic!("No legal moves from initial position");
+    }
+
+    let first_mv = move_gen.moves[0];
+    let move_index = move_to_policy_index(first_mv);
+
+    let mut legal_mask = LegalMask::new();
+    for i in 0..move_gen.count {
+        let mv = move_gen.moves[i];
+        let idx = move_to_policy_index(mv);
+        legal_mask.set(idx as usize);
+    }
+
+    let policy = vec![(move_index, 7)];
+    let sample = PendingSample::from_manual(
+        BitPosition::from_board(&board),
+        legal_mask,
+        policy,
+        1,
+    );
+
+    let file = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(output_path)
+        .expect("Could not open output file");
+    let mut writer = BufWriter::new(file);
+    sample.write_to(&mut writer).expect("Cannot write sample");
+
+    println!("DUMP_SAMPLE index={} legal_moves={}", move_index, move_gen.count);
 }

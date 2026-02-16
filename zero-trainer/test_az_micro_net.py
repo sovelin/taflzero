@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+import re
+import shutil
+import subprocess
+from pathlib import Path
+
 import torch
 import pytest
 
 from az_micro_net import TaflAlphaZeroNet
+from dataset import SelfPlayDataset
+from export_onnx import export_model_to_onnx
 from training_utils import NEG_LARGE, alpha_zero_loss, masked_policy_logits, normalize_visit_counts
 
 
@@ -68,3 +75,115 @@ def test_model_forward_on_cuda() -> None:
     assert value.is_cuda
     assert policy_logits.shape == (2, 4840)
     assert value.shape == (2, 1)
+
+
+class _DummyPolicyHead(torch.nn.Module):
+    def __init__(self, out: torch.Tensor) -> None:
+        super().__init__()
+        self.register_buffer("_out", out)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if x.shape[0] != self._out.shape[0]:
+            raise ValueError("Batch size mismatch for dummy policy head")
+        return self._out
+
+
+def test_policy_logits_square_major_indexing() -> None:
+    # Build a deterministic policy tensor so we can verify flatten order.
+    policy = torch.zeros(1, 40, 11, 11)
+    for move_type in range(40):
+        for square in range(121):
+            row, col = divmod(square, 11)
+            policy[0, move_type, row, col] = move_type * 1000 + square
+
+    model = TaflAlphaZeroNet()
+    model.policy_head = _DummyPolicyHead(policy)
+
+    x = torch.zeros(1, 6, 11, 11)
+    policy_logits, _ = model(x)
+
+    expected = torch.empty(4840)
+    for square in range(121):
+        row, col = divmod(square, 11)
+        for move_type in range(40):
+            expected[square * 40 + move_type] = policy[0, move_type, row, col]
+
+    assert torch.allclose(policy_logits[0], expected)
+
+
+def test_onnx_export_matches_pytorch(tmp_path) -> None:
+    onnxruntime = pytest.importorskip("onnxruntime")
+    np = pytest.importorskip("numpy")
+
+    torch.manual_seed(0)
+    model = TaflAlphaZeroNet()
+    model.eval()
+
+    x = torch.randn(2, 6, 11, 11)
+    with torch.no_grad():
+        pt_policy, pt_value = model(x)
+
+    onnx_path = tmp_path / "model.onnx"
+    export_model_to_onnx(model, onnx_path)
+
+    sess = onnxruntime.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
+    ort_policy, ort_value = sess.run(None, {"input": x.numpy()})
+
+    assert ort_policy.shape == tuple(pt_policy.shape)
+    assert ort_value.shape == tuple(pt_value.shape)
+
+    np.testing.assert_allclose(ort_policy, pt_policy.numpy(), rtol=1e-4, atol=1e-5)
+    np.testing.assert_allclose(ort_value, pt_value.numpy(), rtol=1e-4, atol=1e-5)
+
+
+def _find_engine_binary(repo_root: Path) -> Path | None:
+    candidates = [
+        repo_root / "target" / "release" / "zevratafl-rust.exe",
+        repo_root / "target" / "debug" / "zevratafl-rust.exe",
+        repo_root / "target" / "release" / "zevratafl-rust",
+        repo_root / "target" / "debug" / "zevratafl-rust",
+    ]
+    for path in candidates:
+        if path.exists():
+            return path
+    return None
+
+
+def test_rust_dump_sample_roundtrip(tmp_path) -> None:
+    pytest.importorskip("numpy")
+    repo_root = Path(__file__).resolve().parents[1]
+    out_path = tmp_path / "sample.bin"
+
+    engine = _find_engine_binary(repo_root)
+    cargo = shutil.which("cargo")
+
+    def run_cmd(cmd, cwd):
+        return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+
+    result = None
+    if engine is not None:
+        result = run_cmd([str(engine), "--dump-sample", str(out_path)], repo_root)
+        if result.returncode != 0 and "Unknown arg: --dump-sample" in (result.stderr + result.stdout):
+            result = None  # Fall back to cargo run if available
+
+    if result is None:
+        if cargo is None:
+            pytest.skip("cargo not found and engine binary missing or outdated")
+        result = run_cmd([cargo, "run", "--quiet", "--", "--dump-sample", str(out_path)], repo_root)
+
+    if result.returncode != 0:
+        pytest.fail(f"engine failed: {result.stderr or result.stdout}")
+
+    match = re.search(r"DUMP_SAMPLE index=(\d+)", result.stdout + result.stderr)
+    assert match, f"expected DUMP_SAMPLE in output, got: {result.stdout} {result.stderr}"
+    expected_index = int(match.group(1))
+
+    dataset = SelfPlayDataset(out_path)
+    assert len(dataset) == 1
+
+    planes, legal_mask, pi_target, value = dataset[0]
+
+    assert legal_mask[expected_index].item() is True
+    assert torch.isclose(pi_target.sum(), torch.tensor(1.0), atol=1e-6)
+    assert int(torch.argmax(pi_target).item()) == expected_index
+    assert float(value.item()) == 1.0

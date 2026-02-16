@@ -81,6 +81,25 @@ pub struct PendingSample {
 }
 
 impl PendingSample {
+    pub fn from_manual(
+        bit_position: BitPosition,
+        legal_mask: LegalMask,
+        policy: Vec<(u16, u16)>,
+        value: i8,
+    ) -> Self {
+        let policy = policy
+            .into_iter()
+            .map(|(move_index, visits)| PolicyTarget { move_index, visits })
+            .collect();
+
+        PendingSample {
+            bit_position,
+            legal_mask,
+            policy,
+            value,
+        }
+    }
+
     pub fn write_to<W: Write>(&self, w: &mut W) -> Result<()> {
         // Keep the exact on-disk format, but serialize in-memory first so each sample
         // is written as a single contiguous block.

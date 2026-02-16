@@ -1,3 +1,3 @@
 pub mod mcts;
 pub mod export;
-mod utils;
+pub(crate) mod utils;

@@ -6,12 +6,14 @@ struct CliArgs {
     net_path: String,
     datagen_path: Option<String>,
     datagen_count: Option<usize>,
+    dump_sample_path: Option<String>,
 }
 
 fn parse_args() -> CliArgs {
     let mut net_path = String::from("./gen1.onxx");
     let mut datagen_path: Option<String> = None;
     let mut datagen_count: Option<usize> = None;
+    let mut dump_sample_path: Option<String> = None;
     let mut args = std::env::args().skip(1);
 
     while let Some(arg) = args.next() {
@@ -50,25 +52,39 @@ fn parse_args() -> CliArgs {
                     std::process::exit(2);
                 }
             }
+            "--dump-sample" => {
+                if let Some(path) = args.next() {
+                    dump_sample_path = Some(path);
+                } else {
+                    eprintln!("Missing value for --dump-sample");
+                    std::process::exit(2);
+                }
+            }
             _ => {
                 eprintln!("Unknown arg: {arg}");
-                eprintln!("Usage: zevratafl-rust [--net <model.onnx>] [--datagen <output.bin>] [--datagen-count <games>]");
+                eprintln!("Usage: zevratafl-rust [--net <model.onnx>] [--datagen <output.bin>] [--datagen-count <games>] [--dump-sample <output.bin>]");
                 std::process::exit(2);
             }
         }
     }
 
-    CliArgs { net_path, datagen_path, datagen_count }
+    CliArgs { net_path, datagen_path, datagen_count, dump_sample_path }
 }
 
 fn main() {
     let cli = parse_args();
-    let mut nn = NeuralNet::new(&cli.net_path);
 
     if cli.datagen_count.is_some() && cli.datagen_path.is_none() {
         eprintln!("--datagen-count can only be used together with --datagen");
         std::process::exit(2);
     }
+
+    if let Some(path) = cli.dump_sample_path {
+        zevratafl_rust::gen_train_data::dump_single_sample(&path);
+        return;
+    }
+
+    let mut nn = NeuralNet::new(&cli.net_path);
 
     if let Some(path) = cli.datagen_path {
         gen_train_data(&path, &mut nn, cli.datagen_count);

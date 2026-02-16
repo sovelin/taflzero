@@ -6,6 +6,8 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor
 
+NEG_LARGE = torch.finfo(torch.float32).min
+
 
 def masked_policy_logits(policy_logits: Tensor, legal_mask: Tensor) -> Tensor:
     """
@@ -26,7 +28,8 @@ def masked_policy_logits(policy_logits: Tensor, legal_mask: Tensor) -> Tensor:
     if not torch.all(legal_mask.any(dim=1)):
         raise ValueError("each sample must have at least one legal move")
 
-    return policy_logits.masked_fill(~legal_mask, torch.finfo(policy_logits.dtype).min)
+    neg = NEG_LARGE if policy_logits.dtype == torch.float32 else torch.finfo(policy_logits.dtype).min
+    return policy_logits.masked_fill(~legal_mask, neg)
 
 
 def normalize_visit_counts(visit_counts: Tensor, legal_mask: Tensor) -> Tensor:
