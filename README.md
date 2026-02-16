@@ -13,6 +13,7 @@ Self-play + training loop (current settings):
 - Defender reweighting: `--defender-weight 1.0`
 - Policy target temperature: `POLICY_TARGET_TEMP = 0.5` (see `zero-trainer/dataset.py`)
 - Temperature: first 60 moves 1.0; after 0.0
+- MCTS batch size=`8`
 
 Example:
 
