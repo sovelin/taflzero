@@ -20,6 +20,8 @@ function parseArgs(argv) {
         defenderWeight: 0.25,
         debugEngine: false,
         workers: 1,
+        saveBestCheckpoint: true,
+        useBestCheckpoint: true,
     };
 
     for (let i = 0; i < argv.length; i += 1) {
@@ -42,6 +44,12 @@ function parseArgs(argv) {
         else if (a === "--defender-weight") args.defenderWeight = floatArg(next(), a, 0);
         else if (a === "--workers") args.workers = intArg(next(), a, 1);
         else if (a === "--debug-engine") args.debugEngine = true;
+        else if (a === "--no-save-best-checkpoint") {
+            args.saveBestCheckpoint = false;
+            args.useBestCheckpoint = false;
+        } else if (a === "--use-last-checkpoint") {
+            args.useBestCheckpoint = false;
+        }
         else if (a === "--help" || a === "-h") {
             printHelp();
             process.exit(0);
@@ -92,6 +100,10 @@ function printHelp() {
             "",
             "Train args forwarded to train.py:",
             "  --window <N> --steps <N> --batch <N> --lr <F> --weight-decay <F> --defender-weight <F>",
+            "",
+            "Checkpointing:",
+            "  --no-save-best-checkpoint Disable saving best .onxx checkpoint per generation (default: save best)",
+            "  --use-last-checkpoint     Use last .onxx for next generation instead of best (default: use best)",
             "",
             "Runtime:",
             "  --workers <N>             Parallel engine processes for datagen (default: 1)",
@@ -169,6 +181,8 @@ async function main() {
         const name = genName(genIdx);
         const nextOnnx = path.join(args.weightsDir, `${name}.onnx`);
         const nextQnxx = path.join(args.weightsDir, `${name}.onxx`);
+        const nextBestQnxx = path.join(args.weightsDir, `${name}.best.onxx`);
+        const nextBestOnnx = path.join(args.weightsDir, `${name}.best.onnx`);
 
         console.log(`\n=== Generation ${genIdx} ===`);
         console.log(`Datagen net: ${currentNet}`);
@@ -202,6 +216,8 @@ async function main() {
             path.normalize(nextOnnx),
             "--save-checkpoint",
             path.normalize(nextQnxx),
+            "--save-best-checkpoint",
+            path.normalize(nextBestQnxx),
             "--window",
             String(args.window),
             "--steps",
@@ -215,13 +231,31 @@ async function main() {
             "--defender-weight",
             String(args.defenderWeight),
         ];
+        if (!args.saveBestCheckpoint) {
+            const idx = trainArgs.indexOf("--save-best-checkpoint");
+            if (idx >= 0) {
+                trainArgs.splice(idx, 2);
+            }
+        }
         if (currentCheckpoint) {
             trainArgs.push("--checkpoint", currentCheckpoint);
         }
         await run(python, trainArgs);
 
-        currentNet = path.normalize(nextOnnx);
-        currentCheckpoint = path.normalize(nextQnxx);
+        if (
+            args.useBestCheckpoint &&
+            args.saveBestCheckpoint &&
+            fs.existsSync(nextBestQnxx) &&
+            fs.existsSync(nextBestOnnx)
+        ) {
+            currentNet = path.normalize(nextBestOnnx);
+            currentCheckpoint = path.normalize(nextBestQnxx);
+            console.log(`Using best checkpoint for next gen: ${currentCheckpoint}`);
+        } else {
+            currentNet = path.normalize(nextOnnx);
+            currentCheckpoint = path.normalize(nextQnxx);
+            console.log(`Using last checkpoint for next gen: ${currentCheckpoint}`);
+        }
         console.log(`Completed generation ${genIdx}`);
     }
 
