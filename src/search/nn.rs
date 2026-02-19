@@ -21,15 +21,45 @@ pub struct NeuralNet {
 
 impl NeuralNet {
     pub fn new(path: &str) -> Self {
-        let session = Session::builder()
+        let cuda_ep = CUDAExecutionProvider::default().build();
+        let dml_ep = DirectMLExecutionProvider::default().build();
+
+        println!("[NN] Loading model: {}", path);
+        println!("[NN] Requested EPs: CUDA, DirectML (fallback: CPU)");
+
+        let mut session = Session::builder()
             .unwrap()
-            .with_execution_providers([
-                CUDAExecutionProvider::default().build(),
-                DirectMLExecutionProvider::default().build(),
-            ])
+            .with_execution_providers([cuda_ep, dml_ep])
             .unwrap()
             .commit_from_file(path)
             .expect("Unable to commit neural net");
+
+        // Warmup + benchmark
+        let warmup_input = vec![0.0f32; NUM_PLANES * SQS * 8];
+        let warmup_tensor = Array::from_shape_vec(
+            IxDyn(&[8, NUM_PLANES, BOARD_SIZE, BOARD_SIZE]),
+            warmup_input,
+        ).unwrap();
+        let warmup_value = Value::from_array(warmup_tensor).unwrap();
+
+        // Warmup run (first call is slow due to kernel compilation)
+        let _ = session.run(ort::inputs![warmup_value]).unwrap();
+
+        // Benchmark 10 runs
+        let bench_runs = 10;
+        let start = std::time::Instant::now();
+        for _ in 0..bench_runs {
+            let input = vec![0.0f32; NUM_PLANES * SQS * 8];
+            let tensor = Array::from_shape_vec(
+                IxDyn(&[8, NUM_PLANES, BOARD_SIZE, BOARD_SIZE]),
+                input,
+            ).unwrap();
+            let val = Value::from_array(tensor).unwrap();
+            let _ = session.run(ort::inputs![val]).unwrap();
+        }
+        let elapsed = start.elapsed();
+        println!("[NN] Warmup done. batch=8 forward: {:.2}ms avg ({} runs)",
+            elapsed.as_secs_f64() / bench_runs as f64 * 1000.0, bench_runs);
 
         Self { session }
     }

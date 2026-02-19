@@ -3,6 +3,7 @@ use crate::board::utils::get_square;
 use crate::types::{Piece, Side};
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct BitPosition {
     pub planes: [u8; 16 * 3], // [attackers | defenders | king]
     pub stm: u8, // 1 for attackers, 0 for defenders
