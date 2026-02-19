@@ -1,16 +1,16 @@
 /* tslint:disable */
 /* eslint-disable */
 export function main_js(): void;
-export function hello(): string;
 export function build_info(): string;
-export function get_total_squares(): number;
+export function hello(): string;
 export function get_initial_board_fen(): string;
+export function get_total_squares(): number;
 export function get_board_size(): number;
-export function get_square(row: number, col: number): number;
-export function get_sq_algebraic(sq: number): string;
-export function get_row(sq: number): number;
-export function get_col(sq: number): number;
 export function get_square_from_algebraic(coord: string): number;
+export function get_row(sq: number): number;
+export function get_square(row: number, col: number): number;
+export function get_col(sq: number): number;
+export function get_sq_algebraic(sq: number): string;
 export enum Piece {
   EMPTY = 0,
   ATTACKER = 1,
