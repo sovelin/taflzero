@@ -660,7 +660,7 @@ pub fn mcts_search(
 
         // Report every second
         let elapsed = search_data.timer.elapsed_ms();
-        if elapsed >= last_report_ms + 1000 {
+        if elapsed >= last_report_ms + 100 {
             last_report_ms = elapsed;
 
             if let Some(callback) = on_iteration {
