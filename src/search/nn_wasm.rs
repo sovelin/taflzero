@@ -4,7 +4,7 @@ use crate::masks::BOARD_SIZE;
 use crate::position_export::BitPosition;
 use super::nn_common::{build_input_data, NnOutput, NUM_PLANES, POLICY_SIZE};
 
-const EMBEDDED_MODEL: &[u8] = include_bytes!("../../zero-trainer/weights/gen0179.best.onnx");
+const EMBEDDED_MODEL: &[u8] = include_bytes!("../../zero-trainer/weights/tz-6x32/gen0179.best.onnx");
 
 pub struct NeuralNet {
     plan: TypedRunnableModel<TypedModel>,
