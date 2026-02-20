@@ -98,7 +98,6 @@ def train(
     lr: float,
     weight_decay: float,
     defender_weight: float,
-    save_best_checkpoint: Path | None,
     device: torch.device,
 ) -> None:
     model.to(device)
@@ -133,7 +132,6 @@ def train(
     running_p = 0.0
     running_v = 0.0
     t0 = time.time()
-    best_val_p = float("inf")
 
     for step, (planes, legal_mask, pi_target, value_target) in enumerate(
         itertools.islice(infinite_dataloader(loader), steps), 1
@@ -179,11 +177,6 @@ def train(
                 f"{speed:.0f} samples/s"
             )
 
-            if save_best_checkpoint is not None and val_p < best_val_p:
-                best_val_p = val_p
-                save_qnxx(model, save_best_checkpoint)
-                print(f"Saved best checkpoint: {save_best_checkpoint} (val_p={val_p:.4f})")
-
             running_loss = 0.0
             running_p = 0.0
             running_v = 0.0
@@ -196,7 +189,6 @@ def main() -> None:
     parser.add_argument("--checkpoint", type=Path, default=None, help="Resume from .qnxx checkpoint")
     parser.add_argument("--out", type=Path, required=True, help="Output ONNX model path")
     parser.add_argument("--save-checkpoint", type=Path, default=None, help="Save .qnxx checkpoint after training")
-    parser.add_argument("--save-best-checkpoint", type=Path, default=None, help="Save best .qnxx by lowest val_p during training")
     parser.add_argument("--window", type=int, default=0, help="Sliding window size (0 = use all data)")
     parser.add_argument("--steps", type=int, default=0, help="Training steps (0 = auto: dataset_size / batch)")
     parser.add_argument("--batch", type=int, default=256, help="Batch size")
@@ -248,7 +240,6 @@ def main() -> None:
         lr=args.lr,
         weight_decay=args.weight_decay,
         defender_weight=args.defender_weight,
-        save_best_checkpoint=args.save_best_checkpoint,
         device=device,
     )
 
@@ -262,12 +253,6 @@ def main() -> None:
     if args.save_checkpoint:
         save_qnxx(model, args.save_checkpoint)
         print(f"Saved checkpoint: {args.save_checkpoint}")
-
-    if args.save_best_checkpoint and args.save_best_checkpoint.exists():
-        best_onnx = args.save_best_checkpoint.with_suffix(".onnx")
-        best_model = load_qnxx(args.save_best_checkpoint, device=torch.device("cpu"))
-        export_model_to_onnx(best_model, best_onnx)
-        print(f"Saved best ONNX model: {best_onnx}")
 
 
 if __name__ == "__main__":

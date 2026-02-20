@@ -54,8 +54,6 @@ impl<O: UciOutput> UciController<O> {
         }
 
         let keyword = tokens[0];
-        self.send(&format!("Command received: {}", keyword));
-        self.send(&format!("Full command: {}", cmd));
 
         match keyword {
             "quit" => {
@@ -159,7 +157,42 @@ impl<O: UciOutput> UciController<O> {
 
         match args[0] {
             "movetime" => self.handle_go_movetime(&args[1..]),
+            "nodes" => self.handle_go_nodes(&args[1..]),
             _ => self.send("unknown go subcommand"),
+        }
+    }
+
+    fn handle_go_nodes(&mut self, args: &[&str]) {
+        if args.is_empty() {
+            self.send("nodes value missing");
+            return;
+        }
+
+        let nodes = args[0].parse::<u64>().unwrap_or(0);
+
+        if nodes == 0 {
+            self.send("invalid nodes value");
+            return;
+        }
+
+        let output = &self.output;
+        self.engine.make_search_nodes(nodes, Some(&|iteration: SearchIterationResponse| {
+            let msg = format!(
+                "info depth {} score {} nodes {} time {} speed {} bestmove {:?}",
+                iteration.depth,
+                iteration.score,
+                iteration.nodes,
+                iteration.time,
+                iteration.speed,
+                iteration.mv,
+            );
+            output.send(&msg);
+        }));
+
+        if let Some(mv) = self.engine.best_move() {
+            self.send(&format!("bestmove {:?}", mv));
+        } else {
+            self.send("bestmove (none)");
         }
     }
 

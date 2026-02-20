@@ -101,3 +101,22 @@ pub fn search_root(
         score: 0,
     }
 }
+
+pub fn search_root_nodes(
+    board: &mut Board,
+    search_data: &mut SearchData,
+    tt: &mut TranspositionTable,
+    nn: &mut NeuralNet,
+    on_iteration: Option<&dyn Fn(SearchIterationResponse)>,
+    tree: &mut MCTSTree,
+    nodes: u64,
+) -> SearchResponse {
+
+    let config = MCTSConfig::default_play();
+    let best_move = mcts_search(board, tree, nn, search_data, on_iteration, Some(nodes), &config);
+
+    SearchResponse {
+        best_move: best_move.unwrap_or_default(),
+        score: 0,
+    }
+}

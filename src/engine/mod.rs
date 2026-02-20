@@ -6,7 +6,7 @@ use crate::mv::Move;
 use crate::nnue::{Weights1, Weights2};
 use crate::search::nn::NeuralNet;
 use crate::search::search_data::SearchData;
-use crate::search::search_root::{search_root, SearchIterationResponse, SearchResponse};
+use crate::search::search_root::{search_root, search_root_nodes, SearchIterationResponse, SearchResponse};
 use crate::search::transposition::TranspositionTable;
 use crate::terminal::check_terminal;
 use crate::types::Side;
@@ -59,6 +59,12 @@ impl Engine {
     pub fn make_search(&mut self, time: u64, depth: u32, on_iteration: Option<&dyn Fn(SearchIterationResponse)>) -> SearchResponse {
         self.search_data.start_timer(time, depth);
         let res = search_root(&mut self.board, &mut self.search_data, &mut self.tt, &mut self.nn, on_iteration, &mut self.tree);
+        self.best_move = Some(res.best_move);
+        res
+    }
+
+    pub fn make_search_nodes(&mut self, nodes: u64, on_iteration: Option<&dyn Fn(SearchIterationResponse)>) -> SearchResponse {
+        let res = search_root_nodes(&mut self.board, &mut self.search_data, &mut self.tt, &mut self.nn, on_iteration, &mut self.tree, nodes);
         self.best_move = Some(res.best_move);
         res
     }
