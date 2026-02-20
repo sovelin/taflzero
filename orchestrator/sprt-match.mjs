@@ -16,7 +16,7 @@
 import { spawn } from "node:child_process";
 import readline from "node:readline";
 import path from "node:path";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -148,18 +148,14 @@ function createSprt({ elo0, elo1, alpha, beta }) {
         const totalScore = wins + draws * 0.5;
         const observedScore = totalScore / total;
 
-        // Binomial LLR
+        // Binomial LLR = log(L1/L0) = n * [s*log(p1/p0) + (1-s)*log((1-p1)/(1-p0))]
         if (observedScore <= 0 || observedScore >= 1) {
             llr = observedScore >= 1 ? upperBound + 1 : lowerBound - 1;
         } else {
             llr = total * (
-                observedScore * Math.log(observedScore / p0) +
-                (1 - observedScore) * Math.log((1 - observedScore) / (1 - p0)) -
-                (observedScore * Math.log(observedScore / p1) +
-                 (1 - observedScore) * Math.log((1 - observedScore) / (1 - p1)))
+                observedScore * Math.log(p1 / p0) +
+                (1 - observedScore) * Math.log((1 - p1) / (1 - p0))
             );
-            // Flip sign: we want LLR = log(L1/L0)
-            llr = -llr;
         }
 
         let decision = "continue";
@@ -479,8 +475,12 @@ async function main() {
         w.candidateEngine.dispose();
     }
 
+    // Re-evaluate SPRT on final cumulative state (not intermediate race decisions)
     const status = sprt.status();
-    const passed = finalDecision === "acceptH1";
+    const actualDecision = status.llr >= status.upperBound ? "acceptH1"
+        : status.llr <= status.lowerBound ? "acceptH0"
+        : "maxPairs";
+    const passed = actualDecision === "acceptH1";
 
     // Compute Elo difference from score percentage
     const scorePct = status.total > 0 ? status.score / status.total : 0.5;
@@ -492,7 +492,7 @@ async function main() {
     if (args.resultFile) {
         const result = {
             passed,
-            decision: finalDecision ?? "maxPairs",
+            decision: actualDecision,
             llr: status.llr,
             score: status.score,
             total: status.total,
@@ -502,7 +502,7 @@ async function main() {
             losses: status.losses,
             draws: status.draws,
         };
-        fs.writeFileSync(args.resultFile, JSON.stringify(result));
+        writeFileSync(args.resultFile, JSON.stringify(result));
     }
 
     if (passed) {
@@ -510,7 +510,7 @@ async function main() {
         console.log(`Score: ${status.score.toFixed(1)}/${status.total} (${status.pct.toFixed(1)}%)`);
         process.exit(0);
     } else {
-        const reason = finalDecision === "acceptH0" ? "candidate is NOT stronger" : "max pairs reached";
+        const reason = actualDecision === "acceptH0" ? "candidate is NOT stronger" : "max pairs reached";
         console.log(`\n[SPRT] FAILED — ${reason} (LLR=${status.llr.toFixed(3)}, Elo=${eloDiff.toFixed(1)})`);
         console.log(`Score: ${status.score.toFixed(1)}/${status.total} (${status.pct.toFixed(1)}%)`);
         process.exit(1);

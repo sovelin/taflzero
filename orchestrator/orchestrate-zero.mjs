@@ -152,7 +152,8 @@ function runCheck(cmd, cmdArgs, cwd = process.cwd()) {
 
 function pickPython(explicit) {
     if (explicit) return explicit;
-    const venvPython = path.join("zero-trainer", ".venv", "Scripts", "python.exe");
+    const projectRoot = path.resolve(__dirname, "..");
+    const venvPython = path.join(projectRoot, "zero-trainer", ".venv", "Scripts", "python.exe");
     if (fs.existsSync(venvPython)) return venvPython;
     return "python";
 }
@@ -164,7 +165,8 @@ function genName(idx) {
 function resolveEngineBinary(debugEngine) {
     const profileDir = debugEngine ? "debug" : "release";
     const exeName = process.platform === "win32" ? "zevratafl-rust.exe" : "zevratafl-rust";
-    return path.join("target", profileDir, exeName);
+    //return path.join("target", profileDir, exeName);
+    return exeName;
 }
 
 async function ensureEngineBinary(debugEngine, engineBinPath) {
@@ -243,7 +245,7 @@ async function main() {
         // ── Step 2: Training ─────────────────────────────────────────
         console.log(`Training -> candidate: ${candidateOnnx}`);
         const trainArgs = [
-            path.join("zero-trainer", "train.py"),
+            path.join(path.resolve(__dirname, ".."), "zero-trainer", "train.py"),
             "--data",
             path.normalize(args.data),
             "--out",
