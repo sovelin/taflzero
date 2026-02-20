@@ -285,50 +285,58 @@ function createOpening(movesCount) {
 
 // ─── Game logic ──────────────────────────────────────────────────────────────
 
-const controlEngine = new EngineClient(1);
+class GameController {
+    constructor() {
+        this.engine = new EngineClient(1);
+    }
 
-function checkTerminal(fen, moves) {
-    controlEngine.set_position_and_moves(fen, new Uint32Array(moves));
-    return controlEngine.check_terminal_state();
-}
+    checkTerminal(fen, moves) {
+        this.engine.set_position_and_moves(fen, new Uint32Array(moves));
+        return this.engine.check_terminal_state();
+    }
 
-function getSideToMove(fen, moves) {
-    controlEngine.set_position_and_moves(fen, new Uint32Array(moves));
-    return controlEngine.side_to_move();
-}
+    getSideToMove(fen, moves) {
+        this.engine.set_position_and_moves(fen, new Uint32Array(moves));
+        return this.engine.side_to_move();
+    }
 
-function moveNumToStr(mv) {
-    return controlEngine.move_num_to_str(mv);
-}
+    moveNumToStr(mv) {
+        return this.engine.move_num_to_str(mv);
+    }
 
-function moveStrToNum(str) {
-    return controlEngine.move_str_to_num(str);
-}
+    moveStrToNum(str) {
+        return this.engine.move_str_to_num(str);
+    }
 
-function getPieceCount(fen, moves) {
-    controlEngine.set_position_and_moves(fen, new Uint32Array(moves));
-    const board = controlEngine.get_board_state();
-    return board.filter((sq) => sq !== 0).length;
+    getPieceCount(fen, moves) {
+        this.engine.set_position_and_moves(fen, new Uint32Array(moves));
+        const board = this.engine.get_board_state();
+        return board.filter((sq) => sq !== 0).length;
+    }
+
+    free() {
+        this.engine.free();
+    }
 }
 
 /**
  * Play a single game between two engines.
  * Returns: 'main' | 'candidate' | 'draw'
  */
-async function playGame(mainEngine, candidateEngine, opening, nodes, attackerRole, defenderRole) {
+async function playGame(ctrl, mainEngine, candidateEngine, opening, nodes, attackerRole, defenderRole) {
     const gameMoves = [];         // numeric move values
     const gameMoveStrings = [];   // algebraic strings
-    let pieceCount = getPieceCount(opening, []);
+    let pieceCount = ctrl.getPieceCount(opening, []);
     let noCaptureCount = 0;
 
     while (true) {
-        const terminal = checkTerminal(opening, gameMoves);
+        const terminal = ctrl.checkTerminal(opening, gameMoves);
         if (terminal !== undefined) {
             // terminal is Side.ATTACKERS or Side.DEFENDERS
             return terminal === Side.ATTACKERS ? attackerRole : defenderRole;
         }
 
-        const stm = getSideToMove(opening, gameMoves);
+        const stm = ctrl.getSideToMove(opening, gameMoves);
         const engineToMove = stm === Side.ATTACKERS
             ? (attackerRole === "candidate" ? candidateEngine : mainEngine)
             : (defenderRole === "candidate" ? candidateEngine : mainEngine);
@@ -342,11 +350,11 @@ async function playGame(mainEngine, candidateEngine, opening, nodes, attackerRol
             return stm === Side.ATTACKERS ? defenderRole : attackerRole;
         }
 
-        const bestMoveNum = moveStrToNum(bestMoveStr);
+        const bestMoveNum = ctrl.moveStrToNum(bestMoveStr);
         gameMoves.push(bestMoveNum);
         gameMoveStrings.push(bestMoveStr);
 
-        const newPieceCount = getPieceCount(opening, gameMoves);
+        const newPieceCount = ctrl.getPieceCount(opening, gameMoves);
         if (newPieceCount < pieceCount) {
             noCaptureCount = 0;
             pieceCount = newPieceCount;
@@ -363,11 +371,11 @@ async function playGame(mainEngine, candidateEngine, opening, nodes, attackerRol
  * Play a pair of games from the same opening with swapped colors.
  * Returns pair score for candidate: 1.0, 0.75, 0.5, 0.25, 0.0
  */
-async function playPair(mainEngine, candidateEngine, opening, nodes) {
+async function playPair(ctrl, mainEngine, candidateEngine, opening, nodes) {
     // Game 1: candidate = attacker, main = defender
-    const result1 = await playGame(mainEngine, candidateEngine, opening, nodes, "candidate", "main");
+    const result1 = await playGame(ctrl, mainEngine, candidateEngine, opening, nodes, "candidate", "main");
     // Game 2: candidate = defender, main = attacker
-    const result2 = await playGame(mainEngine, candidateEngine, opening, nodes, "main", "candidate");
+    const result2 = await playGame(ctrl, mainEngine, candidateEngine, opening, nodes, "main", "candidate");
 
     const score1 = result1 === "candidate" ? 1 : result1 === "draw" ? 0.5 : 0;
     const score2 = result2 === "candidate" ? 1 : result2 === "draw" ? 0.5 : 0;
@@ -384,11 +392,12 @@ async function createWorkerPair(engineBin, mainNet, candidateNet) {
 
     const mainEngine = new UciEngine(engineBin, mainArgs, "main");
     const candidateEngine = new UciEngine(engineBin, candidateArgs, "candidate");
+    const ctrl = new GameController();
 
     await mainEngine.init();
     await candidateEngine.init();
 
-    return { mainEngine, candidateEngine };
+    return { mainEngine, candidateEngine, ctrl };
 }
 
 // ─── Main ────────────────────────────────────────────────────────────────────
@@ -445,7 +454,7 @@ async function main() {
 
             let pairScore;
             try {
-                pairScore = await playPair(worker.mainEngine, worker.candidateEngine, opening, args.nodes);
+                pairScore = await playPair(worker.ctrl, worker.mainEngine, worker.candidateEngine, opening, args.nodes);
             } catch (err) {
                 console.error(`[Worker] pair failed: ${err.message}`);
                 break;
@@ -475,6 +484,7 @@ async function main() {
     for (const w of workerPairs) {
         w.mainEngine.dispose();
         w.candidateEngine.dispose();
+        w.ctrl.free();
     }
 
     // Re-evaluate SPRT on final cumulative state (not intermediate race decisions)

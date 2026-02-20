@@ -27,7 +27,7 @@ function parseArgs(argv) {
         noSprt: false,
         sprtNodes: 200,
         sprtOpeningMoves: 16,
-        sprtWorkers: 24,
+        sprtWorkers: 12,
         sprtMaxPairs: 2500,
         sprtElo0: 0,
         sprtElo1: 5,
@@ -225,8 +225,9 @@ async function main() {
 
     const sprtMatchScript = path.join(__dirname, "sprt-match.mjs");
 
-    for (let i = 0; i < args.iterations; i += 1) {
-        const genIdx = args.startGen + i;
+    let genIdx = args.startGen;
+    let accepted = 0;
+    while (accepted < args.iterations) {
         const name = genName(genIdx);
         const finalOnnx = path.join(args.weightsDir, `${name}.onnx`);
         const finalQnxx = path.join(args.weightsDir, `${name}.onxx`);
@@ -310,7 +311,22 @@ async function main() {
                 "--result-file", resultFile,
             ];
 
-            const passed = await runCheck("node", sprtArgs);
+            const MAX_SPRT_RETRIES = 3;
+            let passed = false;
+            for (let attempt = 1; attempt <= MAX_SPRT_RETRIES; attempt++) {
+                tryUnlink(resultFile);
+                const ok = await runCheck("node", sprtArgs);
+                if (ok || fs.existsSync(resultFile)) {
+                    // Clean exit (pass or fail) — result file exists
+                    passed = ok;
+                    break;
+                }
+                // No result file = crash, retry
+                console.log(`[SPRT] Engine crashed (attempt ${attempt}/${MAX_SPRT_RETRIES}), restarting test...`);
+                if (attempt === MAX_SPRT_RETRIES) {
+                    console.log(`[SPRT] All ${MAX_SPRT_RETRIES} attempts crashed — treating as FAILED`);
+                }
+            }
 
             if (passed) {
                 fs.renameSync(candidateOnnx, finalOnnx);
@@ -343,7 +359,14 @@ async function main() {
             tryUnlink(resultFile);
         }
 
-        console.log(`Completed generation ${genIdx}`);
+        // Only advance generation counter on acceptance
+        if (args.noSprt || (currentNet === path.normalize(finalOnnx))) {
+            genIdx++;
+            accepted++;
+            console.log(`Accepted generation ${genIdx - 1} (${accepted}/${args.iterations})`);
+        } else {
+            console.log(`Rejected generation ${genIdx}, will retry`);
+        }
     }
 
     console.log("\nOrchestration finished.");
