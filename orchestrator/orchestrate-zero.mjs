@@ -150,9 +150,8 @@ function runCheck(cmd, cmdArgs, cwd = process.cwd()) {
     });
 }
 
-function pickPython(explicit) {
+function pickPython(explicit, projectRoot) {
     if (explicit) return explicit;
-    const projectRoot = path.resolve(__dirname, "..");
     const venvPython = path.join(projectRoot, "zero-trainer", ".venv", "Scripts", "python.exe");
     if (fs.existsSync(venvPython)) return venvPython;
     return "python";
@@ -199,10 +198,26 @@ async function main() {
         process.exit(2);
     }
 
+    const projectRoot = path.resolve(__dirname, "..");
+
+    // Resolve paths: user-supplied relative paths against cwd, defaults against project root
+    const defaults = { data: "zero-trainer/selfplay.bin", weightsDir: "zero-trainer/weights", startNet: "random_init.onnx" };
+    const resolvePath = (p, key) => {
+        if (path.isAbsolute(p)) return p;
+        // If it's still the default value, resolve against project root
+        if (defaults[key] && p === defaults[key]) return path.resolve(projectRoot, p);
+        // User-supplied relative path — resolve against cwd
+        return path.resolve(p);
+    };
+    args.data = resolvePath(args.data, "data");
+    args.weightsDir = resolvePath(args.weightsDir, "weightsDir");
+    args.startNet = resolvePath(args.startNet, "startNet");
+    if (args.startCheckpoint) args.startCheckpoint = path.resolve(args.startCheckpoint);
+
     fs.mkdirSync(path.dirname(args.data), { recursive: true });
     fs.mkdirSync(args.weightsDir, { recursive: true });
 
-    const python = pickPython(args.python);
+    const python = pickPython(args.python, projectRoot);
     let currentNet = path.normalize(args.startNet);
     let currentCheckpoint = args.startCheckpoint ? path.normalize(args.startCheckpoint) : null;
     const engineBin = path.normalize(resolveEngineBinary(args.debugEngine));
@@ -245,7 +260,7 @@ async function main() {
         // ── Step 2: Training ─────────────────────────────────────────
         console.log(`Training -> candidate: ${candidateOnnx}`);
         const trainArgs = [
-            path.join(path.resolve(__dirname, ".."), "zero-trainer", "train.py"),
+            path.join(projectRoot, "zero-trainer", "train.py"),
             "--data",
             path.normalize(args.data),
             "--out",

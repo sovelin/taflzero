@@ -423,7 +423,7 @@ async function main() {
     }
 
     let pairsCompleted = 0;
-    let finalDecision = null;
+    let stopped = false;
 
     // Generate openings ahead of time in batches
     const openingQueue = [];
@@ -437,7 +437,7 @@ async function main() {
 
     // Run pairs in parallel across workers
     async function workerLoop(worker) {
-        while (pairsCompleted < args.maxPairs && !finalDecision) {
+        while (pairsCompleted < args.maxPairs && !stopped) {
             if (openingQueue.length === 0) {
                 refillOpenings(args.workers);
             }
@@ -460,8 +460,10 @@ async function main() {
                 `SPRT LLR=${status.llr.toFixed(3)} [B=${status.lowerBound.toFixed(3)}, A=${status.upperBound.toFixed(3)}] [${status.decision}]`
             );
 
-            if (status.decision !== "continue") {
-                finalDecision = status.decision;
+            // Only stop when we have enough pairs and cumulative LLR is decisive
+            // Require at least 2*workers pairs to avoid race conditions with parallel workers
+            if (status.total >= args.workers * 2 && status.decision !== "continue") {
+                stopped = true;
                 break;
             }
         }
