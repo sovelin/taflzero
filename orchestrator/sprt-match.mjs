@@ -258,7 +258,7 @@ class UciEngine {
 // ─── Opening generation ──────────────────────────────────────────────────────
 
 function createOpening(movesCount) {
-    const engine = new EngineClient(1);
+    const engine = new EngineClient(4);
     const initialFen = "3aaaaa3/5a5/11/a4d4a/a3ddd3a/aa1ddkdd1aa/a3ddd3a/a4d4a/11/5a5/3aaaaa3 a";
     engine.set_fen(initialFen);
 
@@ -287,16 +287,16 @@ function createOpening(movesCount) {
 
 class GameController {
     constructor() {
-        this.engine = new EngineClient(1);
+        this.engine = new EngineClient(4);
     }
 
     checkTerminal(fen, moves) {
-        this.engine.set_position_and_moves(fen, new Uint32Array(moves));
+        this.engine.set_position_and_moves(fen, moves);
         return this.engine.check_terminal_state();
     }
 
     getSideToMove(fen, moves) {
-        this.engine.set_position_and_moves(fen, new Uint32Array(moves));
+        this.engine.set_position_and_moves(fen, moves);
         return this.engine.side_to_move();
     }
 
@@ -309,13 +309,13 @@ class GameController {
     }
 
     getPieceCount(fen, moves) {
-        this.engine.set_position_and_moves(fen, new Uint32Array(moves));
+        this.engine.set_position_and_moves(fen, moves);
         const board = this.engine.get_board_state();
         return board.filter((sq) => sq !== 0).length;
     }
 
     free() {
-        this.engine.free();
+        try { this.engine.free(); } catch {}
     }
 }
 
@@ -354,7 +354,17 @@ async function playGame(ctrl, mainEngine, candidateEngine, opening, nodes, attac
         gameMoves.push(bestMoveNum);
         gameMoveStrings.push(bestMoveStr);
 
-        const newPieceCount = ctrl.getPieceCount(opening, gameMoves);
+        let newPieceCount;
+        try {
+            newPieceCount = ctrl.getPieceCount(opening, gameMoves);
+        } catch (err) {
+            console.error(`[DEBUG] getPieceCount crashed after move ${gameMoveStrings.length}`);
+            console.error(`[DEBUG] FEN: ${opening}`);
+            console.error(`[DEBUG] Moves: ${gameMoveStrings.join(" ")}`);
+            console.error(`[DEBUG] Last move: ${bestMoveStr} (raw: ${bestMoveNum})`);
+            console.error(`[DEBUG] Error: ${err.stack || err.message || err}`);
+            throw err;
+        }
         if (newPieceCount < pieceCount) {
             noCaptureCount = 0;
             pieceCount = newPieceCount;
@@ -433,6 +443,7 @@ async function main() {
 
     let pairsCompleted = 0;
     let stopped = false;
+    let crossingDecision = null;  // decision when LLR first crossed a boundary
 
     // Generate openings ahead of time in batches
     const openingQueue = [];
@@ -472,6 +483,7 @@ async function main() {
             // Only stop when we have enough pairs and cumulative LLR is decisive
             // Require at least 2*workers pairs to avoid race conditions with parallel workers
             if (status.total >= args.workers * 2 && status.decision !== "continue") {
+                if (!crossingDecision) crossingDecision = status.decision;
                 stopped = true;
                 break;
             }
@@ -487,11 +499,12 @@ async function main() {
         w.ctrl.free();
     }
 
-    // Re-evaluate SPRT on final cumulative state (not intermediate race decisions)
+    // Use crossing decision if LLR crossed a boundary before in-flight pairs diluted it
     const status = sprt.status();
-    const actualDecision = status.llr >= status.upperBound ? "acceptH1"
+    const finalLlrDecision = status.llr >= status.upperBound ? "acceptH1"
         : status.llr <= status.lowerBound ? "acceptH0"
-        : "maxPairs";
+        : null;
+    const actualDecision = finalLlrDecision ?? crossingDecision ?? "maxPairs";
     const passed = actualDecision === "acceptH1";
 
     // Compute Elo difference from score percentage
