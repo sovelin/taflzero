@@ -245,7 +245,11 @@ class UciEngine {
         this.send(`go nodes ${nodes}`);
         const line = await this.waitFor((l) => l.startsWith("bestmove"), 120000);
         const match = line.match(/bestmove\s+(\S+)/);
-        return match ? match[1] : null;
+        if (!match) return null;
+        const move = match[1];
+        // a1a1 = null move (from==to), means stalemate
+        if (move === "a1a1" || move === "(none)") return null;
+        return move;
     }
 
     dispose() {
