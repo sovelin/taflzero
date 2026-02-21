@@ -21,6 +21,7 @@ function parseArgs(argv) {
         lr: 1e-3,
         weightDecay: 1e-4,
         defenderWeight: 0.25,
+        engineBin: null,
         debugEngine: false,
         workers: 1,
         // SPRT options
@@ -52,6 +53,7 @@ function parseArgs(argv) {
         else if (a === "--weight-decay") args.weightDecay = floatArg(next(), a, 0);
         else if (a === "--defender-weight") args.defenderWeight = floatArg(next(), a, 0);
         else if (a === "--workers") args.workers = intArg(next(), a, 1);
+        else if (a === "--engine-bin") args.engineBin = required(next(), a);
         else if (a === "--debug-engine") args.debugEngine = true;
         else if (a === "--no-sprt") args.noSprt = true;
         else if (a === "--sprt-nodes") args.sprtNodes = intArg(next(), a, 1);
@@ -220,8 +222,12 @@ async function main() {
     const python = pickPython(args.python, projectRoot);
     let currentNet = path.normalize(args.startNet);
     let currentCheckpoint = args.startCheckpoint ? path.normalize(args.startCheckpoint) : null;
-    const engineBin = path.normalize(resolveEngineBinary(args.debugEngine));
-    await ensureEngineBinary(args.debugEngine, engineBin);
+    const engineBin = args.engineBin
+        ? path.resolve(args.engineBin)
+        : path.normalize(resolveEngineBinary(args.debugEngine));
+    if (!args.engineBin) {
+        await ensureEngineBinary(args.debugEngine, engineBin);
+    }
 
     const sprtMatchScript = path.join(__dirname, "sprt-match.mjs");
 

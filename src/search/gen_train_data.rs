@@ -129,6 +129,12 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> (Vec<PendingSa
 
             if let Some(result) = check_terminal(&mut board) {
                 game_result = Some(result);
+
+                if result == Side::ATTACKERS {
+                    // print board
+                    println!("Board:\n{}", board);
+                }
+
                 break;
             }
         } else {
