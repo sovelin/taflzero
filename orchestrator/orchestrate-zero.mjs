@@ -32,6 +32,8 @@ function parseArgs(argv) {
         sprtMaxPairs: 2500,
         sprtElo0: 0,
         sprtElo1: 5,
+        sprtAlpha: 0.05,
+        sprtBeta: 0.05,
     };
 
     for (let i = 0; i < argv.length; i += 1) {
@@ -62,6 +64,8 @@ function parseArgs(argv) {
         else if (a === "--sprt-max-pairs") args.sprtMaxPairs = intArg(next(), a, 1);
         else if (a === "--sprt-elo0") args.sprtElo0 = floatArg(next(), a, -Infinity);
         else if (a === "--sprt-elo1") args.sprtElo1 = floatArg(next(), a, -Infinity);
+        else if (a === "--sprt-alpha") args.sprtAlpha = floatArg(next(), a, 0);
+        else if (a === "--sprt-beta") args.sprtBeta = floatArg(next(), a, 0);
         else if (a === "--help" || a === "-h") {
             printHelp();
             process.exit(0);
@@ -121,6 +125,8 @@ function printHelp() {
             "  --sprt-max-pairs <N>      Max game pairs before failing (default: 2500)",
             "  --sprt-elo0 <N>           SPRT H0 elo (default: 0)",
             "  --sprt-elo1 <N>           SPRT H1 elo (default: 5)",
+            "  --sprt-alpha <F>          Type I error rate (default: 0.05)",
+            "  --sprt-beta <F>           Type II error rate (default: 0.05)",
             "",
             "Runtime:",
             "  --workers <N>             Parallel engine processes for datagen (default: 1)",
@@ -314,6 +320,8 @@ async function main() {
                 "--max-pairs", String(args.sprtMaxPairs),
                 "--sprt-elo0", String(args.sprtElo0),
                 "--sprt-elo1", String(args.sprtElo1),
+                "--sprt-alpha", String(args.sprtAlpha),
+                "--sprt-beta", String(args.sprtBeta),
                 "--result-file", resultFile,
             ];
 
