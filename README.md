@@ -46,3 +46,6 @@ node orchestrate-zero.mjs --iterations 20 --games-per-gen 3000 --window 15000 --
 ## New pipeline with validation
 
 `node orchestrate-zero.mjs --iterations 1000 --games-per-gen 40000 --window 200000 --steps 1600 --batch 256 --lr 7e-4 --workers 24 --defender-weight 0.3 --start-net ..\zero-trainer\weights\gen0006.onnx --start-checkpoint ..\zero-trainer\weights\gen0006.onxx --start-gen 7 --sprt-elo1 10 --sprt-nodes 200 --sprt-max-pairs 10000 --engine-bin ..\target\release\zevratafl-rust.exe`
+
+Without SPRT validation:
+`node orchestrate-zero.mjs --iterations 1000 --games-per-gen 60000 --window 240000 --steps 500 --batch 256 --lr 7e-4 --workers 24 --defender-weight 0.3 --start-net ..\zero-trainer\weights\gen0014.onnx --start-checkpoint ..\zero-trainer\weights\gen0014.onxx --start-gen 15 --sprt-elo1 10 --sprt-nodes 50 --sprt-max-pairs 20000 --sprt-alpha 0.10 --sprt-beta 0.10 --engine-bin ..\target\release\zevratafl-rust.exe --no-sprt --anchor-net ..\zero-trainer\weights\gen0014.onnx --anchor-pairs 1000`            

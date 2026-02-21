@@ -26,6 +26,8 @@ function parseArgs(argv) {
         workers: 1,
         // SPRT options
         noSprt: false,
+        noGate: false,
+        noGatePairs: 100,
         sprtNodes: 200,
         sprtOpeningMoves: 16,
         sprtWorkers: 12,
@@ -34,6 +36,8 @@ function parseArgs(argv) {
         sprtElo1: 5,
         sprtAlpha: 0.05,
         sprtBeta: 0.05,
+        anchorNet: null,
+        anchorPairs: 100,
     };
 
     for (let i = 0; i < argv.length; i += 1) {
@@ -58,6 +62,8 @@ function parseArgs(argv) {
         else if (a === "--engine-bin") args.engineBin = required(next(), a);
         else if (a === "--debug-engine") args.debugEngine = true;
         else if (a === "--no-sprt") args.noSprt = true;
+        else if (a === "--no-gate") args.noGate = true;
+        else if (a === "--no-gate-pairs") args.noGatePairs = intArg(next(), a, 1);
         else if (a === "--sprt-nodes") args.sprtNodes = intArg(next(), a, 1);
         else if (a === "--sprt-opening-moves") args.sprtOpeningMoves = intArg(next(), a, 0);
         else if (a === "--sprt-workers") args.sprtWorkers = intArg(next(), a, 1);
@@ -66,6 +72,8 @@ function parseArgs(argv) {
         else if (a === "--sprt-elo1") args.sprtElo1 = floatArg(next(), a, -Infinity);
         else if (a === "--sprt-alpha") args.sprtAlpha = floatArg(next(), a, 0);
         else if (a === "--sprt-beta") args.sprtBeta = floatArg(next(), a, 0);
+        else if (a === "--anchor-net") args.anchorNet = required(next(), a);
+        else if (a === "--anchor-pairs") args.anchorPairs = intArg(next(), a, 1);
         else if (a === "--help" || a === "-h") {
             printHelp();
             process.exit(0);
@@ -119,6 +127,8 @@ function printHelp() {
             "",
             "SPRT validation (after each training):",
             "  --no-sprt                 Skip SPRT validation (accept every network)",
+            "  --no-gate                 Always accept candidate, but run match for Elo measurement",
+            "  --no-gate-pairs <N>       Number of pairs to play in no-gate mode (default: 100)",
             "  --sprt-nodes <N>          MCTS nodes per move for SPRT games (default: 200)",
             "  --sprt-opening-moves <N>  Random moves for opening generation (default: 16)",
             "  --sprt-workers <N>        Parallel SPRT game workers (default: 24)",
@@ -127,6 +137,10 @@ function printHelp() {
             "  --sprt-elo1 <N>           SPRT H1 elo (default: 5)",
             "  --sprt-alpha <F>          Type I error rate (default: 0.05)",
             "  --sprt-beta <F>           Type II error rate (default: 0.05)",
+            "",
+            "Anchor testing (absolute Elo measurement):",
+            "  --anchor-net <path>       Play each accepted net against this anchor for absolute Elo",
+            "  --anchor-pairs <N>        Pairs to play against anchor (default: 100)",
             "",
             "Runtime:",
             "  --workers <N>             Parallel engine processes for datagen (default: 1)",
@@ -221,6 +235,7 @@ async function main() {
     args.weightsDir = resolvePath(args.weightsDir, "weightsDir");
     args.startNet = resolvePath(args.startNet, "startNet");
     if (args.startCheckpoint) args.startCheckpoint = path.resolve(args.startCheckpoint);
+    if (args.anchorNet) args.anchorNet = path.resolve(args.anchorNet);
 
     fs.mkdirSync(path.dirname(args.data), { recursive: true });
     fs.mkdirSync(args.weightsDir, { recursive: true });
@@ -306,6 +321,59 @@ async function main() {
             currentNet = path.normalize(finalOnnx);
             currentCheckpoint = path.normalize(finalQnxx);
             console.log(`[no-sprt] Accepted candidate as ${name}`);
+        } else if (args.noGate) {
+            // No gating — always accept, but run match for Elo measurement
+            console.log(`\n--- Elo measurement: ${name} candidate vs current (${args.noGatePairs} pairs) ---`);
+            const resultFile = path.join(args.weightsDir, `${name}.sprt.json`);
+            const matchArgs = [
+                sprtMatchScript,
+                "--main-net", currentNet,
+                "--candidate-net", path.normalize(candidateOnnx),
+                "--engine-bin", engineBin,
+                "--nodes", String(args.sprtNodes),
+                "--opening-moves", String(args.sprtOpeningMoves),
+                "--workers", String(args.sprtWorkers),
+                "--max-pairs", String(args.noGatePairs),
+                "--no-gate",
+                "--result-file", resultFile,
+            ];
+
+            const MAX_RETRIES = 3;
+            for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+                tryUnlink(resultFile);
+                const ok = await runCheck("node", matchArgs);
+                if (ok || fs.existsSync(resultFile)) break;
+                console.log(`[Match] Engine crashed (attempt ${attempt}/${MAX_RETRIES}), restarting...`);
+            }
+
+            // Always accept candidate
+            fs.renameSync(candidateOnnx, finalOnnx);
+            fs.renameSync(candidateQnxx, finalQnxx);
+            currentNet = path.normalize(finalOnnx);
+            currentCheckpoint = path.normalize(finalQnxx);
+
+            // Log Elo to CSV
+            if (fs.existsSync(resultFile)) {
+                try {
+                    const result = JSON.parse(fs.readFileSync(resultFile, "utf-8"));
+                    const csvPath = path.join(args.weightsDir, "sprt-results.csv");
+                    const needsHeader = !fs.existsSync(csvPath);
+                    const csvLine = `${name},${result.eloDiff.toFixed(1)},${result.pct.toFixed(1)},${result.score},${result.total},${result.wins},${result.losses},${result.draws},${result.llr.toFixed(3)}\n`;
+                    if (needsHeader) {
+                        fs.writeFileSync(csvPath, "generation,elo,score_pct,score,pairs,wins,losses,draws,llr\n" + csvLine);
+                    } else {
+                        fs.appendFileSync(csvPath, csvLine);
+                    }
+                    console.log(`[no-gate] Accepted ${name} (Elo: ${result.eloDiff.toFixed(1)})`);
+                } catch {
+                    console.log(`[no-gate] Accepted ${name} (Elo measurement failed)`);
+                }
+            } else {
+                console.log(`[no-gate] Accepted ${name} (no measurement)`);
+            }
+
+            // Clean up result file
+            tryUnlink(resultFile);
         } else {
             console.log(`\n--- SPRT validation: ${name} candidate vs current ---`);
             const resultFile = path.join(args.weightsDir, `${name}.sprt.json`);
@@ -374,7 +442,51 @@ async function main() {
         }
 
         // Only advance generation counter on acceptance
-        if (args.noSprt || (currentNet === path.normalize(finalOnnx))) {
+        if (args.noSprt || args.noGate || (currentNet === path.normalize(finalOnnx))) {
+            // ── Step 4: Anchor test (absolute Elo) ──────────────────────
+            if (args.anchorNet) {
+                console.log(`\n--- Anchor test: ${name} vs anchor (${args.anchorPairs} pairs) ---`);
+                const anchorResultFile = path.join(args.weightsDir, `${name}.anchor.json`);
+                const anchorArgs = [
+                    sprtMatchScript,
+                    "--main-net", path.normalize(args.anchorNet),
+                    "--candidate-net", path.normalize(finalOnnx),
+                    "--engine-bin", engineBin,
+                    "--nodes", String(args.sprtNodes),
+                    "--opening-moves", String(args.sprtOpeningMoves),
+                    "--workers", String(args.sprtWorkers),
+                    "--max-pairs", String(args.anchorPairs),
+                    "--no-gate",
+                    "--result-file", anchorResultFile,
+                ];
+
+                const MAX_RETRIES = 3;
+                for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+                    tryUnlink(anchorResultFile);
+                    const ok = await runCheck("node", anchorArgs);
+                    if (ok || fs.existsSync(anchorResultFile)) break;
+                    console.log(`[Anchor] Engine crashed (attempt ${attempt}/${MAX_RETRIES}), restarting...`);
+                }
+
+                if (fs.existsSync(anchorResultFile)) {
+                    try {
+                        const result = JSON.parse(fs.readFileSync(anchorResultFile, "utf-8"));
+                        const csvPath = path.join(args.weightsDir, "anchor-results.csv");
+                        const needsHeader = !fs.existsSync(csvPath);
+                        const csvLine = `${name},${result.eloDiff.toFixed(1)},${result.pct.toFixed(1)},${result.score},${result.total},${result.wins},${result.losses},${result.draws}\n`;
+                        if (needsHeader) {
+                            fs.writeFileSync(csvPath, "generation,elo_vs_anchor,score_pct,score,pairs,wins,losses,draws\n" + csvLine);
+                        } else {
+                            fs.appendFileSync(csvPath, csvLine);
+                        }
+                        console.log(`[Anchor] ${name}: Elo ${result.eloDiff.toFixed(1)} vs anchor`);
+                    } catch {
+                        console.log(`[Anchor] ${name}: measurement failed`);
+                    }
+                }
+                tryUnlink(anchorResultFile);
+            }
+
             genIdx++;
             accepted++;
             console.log(`Accepted generation ${genIdx - 1} (${accepted}/${args.iterations})`);

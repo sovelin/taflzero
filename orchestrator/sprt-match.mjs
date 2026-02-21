@@ -42,6 +42,7 @@ function parseArgs(argv) {
         sprtAlpha: 0.05,
         sprtBeta: 0.05,
         resultFile: null,
+        noGate: false,
     };
 
     for (let i = 0; i < argv.length; i++) {
@@ -60,6 +61,7 @@ function parseArgs(argv) {
         else if (a === "--sprt-alpha") args.sprtAlpha = parseFloat(next());
         else if (a === "--sprt-beta") args.sprtBeta = parseFloat(next());
         else if (a === "--result-file") args.resultFile = next();
+        else if (a === "--no-gate") args.noGate = true;
         else if (a === "--help" || a === "-h") { printHelp(); process.exit(0); }
         else throw new Error(`Unknown arg: ${a}`);
     }
@@ -484,12 +486,15 @@ async function main() {
                 `SPRT LLR=${status.llr.toFixed(3)} [B=${status.lowerBound.toFixed(3)}, A=${status.upperBound.toFixed(3)}] [${status.decision}]`
             );
 
-            // Only stop when we have enough pairs and cumulative LLR is decisive
-            // Require at least 2*workers pairs to avoid race conditions with parallel workers
-            if (status.total >= args.workers * 2 && status.decision !== "continue") {
-                if (!crossingDecision) crossingDecision = status.decision;
-                stopped = true;
-                break;
+            // In no-gate mode, play all pairs without early stopping
+            if (!args.noGate) {
+                // Only stop when we have enough pairs and cumulative LLR is decisive
+                // Require at least 2*workers pairs to avoid race conditions with parallel workers
+                if (status.total >= args.workers * 2 && status.decision !== "continue") {
+                    if (!crossingDecision) crossingDecision = status.decision;
+                    stopped = true;
+                    break;
+                }
             }
         }
     }
@@ -534,7 +539,10 @@ async function main() {
         writeFileSync(args.resultFile, JSON.stringify(result));
     }
 
-    if (passed) {
+    if (args.noGate) {
+        console.log(`\n[Match] Elo=${eloDiff.toFixed(1)}, Score: ${status.score.toFixed(1)}/${status.total} (${status.pct.toFixed(1)}%)`);
+        process.exit(0);
+    } else if (passed) {
         console.log(`\n[SPRT] PASSED — candidate is stronger (LLR=${status.llr.toFixed(3)}, Elo=${eloDiff.toFixed(1)})`);
         console.log(`Score: ${status.score.toFixed(1)}/${status.total} (${status.pct.toFixed(1)}%)`);
         process.exit(0);
