@@ -447,23 +447,15 @@ fn select_leaf(
     let mut path = vec![cur];
 
     // Descend via PUCT until we hit a leaf or a newly-terminal node
-    let mut mid_terminal: Option<Side> = None;
     while !tree.get_node(cur).is_leaf() && !tree.get_node(cur).children.is_empty() {
         cur = puct_select(tree, cur);
         path.push(cur);
         let node = tree.get_node(cur);
         move_stack.make_move(board, node.mv.expect("Move not found"));
-
-        // An expanded node may have become terminal due to repetition
-        // (game history changed since the node was first expanded)
-        if let Some(winner) = check_terminal(board) {
-            mid_terminal = Some(winner);
-            break;
-        }
     }
 
     // Check if this is a terminal position
-    let is_terminal = mid_terminal.or_else(|| check_terminal(board));
+    let is_terminal = check_terminal(board);
 
     let pending = if let Some(winner) = is_terminal {
         let value = if board.side_to_move == winner { 1.0 } else { -1.0 };
