@@ -480,10 +480,25 @@ async function main() {
             pairsCompleted++;
             const status = sprt.record(pairScore);
 
+            // Compute Elo + 95% CI from score
+            const sc = status.score / status.total;
+            const elo = sc > 0 && sc < 1 ? -400 * Math.log10(1 / sc - 1) : sc >= 1 ? 999 : -999;
+            // Wilson-style CI on score, then convert to Elo
+            const z = 1.96;
+            const se = Math.sqrt(sc * (1 - sc) / status.total);
+            const scLo = Math.max(0.001, sc - z * se);
+            const scHi = Math.min(0.999, sc + z * se);
+            const eloLo = -400 * Math.log10(1 / scLo - 1);
+            const eloHi = -400 * Math.log10(1 / scHi - 1);
+
+            const drawPct = (status.draws / status.total * 100).toFixed(1);
+
             console.log(
                 `Pair ${pairsCompleted}: dev=${pairScore.toFixed(2)} | ` +
-                `Score: ${status.score.toFixed(1)}/${status.total} (${status.pct.toFixed(1)}%) | ` +
-                `SPRT LLR=${status.llr.toFixed(3)} [B=${status.lowerBound.toFixed(3)}, A=${status.upperBound.toFixed(3)}] [${status.decision}]`
+                `W:${status.wins} L:${status.losses} D:${status.draws} | ` +
+                `Score: ${status.pct.toFixed(1)}% | Draws: ${drawPct}% | ` +
+                `Elo: ${elo.toFixed(1)} [${eloLo.toFixed(1)}, ${eloHi.toFixed(1)}] | ` +
+                `LLR=${status.llr.toFixed(3)} [B=${status.lowerBound.toFixed(3)}, A=${status.upperBound.toFixed(3)}] [${status.decision}]`
             );
 
             // In no-gate mode, play all pairs without early stopping
