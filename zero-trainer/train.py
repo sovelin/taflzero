@@ -98,6 +98,7 @@ def train(
     lr: float,
     weight_decay: float,
     defender_weight: float,
+    early_stopping_patience: int,
     device: torch.device,
 ) -> None:
     model.to(device)
@@ -132,6 +133,9 @@ def train(
     running_p = 0.0
     running_v = 0.0
     t0 = time.time()
+    best_val_loss = float("inf")
+    best_state_dict = None
+    patience_counter = 0
 
     for step, (planes, legal_mask, pi_target, value_target) in enumerate(
         itertools.islice(infinite_dataloader(loader), steps), 1
@@ -177,10 +181,31 @@ def train(
                 f"{speed:.0f} samples/s"
             )
 
+            # Early stopping check
+            if early_stopping_patience > 0:
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    best_state_dict = {k: v.clone() for k, v in model.state_dict().items()}
+                    patience_counter = 0
+                else:
+                    patience_counter += 1
+                    if patience_counter >= early_stopping_patience:
+                        print(f"\nEarly stopping at step {step} (no improvement for {patience_counter} checks)")
+                        model.load_state_dict(best_state_dict)
+                        break
+            elif val_loss < best_val_loss:
+                best_val_loss = val_loss
+                best_state_dict = {k: v.clone() for k, v in model.state_dict().items()}
+
             running_loss = 0.0
             running_p = 0.0
             running_v = 0.0
             t0 = time.time()
+
+    # Restore best model if we tracked it
+    if best_state_dict is not None:
+        model.load_state_dict(best_state_dict)
+        print(f"Restored best model (val_loss={best_val_loss:.4f})")
 
 
 def main() -> None:
@@ -195,6 +220,7 @@ def main() -> None:
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
     parser.add_argument("--weight-decay", type=float, default=1e-4, help="Weight decay (L2 regularization)")
     parser.add_argument("--defender-weight", type=float, default=0.25, help="Loss weight for defender-win samples (1.0 = no reweighting)")
+    parser.add_argument("--early-stopping-patience", type=int, default=0, help="Stop if val_loss doesn't improve for N checks (0 = disabled)")
     args = parser.parse_args()
 
     if not args.data.exists():
@@ -240,6 +266,7 @@ def main() -> None:
         lr=args.lr,
         weight_decay=args.weight_decay,
         defender_weight=args.defender_weight,
+        early_stopping_patience=args.early_stopping_patience,
         device=device,
     )
 

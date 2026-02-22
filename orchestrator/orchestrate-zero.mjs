@@ -38,6 +38,7 @@ function parseArgs(argv) {
         sprtBeta: 0.05,
         anchorNet: null,
         anchorPairs: 100,
+        earlyStoppingPatience: 0,
     };
 
     for (let i = 0; i < argv.length; i += 1) {
@@ -74,6 +75,7 @@ function parseArgs(argv) {
         else if (a === "--sprt-beta") args.sprtBeta = floatArg(next(), a, 0);
         else if (a === "--anchor-net") args.anchorNet = required(next(), a);
         else if (a === "--anchor-pairs") args.anchorPairs = intArg(next(), a, 1);
+        else if (a === "--early-stopping-patience") args.earlyStoppingPatience = intArg(next(), a, 0);
         else if (a === "--help" || a === "-h") {
             printHelp();
             process.exit(0);
@@ -307,6 +309,8 @@ async function main() {
             String(args.weightDecay),
             "--defender-weight",
             String(args.defenderWeight),
+            "--early-stopping-patience",
+            String(args.earlyStoppingPatience),
         ];
         if (currentCheckpoint) {
             trainArgs.push("--checkpoint", currentCheckpoint);
