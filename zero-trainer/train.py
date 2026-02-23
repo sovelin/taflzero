@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import itertools
+import json
 import sys
 import time
 from pathlib import Path
@@ -100,7 +101,7 @@ def train(
     defender_weight: float,
     early_stopping_patience: int,
     device: torch.device,
-) -> None:
+) -> dict:
     model.to(device)
     model.train()
 
@@ -135,6 +136,9 @@ def train(
     t0 = time.time()
     best_val_loss = float("inf")
     best_state_dict = None
+    best_step = 0
+    final_step = 0
+    final_val_loss = 0.0
     patience_counter = 0
 
     for step, (planes, legal_mask, pi_target, value_target) in enumerate(
@@ -185,6 +189,7 @@ def train(
             if early_stopping_patience > 0:
                 if val_loss < best_val_loss:
                     best_val_loss = val_loss
+                    best_step = step
                     best_state_dict = {k: v.clone() for k, v in model.state_dict().items()}
                     patience_counter = 0
                 else:
@@ -192,10 +197,17 @@ def train(
                     if patience_counter >= early_stopping_patience:
                         print(f"\nEarly stopping at step {step} (no improvement for {patience_counter} checks)")
                         model.load_state_dict(best_state_dict)
+                        final_step = step
+                        final_val_loss = val_loss
                         break
             elif val_loss < best_val_loss:
                 best_val_loss = val_loss
+                best_step = step
                 best_state_dict = {k: v.clone() for k, v in model.state_dict().items()}
+
+            # Track final values
+            final_step = step
+            final_val_loss = val_loss
 
             running_loss = 0.0
             running_p = 0.0
@@ -206,6 +218,13 @@ def train(
     if best_state_dict is not None:
         model.load_state_dict(best_state_dict)
         print(f"Restored best model (val_loss={best_val_loss:.4f})")
+
+    return {
+        "best_step": best_step,
+        "total_steps": final_step,
+        "best_val_loss": best_val_loss,
+        "final_val_loss": final_val_loss,
+    }
 
 
 def main() -> None:
@@ -257,7 +276,7 @@ def main() -> None:
     print(f"Steps: {steps}")
 
     # Train
-    train(
+    training_summary = train(
         model,
         train_dataset,
         val_dataset,
@@ -280,6 +299,12 @@ def main() -> None:
     if args.save_checkpoint:
         save_qnxx(model, args.save_checkpoint)
         print(f"Saved checkpoint: {args.save_checkpoint}")
+
+        # Save training summary
+        summary_path = args.save_checkpoint.with_suffix('.json')
+        with open(summary_path, 'w') as f:
+            json.dump(training_summary, f, indent=2)
+        print(f"Saved training summary: {summary_path}")
 
 
 if __name__ == "__main__":
