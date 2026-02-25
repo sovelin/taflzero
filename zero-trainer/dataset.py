@@ -118,7 +118,7 @@ def _read_sample_at(f, offset: int) -> tuple[torch.Tensor, torch.Tensor, torch.T
         policy_visits[move_index] = float(visits)
 
     # Sharpen visit distribution with temperature (lower = sharper)
-    POLICY_TARGET_TEMP = 1.0
+    POLICY_TARGET_TEMP = 0.6
     if POLICY_TARGET_TEMP != 1.0:
         policy_visits = np.power(policy_visits, 1.0 / POLICY_TARGET_TEMP)
 
