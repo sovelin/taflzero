@@ -775,21 +775,6 @@ export class SearchIterationResponse {
         wasm.__wbg_set_searchiterationresponse_depth(this.__wbg_ptr, arg0);
     }
     /**
-     * @returns {Move}
-     */
-    get mv() {
-        const ret = wasm.__wbg_get_searchiterationresponse_mv(this.__wbg_ptr);
-        return Move.__wrap(ret);
-    }
-    /**
-     * @param {Move} arg0
-     */
-    set mv(arg0) {
-        _assertClass(arg0, Move);
-        var ptr0 = arg0.__destroy_into_raw();
-        wasm.__wbg_set_searchiterationresponse_mv(this.__wbg_ptr, ptr0);
-    }
-    /**
      * @returns {number}
      */
     get score() {

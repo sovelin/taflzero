@@ -134,6 +134,37 @@ impl MCTSTree {
         &self.nodes[ROOT_ID]
     }
 
+    pub fn get_pv(&self) -> Vec<Move> {
+        let mut pv = Vec::new();
+        let mut cur = ROOT_ID;
+
+        loop {
+            let node = self.get_node(cur);
+            if node.children.is_empty() {
+                break;
+            }
+            let best = node.children.iter()
+                .max_by(|&&a, &&b| {
+                    self.get_node(a).visits.partial_cmp(&self.get_node(b).visits).unwrap()
+                });
+            match best {
+                Some(&child_id) => {
+                    let child = self.get_node(child_id);
+                    if child.visits == 0.0 {
+                        break;
+                    }
+                    if let Some(mv) = child.mv {
+                        pv.push(mv);
+                    }
+                    cur = child_id;
+                }
+                None => break,
+            }
+        }
+
+        pv
+    }
+
     fn get_root_mut(&mut self) -> &mut MCTSNode {
         &mut self.nodes[ROOT_ID]
     }
@@ -675,11 +706,11 @@ pub fn mcts_search(
 
                     callback(SearchIterationResponse {
                         depth: 0,
-                        mv: best.mv.unwrap_or_default(),
                         score,
                         nodes: iteration,
                         time: elapsed,
                         speed,
+                        pv: tree.get_pv(),
                     });
                 }
             }

@@ -65,7 +65,6 @@ export class SearchIterationResponse {
   free(): void;
   [Symbol.dispose](): void;
   depth: number;
-  mv: Move;
   score: number;
   nodes: bigint;
   time: bigint;
@@ -100,7 +99,6 @@ export interface InitOutput {
   readonly __wbg_engine_free: (a: number, b: number) => void;
   readonly __wbg_engineclient_free: (a: number, b: number) => void;
   readonly __wbg_get_searchiterationresponse_depth: (a: number) => number;
-  readonly __wbg_get_searchiterationresponse_mv: (a: number) => number;
   readonly __wbg_get_searchiterationresponse_nodes: (a: number) => bigint;
   readonly __wbg_get_searchiterationresponse_score: (a: number) => number;
   readonly __wbg_get_searchiterationresponse_speed: (a: number) => bigint;
@@ -111,7 +109,6 @@ export interface InitOutput {
   readonly __wbg_searchiterationresponse_free: (a: number, b: number) => void;
   readonly __wbg_searchresponse_free: (a: number, b: number) => void;
   readonly __wbg_set_searchiterationresponse_depth: (a: number, b: number) => void;
-  readonly __wbg_set_searchiterationresponse_mv: (a: number, b: number) => void;
   readonly __wbg_set_searchiterationresponse_nodes: (a: number, b: bigint) => void;
   readonly __wbg_set_searchiterationresponse_score: (a: number, b: number) => void;
   readonly __wbg_set_searchiterationresponse_speed: (a: number, b: bigint) => void;
