@@ -96,7 +96,7 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> (Vec<PendingSa
         let iterations = if board.side_to_move == Side::ATTACKERS {
             800
         } else {
-            800
+            400
         };
 
         let mv = mcts_search(&mut board, &mut mcts_tree, nn, search_data, None, Some(iterations), &config);
@@ -128,11 +128,17 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> (Vec<PendingSa
             // }
 
             if let Some(result) = check_terminal(&mut board) {
-                game_result = Some(result);
 
-                if result == Side::ATTACKERS {
-                    // print board
-                    println!("Board:\n{}", board);
+                // threefold repetition can also cause terminal, but we want to treat it as draw for training
+                if result == Side::ATTACKERS && is_threefold_repetition(&board) {
+                    game_result = None;
+                } else {
+                    game_result = Some(result);
+
+                    if result == Side::ATTACKERS {
+                        // print board
+                        println!("Board:\n{}", board);
+                    }
                 }
 
                 break;
@@ -184,6 +190,9 @@ pub fn gen_train_data(output_path: &str, nn: &mut NeuralNet, game_limit: Option<
         }
 
         let (res, game_result) = play_game(nn, &mut search_data);
+        if game_result.is_none() { continue; }
+
+
         let is_defender_win = game_result == Some(Side::DEFENDERS);
 
         if is_defender_win {
@@ -192,6 +201,7 @@ pub fn gen_train_data(output_path: &str, nn: &mut NeuralNet, game_limit: Option<
                 continue;
             }
         }
+
 
         positions_generated += res.len();
         games_saved += 1;
