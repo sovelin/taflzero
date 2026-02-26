@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::hash::{BuildHasher, Hasher};
 use rand::distr::Distribution;
 use rand::rngs::StdRng;
@@ -618,18 +619,16 @@ pub fn mcts_search(
             batch_size
         };
         let this_batch = batch_size.min(remaining);
+        let mut selected_nodes: HashSet<NodeId> = HashSet::with_capacity(this_batch);
 
         for _ in 0..this_batch {
             if let Some(leaf) = select_leaf(board, tree, &mut move_stack, &mut mv_generator) {
-                apply_virtual_loss(tree, &leaf.path);
-
-                // If we selected the same leaf again (all paths converge), flush early
-                let dominated = leaf.terminal_value.is_none()
-                    && pending_leaves.iter().any(|p| p.node_id == leaf.node_id);
-                pending_leaves.push(leaf);
-                if dominated {
+                if !selected_nodes.insert(leaf.node_id) {
+                    // Strict dedup: do not add the same leaf twice in one micro-batch.
                     break;
                 }
+                apply_virtual_loss(tree, &leaf.path);
+                pending_leaves.push(leaf);
             } else {
                 break;
             }
