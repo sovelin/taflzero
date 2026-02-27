@@ -46,6 +46,75 @@ _CORNERS_PLANE = np.zeros(SQS, dtype=np.float32)
 for _sq in CORNERS_SQ:
     _CORNERS_PLANE[_sq] = 1.0
 
+# ============================================================
+# Board symmetry augmentation (D4: 4 rotations + 4 reflections)
+# Directions: Up=0, Down=1, Left=2, Right=3
+# ============================================================
+_N = BOARD_SIZE - 1  # 10
+
+_SYM_POS = [
+    lambda r, c: (r, c),
+    lambda r, c: (c, _N - r),
+    lambda r, c: (_N - r, _N - c),
+    lambda r, c: (_N - c, r),
+    lambda r, c: (r, _N - c),
+    lambda r, c: (_N - r, c),
+    lambda r, c: (c, r),
+    lambda r, c: (_N - c, _N - r),
+]
+
+_DIR_MAPS = [
+    [0, 1, 2, 3],  # identity
+    [3, 2, 0, 1],  # rot90CW:  Up->Right, Down->Left, Left->Up,    Right->Down
+    [1, 0, 3, 2],  # rot180:   Up->Down,  Down->Up,   Left->Right, Right->Left
+    [2, 3, 1, 0],  # rot270CW: Up->Left,  Down->Right, Left->Down, Right->Up
+    [0, 1, 3, 2],  # flipH:    Up->Up,    Down->Down,  Left->Right, Right->Left
+    [1, 0, 2, 3],  # flipV:    Up->Down,  Down->Up,    Left->Left,  Right->Right
+    [2, 3, 0, 1],  # flipD:    Up->Left,  Down->Right, Left->Up,   Right->Down
+    [3, 2, 1, 0],  # flipA:    Up->Right, Down->Left,  Left->Down, Right->Up
+]
+
+
+def _build_policy_perm(sym_idx: int) -> np.ndarray:
+    """Precompute gather permutation: new_policy = old_policy[perm]."""
+    pos_fn = _SYM_POS[sym_idx]
+    dir_map = _DIR_MAPS[sym_idx]
+    DIRS, MAX_DIST = 4, 10
+    perm = np.empty(POLICY_SIZE, dtype=np.int32)
+    for sq in range(SQS):
+        r, c = sq // BOARD_SIZE, sq % BOARD_SIZE
+        new_r, new_c = pos_fn(r, c)
+        new_sq = new_r * BOARD_SIZE + new_c
+        for d in range(DIRS):
+            new_d = dir_map[d]
+            for dist in range(MAX_DIST):
+                old_idx = sq * (DIRS * MAX_DIST) + d * MAX_DIST + dist
+                new_idx = new_sq * (DIRS * MAX_DIST) + new_d * MAX_DIST + dist
+                perm[new_idx] = old_idx
+    return perm
+
+
+# Precomputed permutations as torch tensors (computed once at import)
+_POLICY_PERMS = [torch.from_numpy(_build_policy_perm(i)).long() for i in range(8)]
+
+
+def _apply_board_sym(planes: np.ndarray, sym_idx: int) -> np.ndarray:
+    """Apply spatial symmetry to board planes (NUM_PLANES, 11, 11)."""
+    if sym_idx == 1:
+        return np.ascontiguousarray(np.rot90(planes, k=3, axes=(1, 2)))
+    elif sym_idx == 2:
+        return np.ascontiguousarray(np.rot90(planes, k=2, axes=(1, 2)))
+    elif sym_idx == 3:
+        return np.ascontiguousarray(np.rot90(planes, k=1, axes=(1, 2)))
+    elif sym_idx == 4:
+        return np.ascontiguousarray(np.flip(planes, axis=2))
+    elif sym_idx == 5:
+        return np.ascontiguousarray(np.flip(planes, axis=1))
+    elif sym_idx == 6:
+        return np.ascontiguousarray(np.swapaxes(planes, 1, 2))
+    else:  # sym_idx == 7
+        return np.ascontiguousarray(np.swapaxes(np.rot90(planes, k=2, axes=(1, 2)), 1, 2))
+
 
 def _unpack_bits(data: bytes, num_bits: int) -> np.ndarray:
     """Unpack packed bytes into a float32 array of 0s and 1s."""
@@ -118,7 +187,7 @@ def _read_sample_at(f, offset: int) -> tuple[torch.Tensor, torch.Tensor, torch.T
         policy_visits[move_index] = float(visits)
 
     # Sharpen visit distribution with temperature (lower = sharper)
-    POLICY_TARGET_TEMP = 0.6
+    POLICY_TARGET_TEMP = 0.5
     if POLICY_TARGET_TEMP != 1.0:
         policy_visits = np.power(policy_visits, 1.0 / POLICY_TARGET_TEMP)
 
@@ -151,7 +220,7 @@ class SelfPlayDataset(Dataset):
         window_size: if > 0, only use the last `window_size` samples
     """
 
-    def __init__(self, path: Path | str, window_size: int = 0) -> None:
+    def __init__(self, path: Path | str, window_size: int = 0, augment: bool = True) -> None:
         self._path = Path(path)
         offsets = _build_offset_index(self._path)
 
@@ -159,6 +228,7 @@ class SelfPlayDataset(Dataset):
             offsets = offsets[-window_size:]
 
         self._offsets = offsets
+        self._augment = augment
         # File handle opened lazily per worker process
         self._fh = None
 
@@ -173,7 +243,17 @@ class SelfPlayDataset(Dataset):
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         fh = self._get_fh()
-        return _read_sample_at(fh, int(self._offsets[idx]))
+        planes, legal_mask, policy, value = _read_sample_at(fh, int(self._offsets[idx]))
+
+        if self._augment:
+            sym = int(np.random.randint(8))
+            if sym > 0:
+                planes = torch.from_numpy(_apply_board_sym(planes.numpy(), sym))
+                perm = _POLICY_PERMS[sym]
+                policy = policy[perm]
+                legal_mask = legal_mask[perm]
+
+        return planes, legal_mask, policy, value
 
     def __del__(self) -> None:
         if self._fh is not None:

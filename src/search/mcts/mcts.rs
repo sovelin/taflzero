@@ -42,7 +42,7 @@ impl MCTSConfig {
     pub fn default_train() -> Self {
         MCTSConfig {
             dirichlet_alpha: 0.05,
-            dirichlet_epsilon: 0.35,
+            dirichlet_epsilon: 0.25,
             temperature: 1.0,
             batch_size: 8,
         }
