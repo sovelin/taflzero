@@ -179,7 +179,7 @@ impl<O: UciOutput> UciController<O> {
         self.engine.make_search_nodes(nodes, Some(&|iteration: SearchIterationResponse| {
             let pv_str = iteration.pv().iter().map(|m| format!("{:?}", m)).collect::<Vec<_>>().join(" ");
             let msg = format!(
-                "info depth {} score {} nodes {} time {} speed {} pv {}",
+                "info depth {} score cp {} nodes {} time {} speed {} pv {}",
                 iteration.depth,
                 iteration.score,
                 iteration.nodes,
@@ -214,7 +214,7 @@ impl<O: UciOutput> UciController<O> {
         self.engine.make_search(movetime, MAX_PLY as u32, Some(&|iteration: SearchIterationResponse| {
             let pv_str = iteration.pv().iter().map(|m| format!("{:?}", m)).collect::<Vec<_>>().join(" ");
             let msg = format!(
-                "info depth {} score {} nodes {} time {} speed {} pv {}",
+                "info depth {} score cp {} nodes {} time {} speed {} pv {}",
                 iteration.depth,
                 iteration.score,
                 iteration.nodes,

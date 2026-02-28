@@ -115,7 +115,7 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> (Vec<PendingSa
                 no_capture_counter += 1;
             }
 
-            if no_capture_counter >= 200 || move_number >= 700 {
+            if no_capture_counter >= 500 || move_number >= 700 {
                 // end the game as a draw
                 game_result = None;
                 break;

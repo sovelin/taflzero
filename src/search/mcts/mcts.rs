@@ -697,7 +697,8 @@ pub fn mcts_search(
                 if let Some(best_id) = get_best_child(tree, 0.0) {
                     let best = tree.get_node(best_id);
                     let score = if best.visits > 0.0 {
-                        (best.wins / best.visits * 1000.0) as i32
+                        let v = (best.wins / best.visits).clamp(-0.9999, 0.9999);
+                        (111.714640912 * (1.5620688421 * v).tan()) as i32
                     } else {
                         0
                     };
