@@ -120,23 +120,33 @@ async function main() {
         return;
     }
 
-    // Split games across workers
-    const base = Math.floor(totalGames / workers);
-    const remainder = totalGames % workers;
-
+    // Dynamic work queue - workers pick up batches until all games are played
+    const BATCH_SIZE = Math.max(1, Math.floor(totalGames / workers / 10));
+    let gamesRemaining = totalGames;
+    let batchIndex = 0;
     const tmpFiles = [];
+
+    let gamesCompleted = 0;
+
+    async function runWorker(workerId) {
+        while (gamesRemaining > 0) {
+            const batch = Math.min(BATCH_SIZE, gamesRemaining);
+            gamesRemaining -= batch;
+            if (batch <= 0) break;
+            const idx = batchIndex++;
+            const tmpFile = `${args.out}.worker${workerId}.${idx}.tmp`;
+            tmpFiles.push(tmpFile);
+            const engineArgs = buildEngineArgs(args.net, tmpFile, batch);
+            await runEngine(args, engineArgs);
+            gamesCompleted += batch;
+            const pct = ((gamesCompleted / totalGames) * 100).toFixed(1);
+            console.log(`Progress: ${gamesCompleted}/${totalGames} games (${pct}%)`);
+        }
+    }
+
     const promises = [];
-
     for (let w = 0; w < workers; w++) {
-        const count = base + (w < remainder ? 1 : 0);
-        if (count === 0) continue;
-
-        const tmpFile = `${args.out}.worker${w}.tmp`;
-        tmpFiles.push(tmpFile);
-
-        console.log(`Worker ${w}: ${count} games -> ${tmpFile}`);
-        const engineArgs = buildEngineArgs(args.net, tmpFile, count);
-        promises.push(runEngine(args, engineArgs));
+        promises.push(runWorker(w));
     }
 
     await Promise.all(promises);
