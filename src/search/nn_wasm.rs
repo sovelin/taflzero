@@ -4,7 +4,7 @@ use crate::masks::BOARD_SIZE;
 use crate::position_export::BitPosition;
 use super::nn_common::{build_input_data, NnOutput, NUM_PLANES, POLICY_SIZE};
 
-const EMBEDDED_MODEL: &[u8] = include_bytes!("../../zero-trainer/weights/tz-6x32/gen0179.best.onnx");
+const EMBEDDED_MODEL: &[u8] = include_bytes!("../../zero-trainer/weights/gen0323.onnx");
 
 pub struct NeuralNet {
     plan: TypedRunnableModel<TypedModel>,
@@ -12,7 +12,7 @@ pub struct NeuralNet {
 
 impl NeuralNet {
     pub fn new(_path: &str) -> Self {
-        println!("[NN] wasm build: using embedded ONNX model (gen0179.best.onnx)");
+        println!("[NN] wasm build: using embedded ONNX model (gen0323.onnx)");
 
         let mut reader = Cursor::new(EMBEDDED_MODEL);
         let model = tract_onnx::onnx()

@@ -96,7 +96,7 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> (Vec<PendingSa
         let iterations = if board.side_to_move == Side::ATTACKERS {
             800
         } else {
-            400
+            800
         };
 
         let mv = mcts_search(&mut board, &mut mcts_tree, nn, search_data, None, Some(iterations), &config);
