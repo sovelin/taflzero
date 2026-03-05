@@ -39,6 +39,7 @@ function parseArgs(argv) {
         anchorNet: null,
         anchorPairs: 100,
         earlyStoppingPatience: 0,
+        noRestoreBest: false,
     };
 
     for (let i = 0; i < argv.length; i += 1) {
@@ -76,6 +77,7 @@ function parseArgs(argv) {
         else if (a === "--anchor-net") args.anchorNet = required(next(), a);
         else if (a === "--anchor-pairs") args.anchorPairs = intArg(next(), a, 1);
         else if (a === "--early-stopping-patience") args.earlyStoppingPatience = intArg(next(), a, 0);
+        else if (a === "--no-restore-best") args.noRestoreBest = true;
         else if (a === "--help" || a === "-h") {
             printHelp();
             process.exit(0);
@@ -126,6 +128,7 @@ function printHelp() {
             "",
             "Train args forwarded to train.py:",
             "  --window <N> --steps <N> --batch <N> --lr <F> --weight-decay <F> --defender-weight <F>",
+            "  --no-restore-best             Don't restore best val_loss checkpoint, use final model weights",
             "",
             "SPRT validation (after each training):",
             "  --no-sprt                 Skip SPRT validation (accept every network)",
@@ -312,6 +315,9 @@ async function main() {
             "--early-stopping-patience",
             String(args.earlyStoppingPatience),
         ];
+        if (args.noRestoreBest) {
+            trainArgs.push("--no-restore-best");
+        }
         if (currentCheckpoint) {
             trainArgs.push("--checkpoint", currentCheckpoint);
         }

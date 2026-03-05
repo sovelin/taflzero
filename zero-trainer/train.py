@@ -100,6 +100,7 @@ def train(
     weight_decay: float,
     defender_weight: float,
     early_stopping_patience: int,
+    restore_best: bool,
     device: torch.device,
 ) -> dict:
     model.to(device)
@@ -200,7 +201,7 @@ def train(
                         final_step = step
                         final_val_loss = val_loss
                         break
-            elif val_loss < best_val_loss:
+            elif restore_best and val_loss < best_val_loss:
                 best_val_loss = val_loss
                 best_step = step
                 best_state_dict = {k: v.clone() for k, v in model.state_dict().items()}
@@ -240,6 +241,7 @@ def main() -> None:
     parser.add_argument("--weight-decay", type=float, default=1e-4, help="Weight decay (L2 regularization)")
     parser.add_argument("--defender-weight", type=float, default=0.25, help="Loss weight for defender-win samples (1.0 = no reweighting)")
     parser.add_argument("--early-stopping-patience", type=int, default=0, help="Stop if val_loss doesn't improve for N checks (0 = disabled)")
+    parser.add_argument("--no-restore-best", action="store_true", help="Always use final model weights, don't restore best val_loss checkpoint")
     args = parser.parse_args()
 
     if not args.data.exists():
@@ -286,6 +288,7 @@ def main() -> None:
         weight_decay=args.weight_decay,
         defender_weight=args.defender_weight,
         early_stopping_patience=args.early_stopping_patience,
+        restore_best=not args.no_restore_best,
         device=device,
     )
 
