@@ -42,6 +42,10 @@ def export_model_to_onnx(model: nn.Module, onnx_path: Path) -> None:
         fp32_model = onnx.load(str(tmp_path))
         fp16_model = float16.convert_float_to_float16(fp32_model, keep_io_types=True)
         onnx.save(fp16_model, str(onnx_path))
+
+        # Also save FP32 version for WASM/tract (which doesn't support mixed FP16)
+        fp32_path = onnx_path.with_suffix(".fp32.onnx")
+        onnx.save(fp32_model, str(fp32_path))
     finally:
         tmp_path.unlink(missing_ok=True)
 
