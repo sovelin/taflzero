@@ -50,3 +50,10 @@ node orchestrate-zero.mjs --iterations 20 --games-per-gen 3000 --window 15000 --
 Without SPRT validation:
 `node orchestrate-zero.mjs --iterations 1000 --games-per-gen 60000 --window 240000 --steps 500 --batch 256 --lr 7e-4 --workers 24 --defender-weight 0.3 --start-net ..\zero-trainer\weights\gen0014.onnx --start-checkpoint ..\zero-trainer\weights\gen0014.onxx --start-gen 15 --sprt-elo1 10 --sprt-nodes 50 --sprt-max-pairs 20000 --sprt-alpha 0.10 --sprt-beta 0.10 --engine-bin ..\target\release\zevratafl-rust.exe --no-sprt --anchor-net ..\zero-trainer\weights\gen0014.onnx --anchor-pairs 1000`
 `node .\orchestrate-zero.mjs --iterations 1000 --games-per-gen 100000 --window 500000 --steps 3000 --batch 256 --lr 7e-4 --workers 24 --defender-weight 0.3 --start-net ..\zero-trainer\weights\gen0062.onnx --start-checkpoint ..\zero-trainer\weights\gen0062.onxx --start-gen 63 --engine-bin ..\target\release\zevratafl-rust.exe --no-sprt --anchor-net ..\zero-trainer\weights\gen0036.onnx --anchor-pairs 1000 --early-stopping-patience 15`
+
+# Train 10x128
+
+```
+ node .\orchestrate-zero.mjs --iterations 1000 --games-per-gen 100000 --window 500000 --steps 15000 --batch 256 --lr 1e-4 --workers 12 --defender-weight 1.0 --start-net ..\zero-trainer\weights\gen0354.onnx --start-checkpoint ..\zero-trainer\weights\gen0354.onxx --start-gen 355 --engine-bin ..\target\release\zevratafl-rust.exe --no-sprt --anchor-net ..\zero-trainer\weights\gen0326.onnx --anchor-pairs 500 --early-stopping-patience 20 
+```
+And set sharpening from 1.0 to 0.7. 800 mcts iterations.
