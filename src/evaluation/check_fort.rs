@@ -32,7 +32,26 @@ pub fn check_fort(board: &mut Board) -> bool {
 
     loop {
         let attackers_space = get_attackers_space(board);
+
+
+        // print attackers space for debug as board
+        for (i, &sq) in attackers_space.iter().enumerate() {
+            if sq {
+                print!("x ");
+            } else {
+                print!(". ");
+            }
+
+            if (i + 1) % BOARD_SIZE == 0 {
+                println!();
+            }
+        }
+
         let breaked = try_break_fort(&attackers_space, board);
+
+        // print board for debug
+        println!("After trying to break fort:");
+        println!("{:?}", board);
 
         if breaked == HOLE {
             break;
@@ -203,6 +222,7 @@ mod tests {
     use crate::board::Board;
     use crate::board::types::Piece;
     use crate::board::utils::get_square_from_algebraic;
+    use crate::set_board_from_str;
 
     #[test]
     fn empty_king_not_fort() {
@@ -562,5 +582,122 @@ mod tests {
 
         // check that all defenders are still on board
         assert_eq!(board.defenders_count, 7);
+    }
+
+    #[test]
+    fn edge_case_1() {
+        let mut board = Board::new();
+        board.set_fen("3a3dad1/5dddd1k/9dd/a3a6/a4a1aa2/aa1dd6/a3dd4a/a9a/7d1aa/5a5/3aaaaa3 a").unwrap();
+
+        assert!(!check_fort(&mut board));
+    }
+
+    #[test]
+    fn edge_case_2() {
+        let mut board = Board::new();
+        board.set_fen("3a3dad1/5dddd1k/6ddadd/11/a4a1aa2/11/11/11/11/11/11 a").unwrap();
+
+        assert!(!check_fort(&mut board));
+    }
+
+    #[test]
+    fn edge_case_3() {
+        let mut board = Board::new();
+        board.set_fen("3a3dad1/5dddd1k/6ddadd/6ddddd/11/11/11/11/11/11/11 a").unwrap();
+
+        assert!(!check_fort(&mut board));
+    }
+
+
+    #[test]
+    fn edge_case_4() {
+        let mut board = Board::new();
+        board.set_fen("7dad1/5dddd1k/6ddadd/6ddddd/11/11/11/11/11/11/11 a").unwrap();
+
+        assert!(check_fort(&mut board));
+    }
+
+
+    #[test]
+    fn edge_case_5() {
+        let mut board = Board::new();
+        board.set_fen("4daadad1/5dddd1k/6ddadd/6ddddd/11/11/11/11/11/11/11 a").unwrap();
+
+        assert!(check_fort(&mut board));
+    }
+
+    #[test]
+    fn edge_case_6() {
+        let mut board = Board::new();
+        board.set_fen("4daadad1/5dddd1k/6ddadd/6ddddd/11/11/11/11/11/11/11 a").unwrap();
+
+        assert!(check_fort(&mut board));
+    }
+
+    #[test]
+    fn edge_case_7() {
+        let mut board = Board::new();
+        set_board_from_str(
+            &mut board,
+            ".ADKDAAAAA.
+                     AAD.DAAAAAA
+                     AAADAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     .AAAAAAAAA."
+        );
+
+        println!("{:?}", board);
+
+        assert!(check_fort(&mut board));
+    }
+
+    #[test]
+    fn edge_case_8() {
+        let mut board = Board::new();
+        set_board_from_str(
+            &mut board,
+            ".ADKDAAAAA.
+                     AAD.DAAAAAA
+                     AAADAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     ..AAAAAAAA."
+        );
+
+        println!("{:?}", board);
+
+        assert!(!check_fort(&mut board));
+    }
+
+    #[test]
+    fn edge_case_9() {
+        let mut board = Board::new();
+        set_board_from_str(
+            &mut board,
+            ".ADKDAAAAA.
+                     AAD.DAAAAAA
+                     AADDAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     ..AAAAAAAA."
+        );
+
+        assert!(check_fort(&mut board));
     }
 }
