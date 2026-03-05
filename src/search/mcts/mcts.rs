@@ -598,6 +598,11 @@ pub fn mcts_search(
         add_dirichlet_noise(tree, root_id, config.dirichlet_alpha, config.dirichlet_epsilon);
     }
 
+    let mut cpu_select_ns: u64 = 0;
+    let mut gpu_eval_ns: u64 = 0;
+    let mut cpu_expand_ns: u64 = 0;
+    let mut batch_count: u64 = 0;
+
     loop {
         // Check time limit
         if iter_max.is_none() && search_data.time_exceeded() {
@@ -612,6 +617,7 @@ pub fn mcts_search(
         }
 
         // --- Collect batch of leaves ---
+        let t0 = std::time::Instant::now();
         let mut pending_leaves: Vec<PendingLeaf> = Vec::with_capacity(batch_size);
         let remaining = if let Some(max) = iter_max {
             (max - iteration) as usize
@@ -633,12 +639,14 @@ pub fn mcts_search(
                 break;
             }
         }
+        cpu_select_ns += t0.elapsed().as_nanos() as u64;
 
         if pending_leaves.is_empty() {
             break;
         }
 
         // --- Batch NN evaluation for non-terminal leaves ---
+        let t1 = std::time::Instant::now();
         let nn_indices: Vec<usize> = pending_leaves.iter().enumerate()
             .filter(|(_, l)| l.terminal_value.is_none() && l.position.is_some())
             .map(|(i, _)| i)
@@ -652,8 +660,10 @@ pub fn mcts_search(
         } else {
             vec![]
         };
+        gpu_eval_ns += t1.elapsed().as_nanos() as u64;
 
         // --- Expand and backpropagate ---
+        let t2 = std::time::Instant::now();
         let mut nn_result_idx = 0;
 
         for leaf in &pending_leaves {
@@ -685,6 +695,8 @@ pub fn mcts_search(
 
             backpropagate(tree, &leaf.path, result);
         }
+        cpu_expand_ns += t2.elapsed().as_nanos() as u64;
+        batch_count += 1;
 
         iteration += pending_leaves.len() as u64;
 
@@ -715,6 +727,18 @@ pub fn mcts_search(
                 }
             }
         }
+    }
+
+    if batch_count > 0 {
+        let total_ns = cpu_select_ns + gpu_eval_ns + cpu_expand_ns;
+        eprintln!(
+            "[MCTS timing] batches={} total={:.1}ms | cpu_select={:.1}ms ({:.0}%) | gpu_eval={:.1}ms ({:.0}%) | cpu_expand={:.1}ms ({:.0}%)",
+            batch_count,
+            total_ns as f64 / 1_000_000.0,
+            cpu_select_ns as f64 / 1_000_000.0, cpu_select_ns as f64 / total_ns as f64 * 100.0,
+            gpu_eval_ns as f64 / 1_000_000.0,   gpu_eval_ns as f64 / total_ns as f64 * 100.0,
+            cpu_expand_ns as f64 / 1_000_000.0,  cpu_expand_ns as f64 / total_ns as f64 * 100.0,
+        );
     }
 
     get_best_child(tree, config.temperature).map(|id| tree.get_node(id).mv.unwrap())

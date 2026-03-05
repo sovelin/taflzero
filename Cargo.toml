@@ -29,7 +29,6 @@ tract-onnx = "0.21.5"
 
 [lib]
 crate-type = ["cdylib", "rlib"]  # ← нужно для WASM
-рщ
 
 [profile.dev]
 opt-level = 1            # чтобы дев-сборка не была совсем «черепахой»
@@ -49,6 +48,12 @@ incremental = false
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = ["-O3", "--enable-bulk-memory", "--enable-nontrapping-float-to-int"]
+
+[profile.profiling]
+inherits = "release"
+strip = false
+lto = "thin"
+codegen-units = 4
 
 # опционально для dev-профиля:
 [package.metadata.wasm-pack.profile.dev]

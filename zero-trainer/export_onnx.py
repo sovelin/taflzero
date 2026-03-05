@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import tempfile
 from pathlib import Path
 
 import torch
@@ -14,20 +15,35 @@ def export_model_to_onnx(model: nn.Module, onnx_path: Path) -> None:
     onnx_path.parent.mkdir(parents=True, exist_ok=True)
 
     dummy = torch.randn(1, 6, 11, 11)
-    torch.onnx.export(
-        model,
-        dummy,
-        str(onnx_path),
-        input_names=["input"],
-        output_names=["policy", "value"],
-        dynamic_axes={
-            "input": {0: "batch"},
-            "policy": {0: "batch"},
-            "value": {0: "batch"},
-        },
-        opset_version=17,
-        dynamo=False,
-    )
+
+    # Export FP32 to a temp file, then convert to FP16 in-place
+    with tempfile.NamedTemporaryFile(suffix=".onnx", delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+
+    try:
+        torch.onnx.export(
+            model,
+            dummy,
+            str(tmp_path),
+            input_names=["input"],
+            output_names=["policy", "value"],
+            dynamic_axes={
+                "input": {0: "batch"},
+                "policy": {0: "batch"},
+                "value": {0: "batch"},
+            },
+            opset_version=17,
+            dynamo=False,
+        )
+
+        import onnx
+        from onnxconverter_common import float16
+
+        fp32_model = onnx.load(str(tmp_path))
+        fp16_model = float16.convert_float_to_float16(fp32_model, keep_io_types=True)
+        onnx.save(fp16_model, str(onnx_path))
+    finally:
+        tmp_path.unlink(missing_ok=True)
 
 
 def main() -> None:
