@@ -3,7 +3,45 @@ use crate::board::types::{Piece, Square};
 use crate::board::utils::is_edge_square;
 use crate::board::{Board, PRECOMPUTED};
 use crate::types::OptionalSquare;
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
+
+
+struct Area {
+    pub squares: HashSet<Square>,
+    pub is_move_possible: bool,
+}
+
+struct AreaList {
+    areas: Vec<Area>,
+    board_map: [Option<usize>; SQS],
+}
+
+impl AreaList {
+    pub fn new() -> Self {
+        Self { areas: vec![], board_map:  [None; SQS] }
+    }
+
+    pub fn is_square_in_move_possible_area(&self, sq: Square) -> bool {
+        let area_index = self.board_map[sq]
+            .expect(&format!("Square {} is not in any area", sq));
+
+        self.areas[area_index].is_move_possible
+    }
+
+    pub fn is_square_in_area(&self, sq: Square) -> bool {
+        self.board_map[sq].is_some()
+    }
+
+    pub fn push_area(&mut self, area: Area) {
+        let area_index = self.areas.len();
+
+        for &sq in &area.squares {
+            self.board_map[sq] = Some(area_index);
+        }
+
+        self.areas.push(area);
+    }
+}
 
 fn revert_cleared_defenders(board: &mut Board, cleared_defenders: &Vec<OptionalSquare>) {
     for &sq in cleared_defenders.iter() {
@@ -31,14 +69,14 @@ pub fn check_fort(board: &mut Board) -> bool {
     let mut cleared_defenders: Vec<OptionalSquare> = Vec::new();
 
     loop {
-        let attackers_space = get_attackers_space(board);
-        let breaked = try_break_fort(&attackers_space, board);
+        let area_list = get_attackers_areas(board);
+        let broken = try_break_fort(&area_list, board);
 
-        if breaked == HOLE {
+        if broken == HOLE {
             break;
         }
 
-        cleared_defenders.push(breaked);
+        cleared_defenders.push(broken);
 
         if king_contacts_attackers(&board) {
             revert_cleared_defenders(board, &cleared_defenders);
@@ -69,49 +107,87 @@ pub fn king_contacts_attackers(board: &Board) -> bool {
     is_contacting
 }
 
-pub fn get_attackers_space(board: &Board) -> [bool; SQS] {
-    bfs_ts(
-        &board.attackers[..board.attackers_count as usize],
-        &PRECOMPUTED.vertical_horizontal_neighbors,
-        |sq| {
-            let piece = board.board[sq];
+pub fn get_attackers_areas(board: &Board) -> AreaList {
+    let mut available_attackers: HashSet<Square> = board.attackers[..board.attackers_count as usize]
+        .iter()
+        .cloned()
+        .collect();
 
-            if piece == Piece::KING {
-                return false;
-            }
+    let mut areas = AreaList::new();
 
-            if piece == Piece::DEFENDER {
-                return false;
-            }
+    while !available_attackers.is_empty()  {
+        let next_attacker = *available_attackers.iter().next().unwrap();
 
-            piece == Piece::EMPTY
-        },
-    )
+        let mut area = Area {
+            squares: HashSet::new(),
+            is_move_possible: false,
+        };
+
+        area.squares.insert(next_attacker);
+
+        bfs_ts(
+            [next_attacker].as_slice(),
+            &PRECOMPUTED.vertical_horizontal_neighbors,
+            |sq| {
+                let piece = board.board[sq];
+
+                if piece == Piece::ATTACKER {
+                    area.squares.insert(sq);
+                    available_attackers.remove(&sq);
+                }
+
+                let is_achievable = piece != Piece::DEFENDER && piece != Piece::KING && !PRECOMPUTED.corners_sq.contains(&sq) && sq != PRECOMPUTED.throne_sq;
+
+                if is_achievable {
+                    area.squares.insert(sq);
+
+                    if piece == Piece::EMPTY {
+                        area.is_move_possible = true;
+                    }
+                }
+
+                is_achievable
+            },
+        );
+
+        areas.push_area(area);
+        available_attackers.remove(&next_attacker);
+    }
+
+    areas
 }
 
-pub fn try_break_fort(attackers_space: &[bool; SQS], board: &mut Board) -> OptionalSquare {
+fn is_theoretically_possible_to_capture(area_list: &AreaList, a: Option<Square>, b: Option<Square>) -> bool {
+    if let (Some(a), Some(b)) = (a, b) {
+        if !area_list.is_square_in_area(a) || !area_list.is_square_in_area(b) {
+            return false;
+        }
+
+        area_list.is_square_in_move_possible_area(a) || area_list.is_square_in_move_possible_area(b)
+    } else {
+        false
+    }
+}
+
+fn try_break_fort(area_list: &AreaList, board: &mut Board) -> OptionalSquare {
     for &defender in board.defenders[0..board.defenders_count as usize].iter() {
         // check horizontal capture
 
         let left = PRECOMPUTED.left_neighbor[defender];
         let right = PRECOMPUTED.right_neighbor[defender];
 
-        if let (Some(left), Some(right)) = (left, right) {
-            if attackers_space[left as usize] && attackers_space[right as usize] {
-                board.clear_piece(defender);
-                return defender as OptionalSquare;
-            }
+        if is_theoretically_possible_to_capture(area_list, left, right) {
+            board.clear_piece(defender);
+            return defender as OptionalSquare;
         }
 
         // check vertical capture
         let top = PRECOMPUTED.top_neighbor[defender];
         let bottom = PRECOMPUTED.bottom_neighbor[defender];
 
-        if let (Some(top), Some(bottom)) = (top, bottom) {
-            if attackers_space[top as usize] && attackers_space[bottom as usize] {
-                board.clear_piece(defender);
-                return defender as OptionalSquare;
-            }
+        if is_theoretically_possible_to_capture(area_list, top, bottom) {
+            board.clear_piece(defender);
+            return defender as OptionalSquare;
         }
     }
 
@@ -175,6 +251,8 @@ where
     let mut flags = [false; SQS];
 
     for &sq in start_squares {
+        visited[sq] = true;
+        flags[sq] = true;
         queue.push_back(sq);
     }
 
@@ -203,6 +281,7 @@ mod tests {
     use crate::board::Board;
     use crate::board::types::Piece;
     use crate::board::utils::get_square_from_algebraic;
+    use crate::set_board_from_str;
 
     #[test]
     fn empty_king_not_fort() {
@@ -562,5 +641,122 @@ mod tests {
 
         // check that all defenders are still on board
         assert_eq!(board.defenders_count, 7);
+    }
+
+    #[test]
+    fn edge_case_1() {
+        let mut board = Board::new();
+        board.set_fen("3a3dad1/5dddd1k/9dd/a3a6/a4a1aa2/aa1dd6/a3dd4a/a9a/7d1aa/5a5/3aaaaa3 a").unwrap();
+
+        assert!(!check_fort(&mut board));
+    }
+
+    #[test]
+    fn edge_case_2() {
+        let mut board = Board::new();
+        board.set_fen("3a3dad1/5dddd1k/6ddadd/11/a4a1aa2/11/11/11/11/11/11 a").unwrap();
+
+        assert!(!check_fort(&mut board));
+    }
+
+    #[test]
+    fn edge_case_3() {
+        let mut board = Board::new();
+        board.set_fen("3a3dad1/5dddd1k/6ddadd/6ddddd/11/11/11/11/11/11/11 a").unwrap();
+
+        assert!(!check_fort(&mut board));
+    }
+
+
+    #[test]
+    fn edge_case_4() {
+        let mut board = Board::new();
+        board.set_fen("7dad1/5dddd1k/6ddadd/6ddddd/11/11/11/11/11/11/11 a").unwrap();
+
+        assert!(check_fort(&mut board));
+    }
+
+
+    #[test]
+    fn edge_case_5() {
+        let mut board = Board::new();
+        board.set_fen("4daadad1/5dddd1k/6ddadd/6ddddd/11/11/11/11/11/11/11 a").unwrap();
+
+        assert!(check_fort(&mut board));
+    }
+
+    #[test]
+    fn edge_case_6() {
+        let mut board = Board::new();
+        board.set_fen("4daadad1/5dddd1k/6ddadd/6ddddd/11/11/11/11/11/11/11 a").unwrap();
+
+        assert!(check_fort(&mut board));
+    }
+
+    #[test]
+    fn edge_case_7() {
+        let mut board = Board::new();
+        set_board_from_str(
+            &mut board,
+            ".ADKDAAAAA.
+                     AAD.DAAAAAA
+                     AAADAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     .AAAAAAAAA."
+        );
+
+        println!("{:?}", board);
+
+        assert!(check_fort(&mut board));
+    }
+
+    #[test]
+    fn edge_case_8() {
+        let mut board = Board::new();
+        set_board_from_str(
+            &mut board,
+            ".ADKDAAAAA.
+                     AAD.DAAAAAA
+                     AAADAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     ..AAAAAAAA."
+        );
+
+        println!("{:?}", board);
+
+        assert!(!check_fort(&mut board));
+    }
+
+    #[test]
+    fn edge_case_9() {
+        let mut board = Board::new();
+        set_board_from_str(
+            &mut board,
+            ".ADKDAAAAA.
+                     AAD.DAAAAAA
+                     AADDAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     AAAAAAAAAAA
+                     ..AAAAAAAA."
+        );
+
+        assert!(check_fort(&mut board));
     }
 }
