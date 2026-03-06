@@ -76,12 +76,14 @@ function run(cmd, cmdArgs, cwd = process.cwd()) {
     });
 }
 
-function buildEngineArgs(netPath, outPath, count) {
+function buildEngineArgs(netPath, outPath, count, gamelogPath) {
     const engineArgs = [
         "--net",
         path.normalize(netPath),
         "--datagen",
         path.normalize(outPath),
+        "--gamelog",
+        path.normalize(gamelogPath),
     ];
     if (count != null) {
         engineArgs.push("--datagen-count", String(count));
@@ -114,8 +116,10 @@ async function main() {
     const totalGames = args.datagenCount;
     const workers = args.workers;
 
+    const gamelogPath = `${args.out}.gamelog`;
+
     if (workers === 1 || totalGames == null) {
-        const engineArgs = buildEngineArgs(args.net, args.out, totalGames);
+        const engineArgs = buildEngineArgs(args.net, args.out, totalGames, gamelogPath);
         await runEngine(args, engineArgs);
         return;
     }
@@ -136,7 +140,7 @@ async function main() {
             const idx = batchIndex++;
             const tmpFile = `${args.out}.worker${workerId}.${idx}.tmp`;
             tmpFiles.push(tmpFile);
-            const engineArgs = buildEngineArgs(args.net, tmpFile, batch);
+            const engineArgs = buildEngineArgs(args.net, tmpFile, batch, gamelogPath);
             await runEngine(args, engineArgs);
             gamesCompleted += batch;
             const pct = ((gamesCompleted / totalGames) * 100).toFixed(1);

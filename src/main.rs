@@ -6,6 +6,7 @@ struct CliArgs {
     net_path: String,
     datagen_path: Option<String>,
     datagen_count: Option<usize>,
+    gamelog_path: Option<String>,
     dump_sample_path: Option<String>,
 }
 
@@ -13,6 +14,7 @@ fn parse_args() -> CliArgs {
     let mut net_path = String::from("./gen1.onxx");
     let mut datagen_path: Option<String> = None;
     let mut datagen_count: Option<usize> = None;
+    let mut gamelog_path: Option<String> = None;
     let mut dump_sample_path: Option<String> = None;
     let mut args = std::env::args().skip(1);
 
@@ -52,6 +54,14 @@ fn parse_args() -> CliArgs {
                     std::process::exit(2);
                 }
             }
+            "--gamelog" => {
+                if let Some(path) = args.next() {
+                    gamelog_path = Some(path);
+                } else {
+                    eprintln!("Missing value for --gamelog");
+                    std::process::exit(2);
+                }
+            }
             "--dump-sample" => {
                 if let Some(path) = args.next() {
                     dump_sample_path = Some(path);
@@ -68,7 +78,7 @@ fn parse_args() -> CliArgs {
         }
     }
 
-    CliArgs { net_path, datagen_path, datagen_count, dump_sample_path }
+    CliArgs { net_path, datagen_path, datagen_count, gamelog_path, dump_sample_path }
 }
 
 fn main() {
@@ -87,7 +97,8 @@ fn main() {
     let mut nn = NeuralNet::new(&cli.net_path);
 
     if let Some(path) = cli.datagen_path {
-        gen_train_data(&path, &mut nn, cli.datagen_count);
+        let log_path = cli.gamelog_path.unwrap_or_else(|| format!("{}.gamelog", path));
+        gen_train_data(&path, &log_path, &mut nn, cli.datagen_count);
         return;
     }
 

@@ -35,6 +35,38 @@ pub fn check_terminal(board: &mut Board) -> Option<Side> {
     None
 }
 
+pub enum TerminalType {
+    KingCaptured = 1,
+    ThreefoldRepetition = 2,
+    KingOnCorner = 3,
+    DefendersSurrounded = 4,
+    FortCheck = 5,
+}
+
+pub fn get_terminal(board: &mut Board) -> Option<TerminalType> {
+    if board.king_sq == -1 {
+        return Some(TerminalType::KingCaptured);
+    }
+
+    if is_threefold_repetition(board) {
+        return Some(TerminalType::ThreefoldRepetition);
+    }
+
+    if PRECOMPUTED.corners_sq.contains(&(board.king_sq as Square)) {
+        return Some(TerminalType::KingOnCorner);
+    }
+
+    if defenders_is_surrounded(board) {
+        return Some(TerminalType::DefendersSurrounded);
+    }
+
+    if check_fort(board) {
+        return Some(TerminalType::FortCheck);
+    }
+
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use crate::board::Board;

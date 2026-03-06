@@ -182,7 +182,6 @@ fn is_theoretically_possible_to_capture(area_list: &AreaList, a: Option<Square>,
         let index_b = area_list.get_area_index(b);
 
         if let (Some(index_a), Some(index_b)) = (index_a, index_b) {
-            println!("index_a: {}, index_b: {}, attackers_a: {}, attackers_b: {}", index_a, index_b, area_list.get_area_attackers_count(index_a), area_list.get_area_attackers_count(index_b));
             if index_a == index_b && area_list.get_area_attackers_count(index_a) < 2 {
                 return false;
             }

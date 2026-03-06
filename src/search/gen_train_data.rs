@@ -1,5 +1,5 @@
 use std::fs::{OpenOptions};
-use std::io::BufWriter;
+use std::io::{BufWriter, Write};
 use rand::prelude::StdRng;
 use rand::Rng;
 use crate::{Board, PRECOMPUTED};
@@ -10,7 +10,7 @@ use crate::position_export::BitPosition;
 use crate::mcts::mcts::{mcts_search, MCTSConfig, MCTSTree};
 use crate::search::nn::NeuralNet;
 use crate::search_data::SearchData;
-use crate::terminal::{check_terminal, is_threefold_repetition};
+use crate::terminal::{check_terminal, get_terminal, is_threefold_repetition, TerminalType};
 use crate::types::{Piece, Side};
 
 fn set_piece_to_random_square(
@@ -68,7 +68,17 @@ fn set_random_position(rnd: &mut StdRng) -> Board {
 }
 
 
-fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> (Vec<PendingSample>, Option<Side>) {
+fn terminal_type_str(t: &TerminalType) -> &'static str {
+    match t {
+        TerminalType::KingCaptured => "atk_capture",
+        TerminalType::ThreefoldRepetition => "atk_threefold",
+        TerminalType::KingOnCorner => "def_corner",
+        TerminalType::DefendersSurrounded => "atk_surrounded",
+        TerminalType::FortCheck => "def_fort",
+    }
+}
+
+fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> (Vec<PendingSample>, Option<Side>, Option<&'static str>) {
     // let mut board = set_random_position(&mut search_data.random_generator);
     let mut board = Board::new();
     board.setup_initial_position().expect("Setup initial position failed");
@@ -84,6 +94,7 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> (Vec<PendingSa
 
     let mut config = MCTSConfig::default_train();
     let game_result;
+    let mut terminal_str: Option<&'static str> = None;
     let mut move_number: usize = 0;
     let mut mcts_tree = MCTSTree::new();
     let mut no_capture_counter = 0;
@@ -118,6 +129,7 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> (Vec<PendingSa
             if no_capture_counter >= 500 || move_number >= 700 {
                 // end the game as a draw
                 game_result = None;
+                terminal_str = Some(if no_capture_counter >= 500 { "draw_nocapture" } else { "draw_limit" });
                 break;
             }
 
@@ -127,29 +139,25 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> (Vec<PendingSa
             //     break;
             // }
 
-            if let Some(result) = check_terminal(&mut board) {
-
+            if let Some(terminal) = get_terminal(&mut board) {
+                let result = check_terminal(&mut board).unwrap();
                 // threefold repetition can also cause terminal, but we want to treat it as draw for training
                 if result == Side::ATTACKERS && is_threefold_repetition(&board) {
                     game_result = None;
+                    terminal_str = Some("draw_threefold");
                 } else {
+                    terminal_str = Some(terminal_type_str(&terminal));
                     game_result = Some(result);
-
-                    if result == Side::ATTACKERS {
-                        // print board
-                        println!("Board:\n{}", board);
-                    }
                 }
 
                 break;
             }
         } else {
             game_result = if board.side_to_move == Side::ATTACKERS {
+                terminal_str = Some("def_no_moves");
                 Some(Side::DEFENDERS)
             } else {
-                // print board
-                println!("Board:\n{}", board);
-
+                terminal_str = Some("atk_no_moves");
                 Some(Side::ATTACKERS)
             };
             break;
@@ -160,10 +168,10 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> (Vec<PendingSa
         sample.set_value_from_result(game_result);
     }
 
-    (res, game_result)
+    (res, game_result, terminal_str)
 }
 
-pub fn gen_train_data(output_path: &str, nn: &mut NeuralNet, game_limit: Option<usize>) {
+pub fn gen_train_data(output_path: &str, log_path: &str, nn: &mut NeuralNet, game_limit: Option<usize>) {
     let mut search_data = SearchData::new();
 
     let file = OpenOptions::new()
@@ -173,6 +181,13 @@ pub fn gen_train_data(output_path: &str, nn: &mut NeuralNet, game_limit: Option<
         .expect("Could not open output file");
 
     let mut writer = BufWriter::new(file);
+
+    let log_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_path)
+        .expect("Could not open gamelog file");
+    let mut log_writer = BufWriter::new(log_file);
     let mut positions_generated = 0usize;
     let mut games_saved = 0usize;
     let mut attacker_wins_saved = 0usize;
@@ -189,7 +204,7 @@ pub fn gen_train_data(output_path: &str, nn: &mut NeuralNet, game_limit: Option<
             }
         }
 
-        let (res, game_result) = play_game(nn, &mut search_data);
+        let (res, game_result, terminal_str) = play_game(nn, &mut search_data);
         if game_result.is_none() { continue; }
 
 
@@ -221,6 +236,12 @@ pub fn gen_train_data(output_path: &str, nn: &mut NeuralNet, game_limit: Option<
         };
         println!("{} | game #{} ({} samples) | atk={} def={} draw={} | atk%={:.1}% | avg_len={:.1} | positions={}",
             result_str, games_saved, res.len(), attacker_wins_saved, defender_wins_saved, draws_saved, atk_pct, avg_game_len, positions_generated);
+
+        // Write to gamelog: terminal_type,game_length
+        if let Some(t) = terminal_str {
+            writeln!(log_writer, "{},{}", t, res.len()).expect("Cannot write gamelog");
+            log_writer.flush().expect("Cannot flush gamelog");
+        }
 
         for sample in res {
             sample.write_to(&mut writer).expect("Cannot write sample");
