@@ -41,26 +41,6 @@ impl AreaList {
 
         self.areas.push(area);
     }
-
-    pub fn print(&self) {
-        // print in format board:
-        // 112110001
-        // 111222211
-
-            for row in (0..BOARD_SIZE).rev() {
-                for col in 0..BOARD_SIZE {
-                    let sq = row * BOARD_SIZE + col;
-                    if let Some(area_index) = self.board_map[sq] {
-                        print!("{}", area_index);
-                    } else {
-                        print!(".");
-                    }
-                }
-                println!();
-            }
-
-
-    }
 }
 
 fn revert_cleared_defenders(board: &mut Board, cleared_defenders: &Vec<OptionalSquare>) {
@@ -90,12 +70,7 @@ pub fn check_fort(board: &mut Board) -> bool {
 
     loop {
         let area_list = get_attackers_areas(board);
-        area_list.print();
         let broken = try_break_fort(&area_list, board);
-
-        // print board for debug
-        println!("After trying to break fort:");
-        println!("{:?}", board);
 
         if broken == HOLE {
             break;
