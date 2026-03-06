@@ -9,6 +9,7 @@ use std::collections::{HashSet, VecDeque};
 struct Area {
     pub squares: HashSet<Square>,
     pub is_move_possible: bool,
+    pub attackers: HashSet<Square>,
 }
 
 struct AreaList {
@@ -19,6 +20,14 @@ struct AreaList {
 impl AreaList {
     pub fn new() -> Self {
         Self { areas: vec![], board_map:  [None; SQS] }
+    }
+
+    pub fn get_area_index(&self, sq: Square) -> Option<usize> {
+        self.board_map[sq]
+    }
+
+    pub fn get_area_attackers_count(&self, index: usize) -> usize {
+        self.areas[index].attackers.len()
     }
 
     pub fn is_square_in_move_possible_area(&self, sq: Square) -> bool {
@@ -121,9 +130,11 @@ pub fn get_attackers_areas(board: &Board) -> AreaList {
         let mut area = Area {
             squares: HashSet::new(),
             is_move_possible: false,
+            attackers: HashSet::new(),
         };
 
         area.squares.insert(next_attacker);
+        area.attackers.insert(next_attacker);
 
         bfs_ts(
             [next_attacker].as_slice(),
@@ -144,6 +155,10 @@ pub fn get_attackers_areas(board: &Board) -> AreaList {
                     if piece == Piece::EMPTY {
                         area.is_move_possible = true;
                     }
+
+                    if piece == Piece::ATTACKER {
+                        area.attackers.insert(sq);
+                    }
                 }
 
                 is_achievable
@@ -161,6 +176,16 @@ fn is_theoretically_possible_to_capture(area_list: &AreaList, a: Option<Square>,
     if let (Some(a), Some(b)) = (a, b) {
         if !area_list.is_square_in_area(a) || !area_list.is_square_in_area(b) {
             return false;
+        }
+
+        let index_a = area_list.get_area_index(a);
+        let index_b = area_list.get_area_index(b);
+
+        if let (Some(index_a), Some(index_b)) = (index_a, index_b) {
+            println!("index_a: {}, index_b: {}, attackers_a: {}, attackers_b: {}", index_a, index_b, area_list.get_area_attackers_count(index_a), area_list.get_area_attackers_count(index_b));
+            if index_a == index_b && area_list.get_area_attackers_count(index_a) < 2 {
+                return false;
+            }
         }
 
         area_list.is_square_in_move_possible_area(a) || area_list.is_square_in_move_possible_area(b)
@@ -514,9 +539,17 @@ mod tests {
         board
             .set_piece(get_square_from_algebraic("g2"), Piece::DEFENDER)
             .unwrap();
+
         board
             .set_piece(get_square_from_algebraic("b2"), Piece::ATTACKER)
             .unwrap();
+
+        board
+            .set_piece(get_square_from_algebraic("a2"), Piece::ATTACKER)
+            .unwrap();
+
+        println!("{:?}", board);
+
         assert!(!check_fort(&mut board));
     }
 
@@ -636,6 +669,10 @@ mod tests {
             .unwrap();
         board
             .set_piece(get_square_from_algebraic("b8"), Piece::ATTACKER)
+            .unwrap();
+
+        board
+            .set_piece(get_square_from_algebraic("a8"), Piece::ATTACKER)
             .unwrap();
         assert!(!check_fort(&mut board));
 
@@ -758,5 +795,45 @@ mod tests {
         );
 
         assert!(check_fort(&mut board));
+    }
+
+    #[test]
+    fn fort_when_cant_eat_in_one_area() {
+        let mut board = Board::new();
+        set_board_from_str(
+            &mut board,
+           "...........
+                    ...........
+                    ...........
+                    ...........
+                    ...........
+                    ...........
+                    ...DDDDDD..
+                    ...D..A.D..
+                    ...D..D.D..
+                    ...DDD.DD..
+                    ...DDDKDD..");
+
+        assert!(check_fort(&mut board));
+    }
+
+    #[test]
+    fn not_fort_when_can_eat_in_one_area() {
+        let mut board = Board::new();
+        set_board_from_str(
+            &mut board,
+            "...........
+                    ...........
+                    ...........
+                    ...........
+                    ...........
+                    ...........
+                    ...DDDDDD..
+                    ...D.AA.D..
+                    ...D..D.D..
+                    ...DDD.DD..
+                    ...DDDKDD..");
+
+        assert!(!check_fort(&mut board));
     }
 }
