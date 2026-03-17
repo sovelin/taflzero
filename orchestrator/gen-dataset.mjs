@@ -132,6 +132,8 @@ async function main() {
 
     let gamesCompleted = 0;
 
+    const MAX_BATCH_RETRIES = 10;
+
     async function runWorker(workerId) {
         while (gamesRemaining > 0) {
             const batch = Math.min(BATCH_SIZE, gamesRemaining);
@@ -141,7 +143,18 @@ async function main() {
             const tmpFile = `${args.out}.worker${workerId}.${idx}.tmp`;
             tmpFiles.push(tmpFile);
             const engineArgs = buildEngineArgs(args.net, tmpFile, batch, gamelogPath);
-            await runEngine(args, engineArgs);
+
+            for (let attempt = 1; attempt <= MAX_BATCH_RETRIES; attempt++) {
+                try { fs.unlinkSync(tmpFile); } catch {}
+                try {
+                    await runEngine(args, engineArgs);
+                    break;
+                } catch (err) {
+                    if (attempt === MAX_BATCH_RETRIES) throw err;
+                    console.log(`[Worker ${workerId}] Engine crashed (attempt ${attempt}/${MAX_BATCH_RETRIES}), retrying batch...`);
+                }
+            }
+
             gamesCompleted += batch;
             const pct = ((gamesCompleted / totalGames) * 100).toFixed(1);
             console.log(`Progress: ${gamesCompleted}/${totalGames} games (${pct}%)`);

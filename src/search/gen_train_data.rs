@@ -105,9 +105,9 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> (Vec<PendingSa
         //     mcts_tree = MCTSTree::new();
         // }
         let iterations = if board.side_to_move == Side::ATTACKERS {
-            800
+            200
         } else {
-            800
+            200
         };
 
         let mv = mcts_search(&mut board, &mut mcts_tree, nn, search_data, None, Some(iterations), &config);
@@ -146,6 +146,7 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> (Vec<PendingSa
                     game_result = None;
                     terminal_str = Some("draw_threefold");
                 } else {
+                    println!("{}", board);
                     terminal_str = Some(terminal_type_str(&terminal));
                     game_result = Some(result);
                 }
@@ -155,9 +156,12 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> (Vec<PendingSa
         } else {
             game_result = if board.side_to_move == Side::ATTACKERS {
                 terminal_str = Some("def_no_moves");
+                println!("{}", board);
                 Some(Side::DEFENDERS)
+
             } else {
                 terminal_str = Some("atk_no_moves");
+                println!("{}", board);
                 Some(Side::ATTACKERS)
             };
             break;
