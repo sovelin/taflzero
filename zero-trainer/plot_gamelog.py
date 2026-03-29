@@ -142,6 +142,7 @@ def main():
 
     chunks_to_show = all_chunks
     offset = 0
+    print(args.tail)
     if args.tail > 0:
         chunks_to_show = all_chunks[-args.tail:]
         offset = len(all_chunks) - len(chunks_to_show)
