@@ -101,9 +101,7 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> (Vec<PendingSa
 
     loop {
         config.temperature = if move_number < 60 { 1.0 } else { 0.0 };
-        // if board.side_to_move == Side::DEFENDERS {
-        //     mcts_tree = MCTSTree::new();
-        // }
+
         let iterations = if board.side_to_move == Side::ATTACKERS {
             400
         } else {
