@@ -1,8 +1,10 @@
-# ZevTafl
+# TaflZero
 
-<!-- avatar/logo here -->
+<img width="320" alt="TaflZero logo" src="https://github.com/user-attachments/assets/a2365b08-5069-4635-84c9-61b95389a847" />
+<br />
+<br />
 
-**ZevTafl** is an AlphaZero-based engine for 11×11 Hnefatafl (Viking chess) and currently the strongest known engine for this variant. Play it live at **[playtafl.org](https://playtafl.org/)**. It combines Monte Carlo Tree Search (MCTS) with a deep residual neural network, trained entirely through self-play — no human games or handcrafted heuristics.
+**TaflZero** is an AlphaZero-based engine for 11×11 Hnefatafl (Viking chess) and currently the strongest known engine for this variant. Play it live at **[playtafl.org](https://playtafl.org/)**. It combines Monte Carlo Tree Search (MCTS) with a deep residual neural network, trained entirely through self-play — no human games or handcrafted heuristics.
 
 ## How it works
 
