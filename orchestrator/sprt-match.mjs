@@ -8,7 +8,7 @@
  *   node orchestrator/sprt-match.mjs \
  *     --main-net weights/current.onnx \
  *     --candidate-net weights/candidate.onnx \
- *     --engine-bin target/release/zevratafl-rust.exe \
+ *     --engine-bin target/release/taflzero.exe \
  *     [--nodes 200] [--opening-moves 16] [--workers 24] [--max-pairs 2500]
  *     [--sprt-elo0 0] [--sprt-elo1 5] [--sprt-alpha 0.05] [--sprt-beta 0.05]
  */
@@ -20,10 +20,10 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const wasmPath = path.join(__dirname, "node_modules/zevratafl-rust/pkg/zevratafl_rust_bg.wasm");
+const wasmPath = path.join(__dirname, "node_modules/taflzero/pkg/taflzero_bg.wasm");
 const wasmBytes = readFileSync(wasmPath);
 
-const { default: init, EngineClient, Side, get_total_squares } = await import("zevratafl-rust");
+const { default: init, EngineClient, Side, get_total_squares } = await import("taflzero");
 await init(wasmBytes);
 
 // ─── CLI args ────────────────────────────────────────────────────────────────

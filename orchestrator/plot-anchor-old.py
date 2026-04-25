@@ -44,7 +44,6 @@ def read_data():
                 gens.append(row["generation"])
                 elos.append(float(row["elo_vs_anchor"]))
             except (KeyError, ValueError):
-                # файл может писаться в этот момент
                 continue
 
     return gens, elos

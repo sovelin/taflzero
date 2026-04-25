@@ -15,45 +15,13 @@ Self-play + training loop (current settings):
 - Temperature: first 60 moves 1.0; after 0.0
 - MCTS batch size=`8`
 
-Example:
-
-```
-node orchestrate-zero.mjs --iterations 30 --games-per-gen 50000 --window 500000 --steps 1500 --batch 512 --lr 1e-3 --defender-weight 1.0 --workers 24 --start-net .\zero-trainer\weights\random_init.onnx
-```
 
 Notes:
 - MCTS and self-play settings live in `src/search/gen_train_data.rs` and `src/search/mcts/mcts.rs`.
 - `--games-per-gen` is passed to Rust and currently limits positions generated, not games.
 
-# Train net 32 channels and 6 residual blocks
+# Train net 128 channels and 10 residual blocks (Current RUN)
 
 ```
-node orchestrate-zero.mjs --iterations 30  --games-per-gen 5000 --window 500000 --steps 3000 --batch 512 --lr 1e-3 --workers 24 --start-net .\zero-trainer\weights\gen0001.onnx --start-checkpoint .\zero-trainer\checkpoints\gen0001.onxx --start-gen 1
+node .\orchestrate-zero.mjs --iterations 1000 --games-per-gen 1000000 --window 5000000 --steps 5000 --batch 512 --lr 1e-4 --workers 8 --defender-weight 1.0 --start-net ..\zero-trainer\weights\gen0033.onnx --start-checkpoint ..\zero-trainer\weights\gen0033.onxx --start-gen 34 --engine-bin ..\target\release\zevratafl-rust.exe --no-sprt --anchor-net ..\zero-trainer\weights\gen0022.onnx --anchor-pairs 1000 --sprt-nodes 100 --no-restore-best
 ```
-
-# Train net 16 channels and 4 residual blocks
-
-```
-node orchestrate-zero.mjs --iterations 20 --games-per-gen 3000 --window 15000 --steps 800 --batch 256 --lr 1e-3 --workers 24
-```
-
-# Train net 8 channels and 2 residual blocks
-
-```
-node orchestrate-zero.mjs --iterations 20 --games-per-gen 3000 --window 15000 --steps 500 --batch 256 --lr 2e-3 --workers 24
-```
-
-## New pipeline with validation
-
-`node orchestrate-zero.mjs --iterations 1000 --games-per-gen 40000 --window 200000 --steps 1600 --batch 256 --lr 7e-4 --workers 24 --defender-weight 0.3 --start-net ..\zero-trainer\weights\gen0006.onnx --start-checkpoint ..\zero-trainer\weights\gen0006.onxx --start-gen 7 --sprt-elo1 10 --sprt-nodes 200 --sprt-max-pairs 10000 --engine-bin ..\target\release\zevratafl-rust.exe`
-
-Without SPRT validation:
-`node orchestrate-zero.mjs --iterations 1000 --games-per-gen 60000 --window 240000 --steps 500 --batch 256 --lr 7e-4 --workers 24 --defender-weight 0.3 --start-net ..\zero-trainer\weights\gen0014.onnx --start-checkpoint ..\zero-trainer\weights\gen0014.onxx --start-gen 15 --sprt-elo1 10 --sprt-nodes 50 --sprt-max-pairs 20000 --sprt-alpha 0.10 --sprt-beta 0.10 --engine-bin ..\target\release\zevratafl-rust.exe --no-sprt --anchor-net ..\zero-trainer\weights\gen0014.onnx --anchor-pairs 1000`
-`node .\orchestrate-zero.mjs --iterations 1000 --games-per-gen 100000 --window 500000 --steps 3000 --batch 256 --lr 7e-4 --workers 24 --defender-weight 0.3 --start-net ..\zero-trainer\weights\gen0062.onnx --start-checkpoint ..\zero-trainer\weights\gen0062.onxx --start-gen 63 --engine-bin ..\target\release\zevratafl-rust.exe --no-sprt --anchor-net ..\zero-trainer\weights\gen0036.onnx --anchor-pairs 1000 --early-stopping-patience 15`
-
-# Train 10x128
-
-```
- node .\orchestrate-zero.mjs --iterations 1000 --games-per-gen 100000 --window 500000 --steps 15000 --batch 256 --lr 1e-4 --workers 12 --defender-weight 1.0 --start-net ..\zero-trainer\weights\gen0354.onnx --start-checkpoint ..\zero-trainer\weights\gen0354.onxx --start-gen 355 --engine-bin ..\target\release\zevratafl-rust.exe --no-sprt --anchor-net ..\zero-trainer\weights\gen0326.onnx --anchor-pairs 500 --early-stopping-patience 20 
-```
-And set sharpening from 1.0 to 0.7. 800 mcts iterations.

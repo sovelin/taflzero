@@ -23,5 +23,5 @@ Notes:
 # Train net 128 channels and 10 residual blocks (Current RUN)
 
 ```
-node .\orchestrate-zero.mjs --iterations 1000 --games-per-gen 1000000 --window 5000000 --steps 5000 --batch 512 --lr 1e-4 --workers 8 --defender-weight 1.0 --start-net ..\zero-trainer\weights\gen0033.onnx --start-checkpoint ..\zero-trainer\weights\gen0033.onxx --start-gen 34 --engine-bin ..\target\release\zevratafl-rust.exe --no-sprt --anchor-net ..\zero-trainer\weights\gen0022.onnx --anchor-pairs 1000 --sprt-nodes 100 --no-restore-best
+node .\orchestrate-zero.mjs --iterations 1000 --games-per-gen 1000000 --window 5000000 --steps 5000 --batch 512 --lr 1e-4 --workers 8 --defender-weight 1.0 --start-net ..\zero-trainer\weights\gen0033.onnx --start-checkpoint ..\zero-trainer\weights\gen0033.onxx --start-gen 34 --engine-bin ..\target\release\taflzero.exe --no-sprt --anchor-net ..\zero-trainer\weights\gen0022.onnx --anchor-pairs 1000 --sprt-nodes 100 --no-restore-best
 ```

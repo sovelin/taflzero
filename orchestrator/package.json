@@ -11,6 +11,6 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
-    "zevratafl-rust": "sovaz1997/zevratafl"
+    "taflzero": "git+ssh://git@github.com/sovelin/taflzero.git"
   }
 }

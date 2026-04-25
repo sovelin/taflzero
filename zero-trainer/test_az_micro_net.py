@@ -138,10 +138,10 @@ def test_onnx_export_matches_pytorch(tmp_path) -> None:
 
 def _find_engine_binary(repo_root: Path) -> Path | None:
     candidates = [
-        repo_root / "target" / "release" / "zevratafl-rust.exe",
-        repo_root / "target" / "debug" / "zevratafl-rust.exe",
-        repo_root / "target" / "release" / "zevratafl-rust",
-        repo_root / "target" / "debug" / "zevratafl-rust",
+        repo_root / "target" / "release" / "taflzero.exe",
+        repo_root / "target" / "debug" / "taflzero.exe",
+        repo_root / "target" / "release" / "taflzero",
+        repo_root / "target" / "debug" / "taflzero",
     ]
     for path in candidates:
         if path.exists():

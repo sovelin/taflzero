@@ -66,12 +66,10 @@ impl Board {
 
         for ch in row_fen.chars() {
             if ch.is_ascii_digit() {
-                // копим число пустот
                 num = num * 10 + (ch as u8 - b'0') as usize;
                 continue;
             }
 
-            // если до этого шли цифры — сначала пролистываем пустые
             if num > 0 {
                 col = col.saturating_add(num as Col);
                 num = 0;
@@ -94,7 +92,6 @@ impl Board {
             }
         }
 
-        // trailing цифры в конце строки (допускаем)
         if num > 0 {
             col = col.saturating_add(num as Col);
         }
@@ -114,17 +111,13 @@ impl Board {
             return Err(FenError::InvalidRowsCount(rows.len()));
         }
 
-        // очистка (важно для корректных счётчиков/зобриста)
         self.clear();
 
-        // В FEN первая строка — верхняя (максимальный ряд).
-        // На твоей утилите ряды идут от 0 снизу, поэтому маппим:
         for (i, row_fen) in rows.iter().enumerate() {
             let row_idx: Row = (BOARD_SIZE - 1 - i) as Row;
             self.set_row_from_fen(row_fen, row_idx)?;
         }
 
-        // сторона хода
         let s = side_part.trim().chars().next().ok_or(FenError::MissingSide)?;
         let desired = side_from_char(s).ok_or(FenError::UnknownSide(s))?;
         if self.side_to_move != desired {
@@ -137,14 +130,13 @@ impl Board {
     pub fn get_fen(&self) -> String {
         let mut rows_out: Vec<String> = Vec::with_capacity(BOARD_SIZE);
 
-        // идём сверху вниз (BOARD_SIZE-1 .. 0)
         for row in (0..BOARD_SIZE).rev() {
             let mut empty = 0usize;
             let mut out = String::new();
 
             for col in 0..BOARD_SIZE {
                 let sq = get_square(row as Row, col as Col);
-                let p = self.board[sq as usize]; // поле публичное — читаем напрямую
+                let p = self.board[sq as usize];
 
                 if p == Piece::EMPTY {
                     empty += 1;

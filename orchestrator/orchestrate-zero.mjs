@@ -190,7 +190,7 @@ function genName(idx) {
 
 function resolveEngineBinary(debugEngine) {
     const profileDir = debugEngine ? "debug" : "release";
-    const exeName = process.platform === "win32" ? "zevratafl-rust.exe" : "zevratafl-rust";
+    const exeName = process.platform === "win32" ? "taflzero.exe" : "taflzero";
     //return path.join("target", profileDir, exeName);
     return exeName;
 }
