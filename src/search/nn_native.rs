@@ -1,7 +1,10 @@
 use ndarray::{Array, IxDyn};
-use ort::execution_providers::{CUDAExecutionProvider, DirectMLExecutionProvider};
 use ort::session::Session;
 use ort::value::Value;
+#[cfg(feature = "cuda")]
+use ort::execution_providers::CUDAExecutionProvider;
+#[cfg(feature = "directml")]
+use ort::execution_providers::DirectMLExecutionProvider;
 use crate::masks::BOARD_SIZE;
 use crate::position_export::BitPosition;
 use super::nn_common::{build_input_data, NnOutput, NUM_PLANES, POLICY_SIZE, SAMPLE_SIZE};
@@ -12,16 +15,27 @@ pub struct NeuralNet {
 
 impl NeuralNet {
     pub fn new(path: &str) -> Self {
-        let cuda_ep = CUDAExecutionProvider::default().build();
-        let dml_ep = DirectMLExecutionProvider::default().build();
-
         println!("[NN] Loading model: {}", path);
-        println!("[NN] Requested EPs: CUDA, DirectML (fallback: CPU)");
 
-        let mut session = Session::builder()
-            .unwrap()
-            .with_execution_providers([cuda_ep, dml_ep])
-            .unwrap()
+        #[cfg(all(feature = "cuda", feature = "directml"))]
+        println!("[NN] Backend: CUDA → DirectML → CPU (auto)");
+        #[cfg(all(feature = "cuda", not(feature = "directml")))]
+        println!("[NN] Backend: CUDA");
+        #[cfg(all(feature = "directml", not(feature = "cuda")))]
+        println!("[NN] Backend: DirectML");
+        #[cfg(not(any(feature = "cuda", feature = "directml")))]
+        println!("[NN] Backend: CPU");
+
+        let mut builder = Session::builder().unwrap();
+
+        #[cfg(all(feature = "cuda", feature = "directml"))]
+        { builder = builder.with_execution_providers([CUDAExecutionProvider::default().build(), DirectMLExecutionProvider::default().build()]).unwrap(); }
+        #[cfg(all(feature = "cuda", not(feature = "directml")))]
+        { builder = builder.with_execution_providers([CUDAExecutionProvider::default().build()]).unwrap(); }
+        #[cfg(all(feature = "directml", not(feature = "cuda")))]
+        { builder = builder.with_execution_providers([DirectMLExecutionProvider::default().build()]).unwrap(); }
+
+        let mut session = builder
             .commit_from_file(path)
             .expect("Unable to commit neural net");
 
