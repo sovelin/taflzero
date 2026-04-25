@@ -142,7 +142,6 @@ def main() -> None:
                 chunk_start = total + 1
                 atk = defn = draw = 0
 
-    # остаток
     if atk + defn + draw > 0:
         stats = print_chunk(chunk_idx, chunk_start, total, atk, defn, draw)
         if stats is not None:

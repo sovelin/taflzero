@@ -238,7 +238,7 @@ impl Debug for Board {
                 let sq = r * size + c;
                 let p = self.board[sq];
 
-                // Цвета ANSI: 31=красный, 34=синий, 33=жёлтый
+                // ANSI colors: 31=red, 34=blue, 33=yellow
                 match p {
                     Piece::ATTACKER => write!(f, "\x1b[31mA\x1b[0m")?,
                     Piece::DEFENDER => write!(f, "\x1b[34mD\x1b[0m")?,
@@ -266,9 +266,6 @@ impl Debug for Board {
         writeln!(f)?;
 
         writeln!(f, "zobrist: {}", self.zobrist)?;
-        // if let Some(fen) = self.fen() {
-        //     writeln!(f, "FEN: {}", fen)?;
-        // }
 
         Ok(())
     }

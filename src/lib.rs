@@ -11,7 +11,6 @@ mod tests;
 mod timer;
 mod uci;
 pub mod nnue;
-pub mod dataset;
 
 pub use engine::*;
 pub use board::*;
@@ -21,7 +20,6 @@ pub use evaluation::*;
 pub use uci::*;
 
 
-// экспортируем тестовую функцию (для проверки)
 #[wasm_bindgen]
 pub fn hello() -> String {
     "Hello from Rust!".to_string()

@@ -23,12 +23,10 @@ pub struct UciController<O: UciOutput> {
 }
 
 impl<O: UciOutput> UciController<O> {
-    pub fn new(tt_size_mb: usize, output: O, nn: NeuralNet) -> Self {
-        let w1 = load_fc1_from_raw();
-        let w2 = load_fc2_from_raw();
+    pub fn new(tt_size_mb: usize, output: O, net_path: String) -> Self {
 
         Self {
-            engine: Engine::new(tt_size_mb, &w1, &w2, nn),
+            engine: Engine::new(tt_size_mb, net_path),
             output,
         }
     }
@@ -65,7 +63,18 @@ impl<O: UciOutput> UciController<O> {
                 UciRunState::Continue
             }
             "uci" => {
-                self.send("id name ZevraTafl\nid author Oleg Smirnov\nuciok");
+                self.send("id name l\nid author Oleg Smirnov\nuciok");
+                self.send("option name NNFile type string default ./default_nn.onnx");
+                UciRunState::Continue
+            }
+            "setoption" => {
+                if tokens.len() >= 5 && tokens[1] == "name" && tokens[2] == "NNFile" && tokens[3] == "value" {
+                    let path = tokens[4];
+                    self.engine.set_nn(path.to_string());
+                    self.send(&format!("NN file set to '{}'", path));
+                } else {
+                    self.send("unsupported setoption format");
+                }
                 UciRunState::Continue
             }
             "position" => {
@@ -247,9 +256,9 @@ pub struct ConsoleClient {
 }
 
 impl ConsoleClient {
-    pub fn new(tt_size_mb: usize, nn: NeuralNet) -> Self {
+    pub fn new(tt_size_mb: usize, net_path: String) -> Self {
         Self {
-            controller: UciController::new(tt_size_mb, ConsoleBridge, nn),
+            controller: UciController::new(tt_size_mb, ConsoleBridge, net_path)
         }
     }
 
@@ -318,9 +327,8 @@ impl WasmClient {
     #[wasm_bindgen(constructor)]
     pub fn new(event_name: String, tt_size: usize) -> Self {
         let bridge = WasmBridge::new(event_name);
-        let nn = NeuralNet::new("./gen1.onxx");
         Self {
-            controller: UciController::new(tt_size, bridge, nn),
+            controller: UciController::new(tt_size, bridge, "".to_string()),
         }
     }
 

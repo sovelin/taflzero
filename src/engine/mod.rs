@@ -19,28 +19,43 @@ pub struct Engine {
     nn: NeuralNet,
     best_move: Option<Move>,
     tree: MCTSTree,
+    config: EngineConfig
+}
+
+pub struct EngineConfig {
+    pub net_path: String,
 }
 
 impl Engine {
-    pub fn new(tt_size_mb: usize, w1: &Weights1, w2: &Weights2, nn: NeuralNet) -> Self {
+
+    pub fn new(tt_size_mb: usize, net_path: String) -> Self {
+        let net_path = String::from(net_path);
+
+        let config = EngineConfig {
+            net_path: net_path.clone(),
+        };
+        let nn = NeuralNet::new(config.net_path.as_str());
+
+        let mut board = Board::new();
+        board.setup_initial_position().expect("Setup initial position failed");
+
         Self {
             tt: TranspositionTable::new(tt_size_mb),
             search_data: SearchData::new(),
-            board: Board::new_with_nnue(w1.clone(), w2.clone()),
             nn,
             best_move: None,
-            tree: MCTSTree::new()
+            tree: MCTSTree::new(),
+            config,
+            board
         }
     }
-    pub fn new_no_nnue(tt_size_mb: usize, nn: NeuralNet) -> Self {
-        Self {
-            tt: TranspositionTable::new(tt_size_mb),
-            search_data: SearchData::new(),
-            board: Board::new(),
-            nn,
-            best_move: None,
-            tree: MCTSTree::new()
-        }
+
+    pub fn set_nn(&mut self, path: String) {
+        self.config.net_path = String::from(path);
+
+        // try catching error here and returning it instead of panicking
+
+        self.nn = NeuralNet::new(self.config.net_path.as_str());
     }
 
     pub fn best_move(&self) -> Option<Move> {

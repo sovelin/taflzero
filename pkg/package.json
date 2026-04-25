@@ -1,14 +1,14 @@
 {
-  "name": "zevratafl-rust",
+  "name": "taflzero",
   "type": "module",
   "version": "0.1.0",
   "files": [
-    "zevratafl_rust_bg.wasm",
-    "zevratafl_rust.js",
-    "zevratafl_rust.d.ts"
+    "taflzero_bg.wasm",
+    "taflzero.js",
+    "taflzero.d.ts"
   ],
-  "main": "zevratafl_rust.js",
-  "types": "zevratafl_rust.d.ts",
+  "main": "taflzero.js",
+  "types": "taflzero.d.ts",
   "sideEffects": [
     "./snippets/*"
   ]

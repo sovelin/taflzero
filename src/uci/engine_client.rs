@@ -1,5 +1,5 @@
 use wasm_bindgen::prelude::wasm_bindgen;
-use crate::{Board, Engine};
+use crate::{Board, Engine, EngineConfig};
 use crate::movegen::MoveGen;
 use crate::mv::{create_move_from_algebraic, Move};
 use crate::nnue::load_default_weights;
@@ -17,10 +17,7 @@ struct EngineClient {
 impl EngineClient {
     #[wasm_bindgen(constructor)]
     pub fn new(tt_size_mb: usize) -> Self {
-        let (w1, w2) = load_default_weights();
-        let nn = NeuralNet::new("./gen1.onxx");
-
-        let engine = Engine::new(tt_size_mb, &w1, &w2, nn);
+        let engine = Engine::new(tt_size_mb, "".to_string());
 
         Self {
             engine,

@@ -1,8 +1,5 @@
 #[cfg(test)]
 mod tests {
-    // Если это в fen.rs, super::* подтянет публичные вещи из модуля fen (например, Board методы).
-    use super::*;
-
     use crate::board::{Board};
     use crate::board::constants::INITIAL_FEN;
     use crate::board::types::{Piece, Side};
@@ -73,7 +70,6 @@ mod tests {
             b.set_piece(get_square_from_algebraic("e10"), Piece::ATTACKER);
             b.set_piece(get_square_from_algebraic("k1"), Piece::ATTACKER);
 
-            // По умолчанию пусть очередь хода — атакующие (если у тебя иначе — выставь явно)
             b.side_to_move = Side::ATTACKERS;
 
             let fen = b.get_fen();
@@ -97,7 +93,6 @@ mod tests {
 
     #[test]
     fn roundtrip_set_and_get_fen_basic() {
-        // Полный раунд-трип (как твой пример «как должно быть»)
         let fen = "11/4a6/11/11/7d3/5k5/11/1d9/8a2/11/10a d";
         let mut b = Board::new();
         b.set_fen(fen).expect("set_fen failed");

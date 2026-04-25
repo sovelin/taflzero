@@ -1,6 +1,6 @@
-use zevratafl_rust::{ConsoleClient, UciRunState};
-use zevratafl_rust::gen_train_data::gen_train_data;
-use zevratafl_rust::search::nn::NeuralNet;
+use taflzero::{ConsoleClient, UciRunState};
+use taflzero::gen_train_data::gen_train_data;
+use taflzero::search::nn::NeuralNet;
 
 struct CliArgs {
     net_path: String,
@@ -11,7 +11,7 @@ struct CliArgs {
 }
 
 fn parse_args() -> CliArgs {
-    let mut net_path = String::from("./gen1.onxx");
+    let mut net_path = String::from("./default_nn.onnx");
     let mut datagen_path: Option<String> = None;
     let mut datagen_count: Option<usize> = None;
     let mut gamelog_path: Option<String> = None;
@@ -72,7 +72,7 @@ fn parse_args() -> CliArgs {
             }
             _ => {
                 eprintln!("Unknown arg: {arg}");
-                eprintln!("Usage: zevratafl-rust [--net <model.onnx>] [--datagen <output.bin>] [--datagen-count <games>] [--dump-sample <output.bin>]");
+                eprintln!("Usage: taflzero [--net <model.onnx>] [--datagen <output.bin>] [--datagen-count <games>] [--dump-sample <output.bin>]");
                 std::process::exit(2);
             }
         }
@@ -90,25 +90,25 @@ fn main() {
     }
 
     if let Some(path) = cli.dump_sample_path {
-        zevratafl_rust::gen_train_data::dump_single_sample(&path);
+        taflzero::gen_train_data::dump_single_sample(&path);
         return;
     }
 
-    let mut nn = NeuralNet::new(&cli.net_path);
-
     if let Some(path) = cli.datagen_path {
+        let mut nn = NeuralNet::new(&cli.net_path);
+
         let log_path = cli.gamelog_path.unwrap_or_else(|| format!("{}.gamelog", path));
         gen_train_data(&path, &log_path, &mut nn, cli.datagen_count);
         return;
     }
 
-    run_console_uci(nn);
+    run_console_uci(cli.net_path);
 }
 
-fn run_console_uci(nn: NeuralNet) {
+fn run_console_uci(net_path: String) {
     use std::io;
 
-    let mut client = ConsoleClient::new(32, nn);
+    let mut client = ConsoleClient::new(32, net_path);
     let stdin = io::stdin();
     let mut line = String::new();
 
