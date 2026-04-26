@@ -693,21 +693,22 @@ pub fn mcts_search(
             if let Some(callback) = on_iteration {
                 if let Some(best_id) = get_best_child(tree, 0.0) {
                     let best = tree.get_node(best_id);
-                    let score = if best.visits > 0.0 {
+                    let (score, winrate) = if best.visits > 0.0 {
                         let v = (best.wins / best.visits).clamp(-0.9999, 0.9999);
-                        (111.714640912 * (1.5620688421 * v).tan()) as i32
+                        let winrate = (v + 1.0) / 2.0;
+                        ((111.714640912 * (1.5620688421 * v).tan()) as i32, winrate)
                     } else {
-                        0
+                        (0, 0.5)
                     };
                     let speed = if elapsed > 0 { iteration * 1000 / elapsed } else { 0 };
 
                     callback(SearchIterationResponse {
-                        depth: 0,
                         score,
                         nodes: iteration,
                         time: elapsed,
                         speed,
                         pv: tree.get_pv(),
+                        winrate
                     });
                 }
             }
