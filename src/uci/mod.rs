@@ -63,7 +63,10 @@ impl<O: UciOutput> UciController<O> {
                 UciRunState::Continue
             }
             "uci" => {
-                self.send("id name l\nid author Oleg Smirnov\nuciok");
+                self.send(&format!(
+                    "id name {}\nid author Oleg Smirnov\nuciok",
+                    env!("CARGO_PKG_NAME")
+                ));
                 self.send("option name NNFile type string default ./default_nn.onnx");
                 UciRunState::Continue
             }
