@@ -52,6 +52,42 @@ cargo build --release --no-default-features
 wasm-pack build --target web --release
 ```
 
+## UCI interface
+
+TaflZero speaks a UCI-based protocol. Run the binary and communicate via stdin/stdout.
+
+**Command-line arguments:**
+
+```
+taflzero.exe [--net <model.onnx>] [--datagen <output.bin>] [--datagen-count <N>] [--gamelog <path>]
+```
+
+- `--net <path>` — ONNX network to load (default: `./default_nn.onnx`)
+- `--datagen <path>` — run self-play data generation, write to binary file
+- `--datagen-count <N>` — number of games for data generation
+- `--gamelog <path>` — game log output path (used with `--datagen`)
+
+**Commands:**
+
+| Command | Response | Description |
+|---|---|---|
+| `uci` | `id name ...`, `uciok`, `option ...` | Identify engine |
+| `isready` | `readyok` | Check engine is ready |
+| `setoption name NNFile value <path>` | — | Load a different ONNX network at runtime |
+| `position startpos` | — | Set starting position |
+| `position startpos moves e1e2 ...` | — | Set position with move sequence |
+| `position fen <fen> moves ...` | — | Set position from FEN |
+| `go nodes <N>` | `info ...`, `bestmove <move>` | Search for N MCTS nodes |
+| `go movetime <ms>` | `info ...`, `bestmove <move>` | Search for given time in ms |
+| `quit` | `bye` | Exit |
+
+**FEN format:** `3aaaaa3/5a5/11/a4d4a/a3ddd3a/aa1ddkdd1aa/a3ddd3a/a4d4a/11/5a5/3aaaaa3 a`
+- `a` — attacker, `d` — defender, `k` — king; side to move: `a` or `d`
+
+**Move format:** algebraic `<from><to>`, e.g. `a6b6`, `f6f1`
+
+**Output:** `info depth <N> score cp <V> nodes <N> time <ms> speed <nps> pv <moves>` → `bestmove <move>`
+
 ## Current training run
 
 128 channels, 10 residual blocks, 400 MCTS nodes:
