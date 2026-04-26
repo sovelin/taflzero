@@ -14,12 +14,12 @@ use crate::transposition::TTFlag;
 
 #[wasm_bindgen]
 pub struct SearchIterationResponse {
-    pub depth: i32,
     pub score: i32,
     pub nodes: u64,
     pub time: u64,
     pub speed: u64,
     pub(crate) pv: Vec<Move>,
+    pub winrate: f32,
 }
 
 impl SearchIterationResponse {

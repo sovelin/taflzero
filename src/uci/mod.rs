@@ -22,6 +22,22 @@ pub struct UciController<O: UciOutput> {
     output: O,
 }
 
+
+
+fn format_info_message(iteration: SearchIterationResponse) -> String {
+    let pv_str = iteration.pv().iter().map(|m| format!("{:?}", m)).collect::<Vec<_>>().join(" ");
+
+    format!(
+        "info score cp {} winrate {:.1}% nodes {} time {} speed {} pv {}",
+        iteration.score,
+        iteration.winrate * 100.0,
+        iteration.nodes,
+        iteration.time,
+        iteration.speed,
+        pv_str,
+    )
+}
+
 impl<O: UciOutput> UciController<O> {
     pub fn new(tt_size_mb: usize, output: O, net_path: String) -> Self {
 
@@ -186,16 +202,7 @@ impl<O: UciOutput> UciController<O> {
 
         let output = &self.output;
         self.engine.make_search_nodes(nodes, Some(&|iteration: SearchIterationResponse| {
-            let pv_str = iteration.pv().iter().map(|m| format!("{:?}", m)).collect::<Vec<_>>().join(" ");
-            let msg = format!(
-                "info depth {} score cp {} nodes {} time {} speed {} pv {}",
-                iteration.depth,
-                iteration.score,
-                iteration.nodes,
-                iteration.time,
-                iteration.speed,
-                pv_str,
-            );
+            let msg = format_info_message(iteration);
             output.send(&msg);
         }));
 
@@ -221,16 +228,7 @@ impl<O: UciOutput> UciController<O> {
 
         let output = &self.output;
         self.engine.make_search(movetime, MAX_PLY as u32, Some(&|iteration: SearchIterationResponse| {
-            let pv_str = iteration.pv().iter().map(|m| format!("{:?}", m)).collect::<Vec<_>>().join(" ");
-            let msg = format!(
-                "info depth {} score cp {} nodes {} time {} speed {} pv {}",
-                iteration.depth,
-                iteration.score,
-                iteration.nodes,
-                iteration.time,
-                iteration.speed,
-                pv_str,
-            );
+            let msg = format_info_message(iteration);
             output.send(&msg);
         }));
 
