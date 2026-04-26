@@ -2,6 +2,9 @@
 # yarn lockfile v1
 
 
-"taflzero@git+ssh://git@github.com/sovelin/zevratafl.git#feat/taflzero-prepare-to-open-source":
+taflzero@../pkg:
+  version "0.1.0"
+
+"taflzero@git+ssh://git@github.com/sovelin/taflzero.git":
   version "0.0.0"
-  resolved "git+ssh://git@github.com/sovelin/zevratafl.git#04fb4ec72b7f3ea333d633fb3832014b7255dd5b"
+  resolved "git+ssh://git@github.com/sovelin/taflzero.git#8d94ed2d1397e2cb6e9929743803f03773df20b3"

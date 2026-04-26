@@ -11,6 +11,6 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
-    "taflzero": "git+ssh://git@github.com/sovelin/taflzero.git"
+    "taflzero": "../pkg"
   }
 }

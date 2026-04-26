@@ -20,7 +20,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const wasmPath = path.join(__dirname, "node_modules/taflzero/pkg/taflzero_bg.wasm");
+const wasmPath = path.join(__dirname, "node_modules/taflzero/taflzero_bg.wasm");
 const wasmBytes = readFileSync(wasmPath);
 
 const { default: init, EngineClient, Side, get_total_squares } = await import("taflzero");
