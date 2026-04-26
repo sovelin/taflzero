@@ -3,8 +3,10 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use crate::board::Board;
 use crate::evaluation::MATE_SCORE;
 use crate::is_mate_score;
+use crate::mcts::mcts::{mcts_search, MCTSConfig, MCTSTree};
 use crate::moves::mv::Move;
 use crate::search::constants::MAX_PLY;
+use crate::search::nn::NeuralNet;
 use crate::search::search::search;
 use crate::search::search_data::SearchData;
 use crate::search::transposition::TranspositionTable;
@@ -13,11 +15,17 @@ use crate::transposition::TTFlag;
 #[wasm_bindgen]
 pub struct SearchIterationResponse {
     pub depth: i32,
-    pub mv: Move,
     pub score: i32,
     pub nodes: u64,
     pub time: u64,
     pub speed: u64,
+    pub(crate) pv: Vec<Move>,
+}
+
+impl SearchIterationResponse {
+    pub fn pv(&self) -> &[Move] {
+        &self.pv
+    }
 }
 
 #[wasm_bindgen]
@@ -86,50 +94,35 @@ pub fn search_root(
     board: &mut Board,
     search_data: &mut SearchData,
     tt: &mut TranspositionTable,
+    nn: &mut NeuralNet,
     on_iteration: Option<&dyn Fn(SearchIterationResponse)>,
+    tree: &mut MCTSTree,
 ) -> SearchResponse {
-    let mut best_score = 0;
 
-    search_data.timer.start();
-    search_data.nodes_searched = 0;
-    search_data.best_move = None;
-
-    let mut local_best_move: Option<Move> = None;
-
-    for i in 1..=search_data.depth_limit {
-        best_score = aspiration_window(board, search_data, tt, i, best_score);
-
-        if search_data.time_exceeded() {
-            break;
-        }
-
-        let time_elapsed = search_data.timer.elapsed_ms();
-        local_best_move = search_data.best_move;
-
-        if let Some(callback) = on_iteration {
-            let best_move = search_data.best_move.unwrap_or_default();
-
-            let speed = if time_elapsed > 0 {
-                (search_data.nodes_searched * 1000) / time_elapsed
-            } else {
-                0
-            };
-
-            callback(SearchIterationResponse {
-                depth: i as i32,
-                mv: best_move,
-                score: best_score,
-                nodes: search_data.nodes_searched,
-                time: time_elapsed,
-                speed,
-            });
-        }
-    }
-
-    search_data.tt_age += 1;
+    let config = MCTSConfig::default_play();
+    let best_move = mcts_search(board, tree, nn, search_data, on_iteration, None, &config);
 
     SearchResponse {
-        best_move: local_best_move.unwrap_or_default(),
-        score: best_score,
+        best_move: best_move.unwrap_or_default(),
+        score: 0,
+    }
+}
+
+pub fn search_root_nodes(
+    board: &mut Board,
+    search_data: &mut SearchData,
+    tt: &mut TranspositionTable,
+    nn: &mut NeuralNet,
+    on_iteration: Option<&dyn Fn(SearchIterationResponse)>,
+    tree: &mut MCTSTree,
+    nodes: u64,
+) -> SearchResponse {
+
+    let config = MCTSConfig::default_play();
+    let best_move = mcts_search(board, tree, nn, search_data, on_iteration, Some(nodes), &config);
+
+    SearchResponse {
+        best_move: best_move.unwrap_or_default(),
+        score: 0,
     }
 }

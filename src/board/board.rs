@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 use crate::board::fen::FenError;
 use crate::board::PRECOMPUTED;
+use crate::board::utils::get_square;
 use crate::nnue::{calculate_nnue_index, Weights1, Weights2, NNUE, STM_BIT, load_default_weights};
 use super::zobrist::{ZOBRIST_DATA};
 use super::types::{OptionalSquare, Piece, Side, Square, ZobristHash};
@@ -207,6 +208,10 @@ impl Board {
         let nnue_input = self.nnue.inputs[STM_BIT];
         println!("{}", nnue_input);
     }
+
+    pub fn board(&self) -> &[Piece; SQS] {
+        &self.board
+    }
 }
 
 impl Debug for Board {
@@ -233,7 +238,7 @@ impl Debug for Board {
                 let sq = r * size + c;
                 let p = self.board[sq];
 
-                // Цвета ANSI: 31=красный, 34=синий, 33=жёлтый
+                // ANSI colors: 31=red, 34=blue, 33=yellow
                 match p {
                     Piece::ATTACKER => write!(f, "\x1b[31mA\x1b[0m")?,
                     Piece::DEFENDER => write!(f, "\x1b[34mD\x1b[0m")?,
@@ -261,9 +266,6 @@ impl Debug for Board {
         writeln!(f)?;
 
         writeln!(f, "zobrist: {}", self.zobrist)?;
-        // if let Some(fen) = self.fen() {
-        //     writeln!(f, "FEN: {}", fen)?;
-        // }
 
         Ok(())
     }
@@ -272,5 +274,30 @@ impl Debug for Board {
 impl Display for Board {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self)
+    }
+}
+
+pub fn set_board_from_str(board: &mut Board, position: &str) {
+    board.clear();
+
+    for (r, line) in position.lines().enumerate() {
+        let mut index = 0;
+        for (c, ch) in line.chars().enumerate() {
+            let sq = get_square(BOARD_SIZE - 1 - r, index);
+            let piece = match ch {
+                'A' => Some(Piece::ATTACKER),
+                'D' => Some(Piece::DEFENDER),
+                'K' => Some(Piece::KING),
+                '.' => Some(Piece::EMPTY),
+                _ => None,
+            };
+
+            if let Some(piece) = piece {
+                if piece != Piece::EMPTY {
+                board.set_piece(sq, piece).expect("set_piece");
+                }
+                index += 1;
+            };
+        }
     }
 }

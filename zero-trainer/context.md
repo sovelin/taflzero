@@ -1,0 +1,311 @@
+# 🧠 Project: Tafl AlphaZero (Micro Network)
+
+## 🎯 Goal
+Implement an AlphaZero-style neural network for Tafl:
+
+- Input: 11×11 board position
+- Output: policy (4840 moves) + value
+- Used together with MCTS (PUCT)
+- Trained via self-play
+
+---
+
+# 📐 Network Architecture
+
+## 📥 Input
+
+Shape: **6 × 11 × 11**
+
+Channels:
+
+1. Attackers (bitboard plane)
+2. Defenders
+3. King
+4. Side-to-move (full plane of 0/1)
+5. Corners (4 escape squares)
+6. Throne (center square)
+
+All channels are `float32` containing only `0.0` or `1.0`.
+
+---
+
+## 🏗 Trunk
+
+- Initial convolution  
+  `Conv2d(6 → 8, kernel=3, padding=1)`
+- ReLU
+- 3 residual blocks
+
+Each residual block:
+
+```
+Conv2d(8 → 8, 3×3)
+ReLU
+Conv2d(8 → 8, 3×3)
+Skip connection
+ReLU
+```
+
+Summary:
+
+- Channels (C) = 8
+- Depth = 3 residual blocks
+
+This is intentionally a **very small network** to validate the AlphaZero pipeline.
+
+---
+
+# 🎯 Policy Head
+
+Target: **4840 possible moves**
+
+Reasoning:
+
+- 121 board squares (origins)
+- 4 directions
+- 10 distances
+
+121 × 4 × 10 = **4840**
+
+### Structure
+
+```
+Conv1x1(8 → 40)
+reshape → (40 × 11 × 11)
+flatten → 4840 logits
+```
+
+Why 40 channels?
+
+Because:
+
+- 4 directions × 10 distances = 40 move types
+- Each board cell acts as the origin square
+
+Therefore the policy is **spatial**, not a fully-connected layer to 4840.
+
+---
+
+# 🎯 Value Head
+
+Structure:
+
+```
+Conv1x1(8 → 1)
+flatten (121)
+Linear(121 → 64)
+ReLU
+Linear(64 → 1)
+tanh
+```
+
+Output: scalar in range **[-1, +1]**
+
+- +1 → current player wins
+- −1 → current player loses
+- 0 → draw / uncertain
+
+---
+
+# 📊 Loss Function
+
+Total loss:
+
+```
+Loss = PolicyLoss + ValueLoss
+```
+
+## Policy Loss
+
+Cross-entropy between:
+
+- π_target — probability distribution derived from MCTS visit counts
+- network softmax(logits)
+
+Before softmax:
+illegal moves are masked:
+
+```
+logits = -inf for illegal actions
+```
+
+## Value Loss
+
+Mean Squared Error:
+
+```
+(value_pred − value_target)^2
+```
+
+where `value_target` is the final game result from the perspective of the side-to-move.
+
+---
+
+# 📦 Training Sample Export Format
+
+Binary layout:
+
+```
+[BitPosition]          49 bytes
+[LegalMask]            605 bytes
+[policy_len]           u16
+[PolicyTarget × N]     N * 4 bytes
+[value]                i8
+```
+
+---
+
+# 🧩 Rust Export Code
+
+```rust
+use crate::Board;
+use crate::mcts::mcts::MCTSTree;
+use crate::mcts::utils::move_to_policy_index;
+use crate::position_export::BitPosition;
+use crate::types::Side;
+use std::io::{Write, Result};
+
+pub const ACTIONS: usize = 121 * 4 * 10; // 4840
+pub const LEGAL_MASK_BYTES: usize = (ACTIONS + 7) / 8; // 605
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct LegalMask {
+    data: [u8; LEGAL_MASK_BYTES],
+}
+
+impl LegalMask {
+    pub fn new() -> Self {
+        Self {
+            data: [0u8; LEGAL_MASK_BYTES],
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.data.fill(0);
+    }
+
+    #[inline]
+    pub fn set(&mut self, action_index: usize) {
+        debug_assert!(action_index < ACTIONS);
+
+        let byte = action_index / 8;
+        let bit = action_index % 8;
+
+        self.data[byte] |= 1 << bit;
+    }
+
+    #[inline]
+    pub fn is_set(&self, action_index: usize) -> bool {
+        debug_assert!(action_index < ACTIONS);
+
+        let byte = action_index / 8;
+        let bit = action_index % 8;
+
+        (self.data[byte] >> bit) & 1 == 1
+    }
+
+    #[inline]
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.data
+    }
+}
+
+fn compute_value(side_to_move: Side, result: Option<Side>) -> i8 {
+    match result {
+        None => 0, // draw / cutoff
+        Some(winner) => {
+            if winner == side_to_move {
+                1
+            } else {
+                -1
+            }
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct PolicyTarget {
+    move_index: u16,
+    visits: u16,
+}
+
+struct PendingSample {
+    bit_position: BitPosition,
+    legal_mask: LegalMask,
+    policy: Vec<PolicyTarget>,
+    value: i8,
+}
+
+impl PendingSample {
+    pub fn write_to<W: Write>(&self, w: &mut W) -> Result<()> {
+        w.write_all(self.bit_position.as_bytes())?;
+        w.write_all(self.legal_mask.as_bytes())?;
+
+        let policy_len = self.policy.len() as u16;
+        w.write_all(&policy_len.to_le_bytes())?;
+
+        for t in &self.policy {
+            w.write_all(&t.move_index.to_le_bytes())?;
+            w.write_all(&t.visits.to_le_bytes())?;
+        }
+
+        w.write_all(&[self.value as u8])?;
+        Ok(())
+    }
+
+    pub fn set_value_from_result(&mut self, result: Option<Side>) {
+        let stm_side =
+            if self.bit_position.stm == 0 { Side::DEFENDERS } else { Side::ATTACKERS };
+
+        self.value = compute_value(stm_side, result);
+    }
+}
+
+impl MCTSTree {
+    fn build_legal_mask_from_board(&mut self, board: &Board) -> LegalMask {
+        let mut legal_mask = LegalMask::new();
+        self.move_gen.generate_moves(board);
+
+        for i in 0..self.move_gen.count {
+            let mv = self.move_gen.moves[i];
+            let move_index = move_to_policy_index(mv);
+            legal_mask.set(move_index as usize);
+        }
+
+        legal_mask
+    }
+
+    pub fn make_pending_sample(&mut self, board: &Board) -> PendingSample {
+        let root = self.get_root();
+        let mut policy: Vec<PolicyTarget> = vec![];
+
+        for &child_id in root.children() {
+            let node = self.get_node(child_id);
+            let visits_f = node.visits();
+            let visits_u16 = visits_f.round().min(u16::MAX as f32) as u16;
+
+            if let Some(mv) = node.mv() {
+                if visits_u16 == 0 {
+                    continue;
+                }
+
+                let move_index = move_to_policy_index(mv);
+
+                policy.push(PolicyTarget {
+                    move_index,
+                    visits: visits_u16,
+                });
+            }
+        }
+
+        PendingSample {
+            bit_position: BitPosition::from_board(board),
+            legal_mask: self.build_legal_mask_from_board(board),
+            policy,
+            value: 0,
+        }
+    }
+}
+```

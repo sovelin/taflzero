@@ -3,6 +3,7 @@ pub mod constants;
 
 use crate::mv::create_move_from_algebraic;
 use crate::nnue::{load_fc1_from_raw, load_fc2_from_raw};
+use crate::search::nn::NeuralNet;
 use crate::search::search_root::SearchIterationResponse;
 use crate::Engine;
 
@@ -22,12 +23,10 @@ pub struct UciController<O: UciOutput> {
 }
 
 impl<O: UciOutput> UciController<O> {
-    pub fn new(tt_size_mb: usize, output: O) -> Self {
-        let w1 = load_fc1_from_raw();
-        let w2 = load_fc2_from_raw();
+    pub fn new(tt_size_mb: usize, output: O, net_path: String) -> Self {
 
         Self {
-            engine: Engine::new(tt_size_mb, &w1, &w2),
+            engine: Engine::new(tt_size_mb, net_path),
             output,
         }
     }
@@ -53,8 +52,6 @@ impl<O: UciOutput> UciController<O> {
         }
 
         let keyword = tokens[0];
-        self.send(&format!("Command received: {}", keyword));
-        self.send(&format!("Full command: {}", cmd));
 
         match keyword {
             "quit" => {
@@ -66,7 +63,18 @@ impl<O: UciOutput> UciController<O> {
                 UciRunState::Continue
             }
             "uci" => {
-                self.send("id name ZevraTafl\nid author Oleg Smirnov\nuciok");
+                self.send("id name l\nid author Oleg Smirnov\nuciok");
+                self.send("option name NNFile type string default ./default_nn.onnx");
+                UciRunState::Continue
+            }
+            "setoption" => {
+                if tokens.len() >= 5 && tokens[1] == "name" && tokens[2] == "NNFile" && tokens[3] == "value" {
+                    let path = tokens[4];
+                    self.engine.set_nn(path.to_string());
+                    self.send(&format!("NN file set to '{}'", path));
+                } else {
+                    self.send("unsupported setoption format");
+                }
                 UciRunState::Continue
             }
             "position" => {
@@ -158,7 +166,43 @@ impl<O: UciOutput> UciController<O> {
 
         match args[0] {
             "movetime" => self.handle_go_movetime(&args[1..]),
+            "nodes" => self.handle_go_nodes(&args[1..]),
             _ => self.send("unknown go subcommand"),
+        }
+    }
+
+    fn handle_go_nodes(&mut self, args: &[&str]) {
+        if args.is_empty() {
+            self.send("nodes value missing");
+            return;
+        }
+
+        let nodes = args[0].parse::<u64>().unwrap_or(0);
+
+        if nodes == 0 {
+            self.send("invalid nodes value");
+            return;
+        }
+
+        let output = &self.output;
+        self.engine.make_search_nodes(nodes, Some(&|iteration: SearchIterationResponse| {
+            let pv_str = iteration.pv().iter().map(|m| format!("{:?}", m)).collect::<Vec<_>>().join(" ");
+            let msg = format!(
+                "info depth {} score cp {} nodes {} time {} speed {} pv {}",
+                iteration.depth,
+                iteration.score,
+                iteration.nodes,
+                iteration.time,
+                iteration.speed,
+                pv_str,
+            );
+            output.send(&msg);
+        }));
+
+        if let Some(mv) = self.engine.best_move() {
+            self.send(&format!("bestmove {:?}", mv));
+        } else {
+            self.send("bestmove (none)");
         }
     }
 
@@ -177,14 +221,15 @@ impl<O: UciOutput> UciController<O> {
 
         let output = &self.output;
         self.engine.make_search(movetime, MAX_PLY as u32, Some(&|iteration: SearchIterationResponse| {
+            let pv_str = iteration.pv().iter().map(|m| format!("{:?}", m)).collect::<Vec<_>>().join(" ");
             let msg = format!(
-                "info depth {} score {} nodes {} time {} speed {} bestmove {:?}",
+                "info depth {} score cp {} nodes {} time {} speed {} pv {}",
                 iteration.depth,
                 iteration.score,
                 iteration.nodes,
                 iteration.time,
                 iteration.speed,
-                iteration.mv,
+                pv_str,
             );
             output.send(&msg);
         }));
@@ -211,9 +256,9 @@ pub struct ConsoleClient {
 }
 
 impl ConsoleClient {
-    pub fn new(tt_size_mb: usize) -> Self {
+    pub fn new(tt_size_mb: usize, net_path: String) -> Self {
         Self {
-            controller: UciController::new(tt_size_mb, ConsoleBridge),
+            controller: UciController::new(tt_size_mb, ConsoleBridge, net_path)
         }
     }
 
@@ -283,7 +328,7 @@ impl WasmClient {
     pub fn new(event_name: String, tt_size: usize) -> Self {
         let bridge = WasmBridge::new(event_name);
         Self {
-            controller: UciController::new(tt_size, bridge),
+            controller: UciController::new(tt_size, bridge, "".to_string()),
         }
     }
 

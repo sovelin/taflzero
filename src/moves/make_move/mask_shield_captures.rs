@@ -30,10 +30,7 @@ type ShieldItertor = (
     fn(Square) -> bool,
 );
 
-// ===== ядро: поиск взятий вдоль конкретной стороны щита =====
 fn captures_on_side(board: &mut Board, side: Side, which: ShieldSide, undo: &mut UndoMove) {
-    // Для каждой стороны задаём функции “направлений” как замыкания.
-    // next — как мы движемся вдоль края; roof — клетка “над” проверяемой фигурой.
     let (start, is_last, next, roof, is_always_friend): ShieldItertor = match which {
         ShieldSide::Top => (
             || PRECOMPUTED.top_left_sq,
@@ -77,7 +74,6 @@ fn captures_on_side(board: &mut Board, side: Side, which: ShieldSide, undo: &mut
     let mut seq: Vec<Square> = Vec::new();
     let mut seq_started = true;
 
-    // начинаем “до” первой клетки: как в TS, первая итерация — это next(start)
     let mut it = Some(start());
 
     fn add_to_undo_and_remove(sq: Square, board: &mut Board, undo: &mut UndoMove) {
@@ -94,19 +90,15 @@ fn captures_on_side(board: &mut Board, side: Side, which: ShieldSide, undo: &mut
     let mut start_sq: usize = 0;
 
     while let Some(next_sq) = it.and_then(next) {
-        // Дошли до последней клетки ряда: финализируем текущую серию
         if is_last(next_sq) {
             if seq.len() > 1 {
                 res.extend_from_slice(&seq);
                 seq.clear();
             }
-            // цикл продолжится, но дальше next(last) должен вернуть None
         } else if board.board[next_sq] == Piece::EMPTY && !is_always_friend(next_sq) {
-            // пустая — обнуляем серию
             seq.clear();
             seq_started = false;
         } else if is_friend(board, side, next_sq) || is_always_friend(next_sq) {
-            // своя фигура — закрываем серию, если >=2
             if seq.len() > 1 {
                 if board.last_move_to == start_sq as OptionalSquare || board.last_move_to == next_sq as OptionalSquare {
                 res.extend_from_slice(&seq);
@@ -116,19 +108,15 @@ fn captures_on_side(board: &mut Board, side: Side, which: ShieldSide, undo: &mut
             seq_started = true;
             start_sq = next_sq;
         } else {
-            // чужая фигура: проверяем “крышу”
             if !seq_started {
-                // серия ещё не началась (перед этим была дыра) — пропускаем
             } else if let Some(roof_sq) = roof(next_sq) {
                 if is_friend(board, side, roof_sq) {
                     seq.push(next_sq);
                 } else {
-                    // крыши нет/враги — обнуляем серию
                     seq.clear();
                     seq_started = false;
                 }
             } else {
-                // нет крыши — серия ломается
                 seq.clear();
                 seq_started = false;
             }

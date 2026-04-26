@@ -274,7 +274,6 @@ mod tests {
         let mut board = Board::new();
         board.set_piece(get_square_from_algebraic("c2"), Piece::ATTACKER);
         board.set_piece(get_square_from_algebraic("c4"), Piece::ATTACKER);
-        // c3 — пусто
 
         assert!(!is_capture_possible(
             &board,
@@ -287,9 +286,9 @@ mod tests {
     #[test]
     fn no_capture_when_king_on_throne_and_trying_to_capture_defender() {
         let mut board = Board::new();
-        board.set_piece(get_square_from_algebraic("f6"), Piece::KING);     // трон
-        board.set_piece(get_square_from_algebraic("f5"), Piece::DEFENDER); // цель
-        board.set_piece(get_square_from_algebraic("f4"), Piece::ATTACKER); // вторая сторона
+        board.set_piece(get_square_from_algebraic("f6"), Piece::KING);     // throne
+        board.set_piece(get_square_from_algebraic("f5"), Piece::DEFENDER); // target
+        board.set_piece(get_square_from_algebraic("f4"), Piece::ATTACKER); // second side
 
         assert!(!is_capture_possible(
             &board,
@@ -302,9 +301,9 @@ mod tests {
     #[test]
     fn capture_when_king_on_throne_captures_attacker_with_help_of_defender() {
         let mut board = Board::new();
-        board.set_piece(get_square_from_algebraic("f6"), Piece::KING);     // трон
-        board.set_piece(get_square_from_algebraic("f5"), Piece::ATTACKER); // цель
-        board.set_piece(get_square_from_algebraic("f4"), Piece::DEFENDER); // вторая сторона
+        board.set_piece(get_square_from_algebraic("f6"), Piece::KING);     // throne
+        board.set_piece(get_square_from_algebraic("f5"), Piece::ATTACKER); // target
+        board.set_piece(get_square_from_algebraic("f4"), Piece::DEFENDER); // second side
 
         assert!(is_capture_possible(
             &board,
@@ -317,15 +316,14 @@ mod tests {
     #[test]
     fn no_capture_when_king_on_throne_but_no_second_defender() {
         let mut board = Board::new();
-        board.set_piece(get_square_from_algebraic("f6"), Piece::KING);     // трон
-        board.set_piece(get_square_from_algebraic("f5"), Piece::ATTACKER); // цель
-        // нет второй фигуры, которая замкнет захват
+        board.set_piece(get_square_from_algebraic("f6"), Piece::KING);     // throne
+        board.set_piece(get_square_from_algebraic("f5"), Piece::ATTACKER); // target
 
         assert!(!is_capture_possible(
             &board,
             get_square_from_algebraic("f5"),
             get_square_from_algebraic("f6"),
-            get_square_from_algebraic("f4"), // пусто — не считается угрозой, т.к. не трон/угол
+            get_square_from_algebraic("f4"), // empty square, no defender
         ));
     }
 }

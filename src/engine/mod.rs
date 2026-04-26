@@ -1,10 +1,12 @@
 use wasm_bindgen::prelude::*;
 
 use crate::board::Board;
+use crate::mcts::mcts::MCTSTree;
 use crate::mv::Move;
 use crate::nnue::{Weights1, Weights2};
+use crate::search::nn::NeuralNet;
 use crate::search::search_data::SearchData;
-use crate::search::search_root::{search_root, SearchIterationResponse, SearchResponse};
+use crate::search::search_root::{search_root, search_root_nodes, SearchIterationResponse, SearchResponse};
 use crate::search::transposition::TranspositionTable;
 use crate::terminal::check_terminal;
 use crate::types::Side;
@@ -14,25 +16,46 @@ pub struct Engine {
     tt: TranspositionTable,
     search_data: SearchData,
     board: Board,
+    nn: NeuralNet,
     best_move: Option<Move>,
+    tree: MCTSTree,
+    config: EngineConfig
+}
+
+pub struct EngineConfig {
+    pub net_path: String,
 }
 
 impl Engine {
-    pub fn new(tt_size_mb: usize, w1: &Weights1, w2: &Weights2) -> Self {
+
+    pub fn new(tt_size_mb: usize, net_path: String) -> Self {
+        let net_path = String::from(net_path);
+
+        let config = EngineConfig {
+            net_path: net_path.clone(),
+        };
+        let nn = NeuralNet::new(config.net_path.as_str());
+
+        let mut board = Board::new();
+        board.setup_initial_position().expect("Setup initial position failed");
+
         Self {
             tt: TranspositionTable::new(tt_size_mb),
             search_data: SearchData::new(),
-            board: Board::new_with_nnue(w1.clone(), w2.clone()),
+            nn,
             best_move: None,
+            tree: MCTSTree::new(),
+            config,
+            board
         }
     }
-    pub fn new_no_nnue(tt_size_mb: usize) -> Self {
-        Self {
-            tt: TranspositionTable::new(tt_size_mb),
-            search_data: SearchData::new(),
-            board: Board::new(),
-            best_move: None,
-        }
+
+    pub fn set_nn(&mut self, path: String) {
+        self.config.net_path = String::from(path);
+
+        // try catching error here and returning it instead of panicking
+
+        self.nn = NeuralNet::new(self.config.net_path.as_str());
     }
 
     pub fn best_move(&self) -> Option<Move> {
@@ -50,7 +73,13 @@ impl Engine {
 
     pub fn make_search(&mut self, time: u64, depth: u32, on_iteration: Option<&dyn Fn(SearchIterationResponse)>) -> SearchResponse {
         self.search_data.start_timer(time, depth);
-        let res = search_root(&mut self.board, &mut self.search_data, &mut self.tt, on_iteration);
+        let res = search_root(&mut self.board, &mut self.search_data, &mut self.tt, &mut self.nn, on_iteration, &mut self.tree);
+        self.best_move = Some(res.best_move);
+        res
+    }
+
+    pub fn make_search_nodes(&mut self, nodes: u64, on_iteration: Option<&dyn Fn(SearchIterationResponse)>) -> SearchResponse {
+        let res = search_root_nodes(&mut self.board, &mut self.search_data, &mut self.tt, &mut self.nn, on_iteration, &mut self.tree, nodes);
         self.best_move = Some(res.best_move);
         res
     }
