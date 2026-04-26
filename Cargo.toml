@@ -52,7 +52,7 @@ overflow-checks = false
 incremental = false
 
 [package.metadata.wasm-pack.profile.release]
-wasm-opt = ["-O3", "--enable-bulk-memory", "--enable-nontrapping-float-to-int"]
+wasm-opt = ["-O3", "--enable-bulk-memory", "--enable-nontrapping-float-to-int", "--enable-simd"]
 
 [profile.profiling]
 inherits = "release"
