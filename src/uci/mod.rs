@@ -2,7 +2,6 @@ pub mod engine_client;
 pub mod constants;
 
 use crate::mv::create_move_from_algebraic;
-use crate::nnue::{load_fc1_from_raw, load_fc2_from_raw};
 use crate::search::nn::NeuralNet;
 use crate::search::search_root::SearchIterationResponse;
 use crate::Engine;
