@@ -4,6 +4,10 @@
 <br />
 <br />
 
+[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.com/invite/BvakpmGSTa)
+
+
+
 **TaflZero** is an AlphaZero-based engine for 11×11 Hnefatafl (Viking chess) and currently the strongest known engine for this variant. Play it live at **[playtafl.org](https://playtafl.org/)**. It combines Monte Carlo Tree Search (MCTS) with a deep residual neural network, trained entirely through self-play — no human games or handcrafted heuristics.
 
 ## How it works
