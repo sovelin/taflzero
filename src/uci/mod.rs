@@ -2,7 +2,6 @@ pub mod engine_client;
 pub mod constants;
 
 use crate::mv::create_move_from_algebraic;
-use crate::search::nn::NeuralNet;
 use crate::search::search_root::SearchIterationResponse;
 use crate::Engine;
 
@@ -12,16 +11,26 @@ pub enum UciRunState {
     Quit,
 }
 
-pub trait UciOutput {
+pub trait UciOutput: Clone + Send + 'static {
     fn send(&self, message: &str);
 }
 
-pub struct UciController<O: UciOutput> {
-    engine: Engine,
-    output: O,
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+
+#[cfg(not(target_arch = "wasm32"))]
+struct SearchThread {
+    handle: std::thread::JoinHandle<Engine>,
+    stop_flag: Arc<AtomicBool>,
+    bestmove_sent: Arc<AtomicBool>,
 }
 
-
+pub struct UciController<O: UciOutput> {
+    engine: Option<Engine>,
+    output: O,
+    #[cfg(not(target_arch = "wasm32"))]
+    search_thread: Option<SearchThread>,
+}
 
 fn format_info_message(iteration: SearchIterationResponse) -> String {
     let pv_str = iteration.pv().iter().map(|m| format!("{:?}", m)).collect::<Vec<_>>().join(" ");
@@ -39,23 +48,81 @@ fn format_info_message(iteration: SearchIterationResponse) -> String {
 
 impl<O: UciOutput> UciController<O> {
     pub fn new(tt_size_mb: usize, output: O, net_path: String) -> Self {
-
         Self {
-            engine: Engine::new(tt_size_mb, net_path),
+            engine: Some(Engine::new(tt_size_mb, net_path)),
             output,
+            #[cfg(not(target_arch = "wasm32"))]
+            search_thread: None,
         }
     }
 
     pub fn engine(&self) -> &Engine {
-        &self.engine
+        self.engine.as_ref().expect("engine is busy in search thread")
     }
 
     pub fn engine_mut(&mut self) -> &mut Engine {
-        &mut self.engine
+        self.engine.as_mut().expect("engine is busy in search thread")
     }
 
     fn send(&self, message: &str) {
         self.output.send(message);
+    }
+
+    // Stops any running search, joins the thread, and restores the engine.
+    // Sends bestmove if send_bestmove is true and it hasn't been sent already.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn collect_search(&mut self, send_bestmove: bool) {
+        let thread = match self.search_thread.take() {
+            Some(t) => t,
+            None => return,
+        };
+
+        thread.stop_flag.store(true, Ordering::Relaxed);
+        let mut engine = thread.handle.join().expect("search thread panicked");
+        engine.clear_stop_flag();
+
+        if send_bestmove && !thread.bestmove_sent.swap(true, Ordering::SeqCst) {
+            if let Some(mv) = engine.best_move() {
+                self.output.send(&format!("bestmove {:?}", mv));
+            } else {
+                self.output.send("bestmove (none)");
+            }
+        }
+
+        self.engine = Some(engine);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn spawn_search<F>(&mut self, search_fn: F)
+    where
+        F: FnOnce(&mut Engine) + Send + 'static,
+    {
+        self.collect_search(false);
+
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let bestmove_sent = Arc::new(AtomicBool::new(false));
+
+        let mut engine = self.engine.take().expect("engine unavailable");
+        engine.set_stop_flag(Arc::clone(&stop_flag));
+
+        let output = self.output.clone();
+        let bestmove_sent_clone = Arc::clone(&bestmove_sent);
+
+        let handle = std::thread::spawn(move || {
+            search_fn(&mut engine);
+
+            if !bestmove_sent_clone.swap(true, Ordering::SeqCst) {
+                if let Some(mv) = engine.best_move() {
+                    output.send(&format!("bestmove {:?}", mv));
+                } else {
+                    output.send("bestmove (none)");
+                }
+            }
+
+            engine
+        });
+
+        self.search_thread = Some(SearchThread { handle, stop_flag, bestmove_sent });
     }
 
     pub fn run(&mut self, cmd: &str) -> UciRunState {
@@ -70,8 +137,15 @@ impl<O: UciOutput> UciController<O> {
 
         match keyword {
             "quit" => {
+                #[cfg(not(target_arch = "wasm32"))]
+                self.collect_search(false);
                 self.send("bye");
                 UciRunState::Quit
+            }
+            "stop" => {
+                #[cfg(not(target_arch = "wasm32"))]
+                self.collect_search(true);
+                UciRunState::Continue
             }
             "isready" => {
                 self.send("readyok");
@@ -88,7 +162,9 @@ impl<O: UciOutput> UciController<O> {
             "setoption" => {
                 if tokens.len() >= 5 && tokens[1] == "name" && tokens[2] == "NNFile" && tokens[3] == "value" {
                     let path = tokens[4];
-                    self.engine.set_nn(path.to_string());
+                    #[cfg(not(target_arch = "wasm32"))]
+                    self.collect_search(false);
+                    self.engine_mut().set_nn(path.to_string());
                     self.send(&format!("NN file set to '{}'", path));
                 } else {
                     self.send("unsupported setoption format");
@@ -96,12 +172,14 @@ impl<O: UciOutput> UciController<O> {
                 UciRunState::Continue
             }
             "position" => {
+                #[cfg(not(target_arch = "wasm32"))]
+                self.collect_search(false);
                 self.handle_position(&tokens[1..]);
                 UciRunState::Continue
             }
             "board" => {
-                self.send(&format!("{:?}", self.engine.board()));
-                self.send(&format!("Eval: {}", self.engine.board().get_eval()));
+                self.send(&format!("{:?}", self.engine().board()));
+                self.send(&format!("Eval: {}", self.engine().board().get_eval()));
                 UciRunState::Continue
             }
             "go" => {
@@ -145,7 +223,6 @@ impl<O: UciOutput> UciController<O> {
                     return;
                 }
 
-
                 if args[3] != "moves" {
                     self.send("only 'position fen <fen> moves' is supported");
                     return;
@@ -173,7 +250,7 @@ impl<O: UciOutput> UciController<O> {
             }
         }
 
-        self.engine.set_position_and_moves(fen, legal_moves);
+        self.engine_mut().set_position_and_moves(fen, legal_moves);
     }
 
     fn handle_go(&mut self, args: &[&str]) {
@@ -185,6 +262,7 @@ impl<O: UciOutput> UciController<O> {
         match args[0] {
             "movetime" => self.handle_go_movetime(&args[1..]),
             "nodes" => self.handle_go_nodes(&args[1..]),
+            "infinite" => self.handle_go_infinite(),
             _ => self.send("unknown go subcommand"),
         }
     }
@@ -202,16 +280,27 @@ impl<O: UciOutput> UciController<O> {
             return;
         }
 
-        let output = &self.output;
-        self.engine.make_search_nodes(nodes, Some(&|iteration: SearchIterationResponse| {
-            let msg = format_info_message(iteration);
-            output.send(&msg);
-        }));
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let output = self.output.clone();
+            self.spawn_search(move |engine| {
+                engine.make_search_nodes(nodes, Some(&|iteration: SearchIterationResponse| {
+                    output.send(&format_info_message(iteration));
+                }));
+            });
+        }
 
-        if let Some(mv) = self.engine.best_move() {
-            self.send(&format!("bestmove {:?}", mv));
-        } else {
-            self.send("bestmove (none)");
+        #[cfg(target_arch = "wasm32")]
+        {
+            let output = self.output.clone();
+            self.engine_mut().make_search_nodes(nodes, Some(&|iteration: SearchIterationResponse| {
+                output.send(&format_info_message(iteration));
+            }));
+            if let Some(mv) = self.engine().best_move() {
+                self.send(&format!("bestmove {:?}", mv));
+            } else {
+                self.send("bestmove (none)");
+            }
         }
     }
 
@@ -228,16 +317,52 @@ impl<O: UciOutput> UciController<O> {
             return;
         }
 
-        let output = &self.output;
-        self.engine.make_search(movetime, MAX_PLY as u32, Some(&|iteration: SearchIterationResponse| {
-            let msg = format_info_message(iteration);
-            output.send(&msg);
-        }));
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let output = self.output.clone();
+            self.spawn_search(move |engine| {
+                engine.make_search(movetime, MAX_PLY as u32, Some(&|iteration: SearchIterationResponse| {
+                    output.send(&format_info_message(iteration));
+                }));
+            });
+        }
 
-        if let Some(mv) = self.engine.best_move() {
-            self.send(&format!("bestmove {:?}", mv));
-        } else {
-            self.send("bestmove (none)");
+        #[cfg(target_arch = "wasm32")]
+        {
+            let output = self.output.clone();
+            self.engine_mut().make_search(movetime, MAX_PLY as u32, Some(&|iteration: SearchIterationResponse| {
+                output.send(&format_info_message(iteration));
+            }));
+            if let Some(mv) = self.engine().best_move() {
+                self.send(&format!("bestmove {:?}", mv));
+            } else {
+                self.send("bestmove (none)");
+            }
+        }
+    }
+
+    fn handle_go_infinite(&mut self) {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let output = self.output.clone();
+            self.spawn_search(move |engine| {
+                engine.make_search_infinite(Some(&|iteration: SearchIterationResponse| {
+                    output.send(&format_info_message(iteration));
+                }));
+            });
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            let output = self.output.clone();
+            self.engine_mut().make_search_infinite(Some(&|iteration: SearchIterationResponse| {
+                output.send(&format_info_message(iteration));
+            }));
+            if let Some(mv) = self.engine().best_move() {
+                self.send(&format!("bestmove {:?}", mv));
+            } else {
+                self.send("bestmove (none)");
+            }
         }
     }
 }
@@ -338,5 +463,13 @@ impl WasmClient {
 
     pub fn run(&mut self, cmd: &str) {
         self.controller.run(cmd);
+    }
+
+    /// Register a SharedArrayBuffer-backed Int32Array as the stop signal.
+    /// The main thread can stop an ongoing `go infinite` by calling:
+    ///   `Atomics.store(buffer, 0, 1)`
+    /// Reset before each new search with `Atomics.store(buffer, 0, 0)`.
+    pub fn set_stop_buffer(&mut self, buffer: js_sys::Int32Array) {
+        crate::search::search_data::set_wasm_stop_buffer(buffer);
     }
 }

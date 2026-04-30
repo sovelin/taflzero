@@ -10,6 +10,41 @@ use crate::search::history::History;
 use crate::search::killer::Killer;
 use crate::timer::Timer;
 
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+
+#[cfg(target_arch = "wasm32")]
+use {
+    std::cell::RefCell,
+    js_sys::Int32Array,
+    wasm_bindgen::prelude::*,
+};
+
+// Bind Atomics.load from JavaScript for WASM stop-flag polling.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = Atomics, js_name = load, catch)]
+    fn atomics_load_i32(typed_array: &JsValue, index: u32) -> Result<i32, JsValue>;
+}
+
+#[cfg(target_arch = "wasm32")]
+thread_local! {
+    static WASM_STOP_BUF: RefCell<Option<Int32Array>> = RefCell::new(None);
+}
+
+/// Called from WasmClient to register the SharedArrayBuffer-backed Int32Array
+/// that the main thread uses to signal stop via `Atomics.store(buf, 0, 1)`.
+#[cfg(target_arch = "wasm32")]
+pub fn set_wasm_stop_buffer(buf: Int32Array) {
+    WASM_STOP_BUF.with(|b| *b.borrow_mut() = Some(buf));
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn clear_wasm_stop_buffer() {
+    WASM_STOP_BUF.with(|b| *b.borrow_mut() = None);
+}
+
 pub struct SearchData {
     pub nodes_searched: u64,
     pub best_move: Option<Move>,
@@ -27,6 +62,8 @@ pub struct SearchData {
     pub temperature: usize,
     pub random_generator: StdRng,
     pub tt_age: u8,
+    #[cfg(not(target_arch = "wasm32"))]
+    stop_flag: Option<Arc<AtomicBool>>,
 }
 
 impl SearchData {
@@ -63,7 +100,31 @@ impl SearchData {
             random_generator: StdRng::seed_from_u64(123456),
             depth_limit: MAX_PLY as u32,
             tt_age: 0,
+            #[cfg(not(target_arch = "wasm32"))]
+            stop_flag: None,
         }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn set_stop_flag(&mut self, flag: Arc<AtomicBool>) {
+        self.stop_flag = Some(flag);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn clear_stop_flag(&mut self) {
+        self.stop_flag = None;
+    }
+
+    pub fn is_stopped(&self) -> bool {
+        #[cfg(target_arch = "wasm32")]
+        return WASM_STOP_BUF.with(|b| {
+            b.borrow().as_ref().map_or(false, |arr| {
+                atomics_load_i32(arr.as_ref(), 0).ok().map_or(false, |v| v != 0)
+            })
+        });
+
+        #[cfg(not(target_arch = "wasm32"))]
+        return self.stop_flag.as_ref().map_or(false, |f| f.load(Ordering::Relaxed));
     }
 
     pub fn time_exceeded(&mut self) -> bool {

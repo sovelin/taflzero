@@ -355,13 +355,6 @@ export class SearchIterationResponse {
         wasm.__wbg_searchiterationresponse_free(ptr, 0);
     }
     /**
-     * @returns {number}
-     */
-    get depth() {
-        const ret = wasm.__wbg_get_searchiterationresponse_depth(this.__wbg_ptr);
-        return ret;
-    }
-    /**
      * @returns {bigint}
      */
     get nodes() {
@@ -390,10 +383,11 @@ export class SearchIterationResponse {
         return BigInt.asUintN(64, ret);
     }
     /**
-     * @param {number} arg0
+     * @returns {number}
      */
-    set depth(arg0) {
-        wasm.__wbg_set_searchiterationresponse_depth(this.__wbg_ptr, arg0);
+    get winrate() {
+        const ret = wasm.__wbg_get_searchiterationresponse_winrate(this.__wbg_ptr);
+        return ret;
     }
     /**
      * @param {bigint} arg0
@@ -418,6 +412,12 @@ export class SearchIterationResponse {
      */
     set time(arg0) {
         wasm.__wbg_set_searchiterationresponse_time(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @param {number} arg0
+     */
+    set winrate(arg0) {
+        wasm.__wbg_set_searchiterationresponse_winrate(this.__wbg_ptr, arg0);
     }
 }
 if (Symbol.dispose) SearchIterationResponse.prototype[Symbol.dispose] = SearchIterationResponse.prototype.free;
@@ -535,6 +535,16 @@ export class WasmClient {
         const ptr0 = passStringToWasm0(cmd, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
         wasm.wasmclient_run(this.__wbg_ptr, ptr0, len0);
+    }
+    /**
+     * Register a SharedArrayBuffer-backed Int32Array as the stop signal.
+     * The main thread can stop an ongoing `go infinite` by calling:
+     *   `Atomics.store(buffer, 0, 1)`
+     * Reset before each new search with `Atomics.store(buffer, 0, 0)`.
+     * @param {Int32Array} buffer
+     */
+    set_stop_buffer(buffer) {
+        wasm.wasmclient_set_stop_buffer(this.__wbg_ptr, addHeapObject(buffer));
     }
 }
 if (Symbol.dispose) WasmClient.prototype[Symbol.dispose] = WasmClient.prototype.free;
@@ -748,6 +758,10 @@ function __wbg_get_imports() {
             const ret = getObject(arg0).length;
             return ret;
         },
+        __wbg_load_452389fa0d16b447: function() { return handleError(function (arg0, arg1) {
+            const ret = Atomics.load(getObject(arg0), arg1 >>> 0);
+            return ret;
+        }, arguments); },
         __wbg_move_new: function(arg0) {
             const ret = Move.__wrap(arg0);
             return addHeapObject(ret);

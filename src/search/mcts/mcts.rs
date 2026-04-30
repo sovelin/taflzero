@@ -604,6 +604,11 @@ pub fn mcts_search(
             break;
         }
 
+        // Check external stop signal
+        if search_data.is_stopped() {
+            break;
+        }
+
         // Check iteration limit
         if let Some(max) = iter_max {
             if iteration >= max {

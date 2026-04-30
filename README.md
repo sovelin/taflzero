@@ -56,6 +56,35 @@ cargo build --release --no-default-features
 wasm-pack build --target web --release
 ```
 
+## WebAssembly usage
+
+The WASM build exposes a `WasmClient` that broadcasts search output as `CustomEvent`s on the global scope. It is designed to run inside a **Web Worker** — the worker thread can block during search without freezing the UI.
+
+### go infinite / stop
+
+Because `go infinite` blocks the worker thread, `stop` cannot be sent via `postMessage` while a search is running. Instead, use a `SharedArrayBuffer` as a shared stop flag:
+
+```js
+// Worker setup (once, before any search):
+const stopBuf = new Int32Array(new SharedArrayBuffer(4));
+wasmClient.set_stop_buffer(stopBuf);
+
+// Before each new search — reset the flag:
+Atomics.store(stopBuf, 0, 0);
+wasmClient.run("go infinite"); // blocks the worker; broadcasts info events
+
+// From the main thread — stop the search:
+Atomics.store(stopBuf, 0, 1);
+// The worker finishes the current MCTS batch (~100 ms), broadcasts bestmove, then unblocks.
+```
+
+`SharedArrayBuffer` requires the page to be cross-origin isolated. Serve it with these HTTP headers:
+
+```
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+```
+
 ## UCI interface
 
 TaflZero speaks a UCI-based protocol. Run the binary and communicate via stdin/stdout.
@@ -83,6 +112,8 @@ taflzero.exe [--net <model.onnx>] [--datagen <output.bin>] [--datagen-count <N>]
 | `position fen <fen> moves ...` | — | Set position from FEN |
 | `go nodes <N>` | `info ...`, `bestmove <move>` | Search for N MCTS nodes |
 | `go movetime <ms>` | `info ...`, `bestmove <move>` | Search for given time in ms |
+| `go infinite` | `info ...`, `bestmove <move>` | Search until `stop` |
+| `stop` | `bestmove <move>` | Stop current search and return best move |
 | `quit` | `bye` | Exit |
 
 **FEN format:** `3aaaaa3/5a5/11/a4d4a/a3ddd3a/aa1ddkdd1aa/a3ddd3a/a4d4a/11/5a5/3aaaaa3 a`
