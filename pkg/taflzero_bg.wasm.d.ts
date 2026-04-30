@@ -3,6 +3,7 @@
 export const memory: WebAssembly.Memory;
 export const __wbg_engine_free: (a: number, b: number) => void;
 export const __wbg_engineclient_free: (a: number, b: number) => void;
+export const __wbg_get_searchiterationresponse_multi_pv: (a: number) => number;
 export const __wbg_get_searchiterationresponse_nodes: (a: number) => bigint;
 export const __wbg_get_searchiterationresponse_score: (a: number) => number;
 export const __wbg_get_searchiterationresponse_speed: (a: number) => bigint;
@@ -13,6 +14,7 @@ export const __wbg_get_searchresponse_score: (a: number) => number;
 export const __wbg_move_free: (a: number, b: number) => void;
 export const __wbg_searchiterationresponse_free: (a: number, b: number) => void;
 export const __wbg_searchresponse_free: (a: number, b: number) => void;
+export const __wbg_set_searchiterationresponse_multi_pv: (a: number, b: number) => void;
 export const __wbg_set_searchiterationresponse_nodes: (a: number, b: bigint) => void;
 export const __wbg_set_searchiterationresponse_score: (a: number, b: number) => void;
 export const __wbg_set_searchiterationresponse_speed: (a: number, b: bigint) => void;

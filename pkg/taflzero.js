@@ -355,6 +355,13 @@ export class SearchIterationResponse {
         wasm.__wbg_searchiterationresponse_free(ptr, 0);
     }
     /**
+     * @returns {number | undefined}
+     */
+    get multi_pv() {
+        const ret = wasm.__wbg_get_searchiterationresponse_multi_pv(this.__wbg_ptr);
+        return ret === 0x100000001 ? undefined : ret;
+    }
+    /**
      * @returns {bigint}
      */
     get nodes() {
@@ -388,6 +395,12 @@ export class SearchIterationResponse {
     get winrate() {
         const ret = wasm.__wbg_get_searchiterationresponse_winrate(this.__wbg_ptr);
         return ret;
+    }
+    /**
+     * @param {number | null} [arg0]
+     */
+    set multi_pv(arg0) {
+        wasm.__wbg_set_searchiterationresponse_multi_pv(this.__wbg_ptr, isLikeNone(arg0) ? 0x100000001 : (arg0) >>> 0);
     }
     /**
      * @param {bigint} arg0

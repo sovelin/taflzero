@@ -20,6 +20,7 @@ pub struct SearchIterationResponse {
     pub speed: u64,
     pub(crate) pv: Vec<Move>,
     pub winrate: f32,
+    pub multi_pv: Option<usize>,
 }
 
 impl SearchIterationResponse {
@@ -97,10 +98,11 @@ pub fn search_root(
     nn: &mut NeuralNet,
     on_iteration: Option<&dyn Fn(SearchIterationResponse)>,
     tree: &mut MCTSTree,
+    multi_pv: Option<usize>
 ) -> SearchResponse {
 
     let config = MCTSConfig::default_play();
-    let best_move = mcts_search(board, tree, nn, search_data, on_iteration, None, &config);
+    let best_move = mcts_search(board, tree, nn, search_data, on_iteration, None, &config, multi_pv);
 
     SearchResponse {
         best_move: best_move.unwrap_or_default(),
@@ -116,10 +118,11 @@ pub fn search_root_nodes(
     on_iteration: Option<&dyn Fn(SearchIterationResponse)>,
     tree: &mut MCTSTree,
     nodes: u64,
+    multi_pv: Option<usize>
 ) -> SearchResponse {
 
     let config = MCTSConfig::default_play();
-    let best_move = mcts_search(board, tree, nn, search_data, on_iteration, Some(nodes), &config);
+    let best_move = mcts_search(board, tree, nn, search_data, on_iteration, Some(nodes), &config, multi_pv);
 
     SearchResponse {
         best_move: best_move.unwrap_or_default(),

@@ -5,7 +5,6 @@ use wasm_bindgen::prelude::*;
 use crate::board::Board;
 use crate::mcts::mcts::MCTSTree;
 use crate::mv::Move;
-use crate::nnue::{Weights1, Weights2};
 use crate::search::constants::MAX_PLY;
 use crate::search::nn::NeuralNet;
 use crate::search::search_data::SearchData;
@@ -22,11 +21,20 @@ pub struct Engine {
     nn: NeuralNet,
     best_move: Option<Move>,
     tree: MCTSTree,
-    config: EngineConfig
+    config: EngineConfig,
+    multi_pv: usize,
 }
 
 pub struct EngineConfig {
     pub net_path: String,
+}
+
+fn get_multi_pv(multi_pv: usize) -> Option<usize> {
+    if multi_pv > 1 {
+        Some(multi_pv)
+    } else {
+        None
+    }
 }
 
 impl Engine {
@@ -49,7 +57,8 @@ impl Engine {
             best_move: None,
             tree: MCTSTree::new(),
             config,
-            board
+            board,
+            multi_pv: 1,
         }
     }
 
@@ -59,6 +68,10 @@ impl Engine {
         // try catching error here and returning it instead of panicking
 
         self.nn = NeuralNet::new(self.config.net_path.as_str());
+    }
+
+    pub fn set_multi_pv(&mut self, multi_pv: usize) {
+        self.multi_pv = multi_pv;
     }
 
     pub fn best_move(&self) -> Option<Move> {
@@ -76,14 +89,14 @@ impl Engine {
 
     pub fn make_search(&mut self, time: u64, depth: u32, on_iteration: Option<&dyn Fn(SearchIterationResponse)>) -> SearchResponse {
         self.search_data.start_timer(time, depth);
-        let res = search_root(&mut self.board, &mut self.search_data, &mut self.tt, &mut self.nn, on_iteration, &mut self.tree);
+        let res = search_root(&mut self.board, &mut self.search_data, &mut self.tt, &mut self.nn, on_iteration, &mut self.tree, get_multi_pv(self.multi_pv) );
         self.best_move = Some(res.best_move);
         res
     }
 
     pub fn make_search_infinite(&mut self, on_iteration: Option<&dyn Fn(SearchIterationResponse)>) -> SearchResponse {
         self.search_data.start_timer(u64::MAX, MAX_PLY as u32);
-        let res = search_root(&mut self.board, &mut self.search_data, &mut self.tt, &mut self.nn, on_iteration, &mut self.tree);
+        let res = search_root(&mut self.board, &mut self.search_data, &mut self.tt, &mut self.nn, on_iteration, &mut self.tree, get_multi_pv(self.multi_pv) );
         self.best_move = Some(res.best_move);
         res
     }
@@ -99,7 +112,7 @@ impl Engine {
     }
 
     pub fn make_search_nodes(&mut self, nodes: u64, on_iteration: Option<&dyn Fn(SearchIterationResponse)>) -> SearchResponse {
-        let res = search_root_nodes(&mut self.board, &mut self.search_data, &mut self.tt, &mut self.nn, on_iteration, &mut self.tree, nodes);
+        let res = search_root_nodes(&mut self.board, &mut self.search_data, &mut self.tt, &mut self.nn, on_iteration, &mut self.tree, nodes, get_multi_pv(self.multi_pv));
         self.best_move = Some(res.best_move);
         res
     }
