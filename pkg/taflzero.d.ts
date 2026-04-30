@@ -54,11 +54,11 @@ export class SearchIterationResponse {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
-    depth: number;
     nodes: bigint;
     score: number;
     speed: bigint;
     time: bigint;
+    winrate: number;
 }
 
 export class SearchResponse {
@@ -88,6 +88,13 @@ export class WasmClient {
     constructor(event_name: string, tt_size: number);
     print_board(): void;
     run(cmd: string): void;
+    /**
+     * Register a SharedArrayBuffer-backed Int32Array as the stop signal.
+     * The main thread can stop an ongoing `go infinite` by calling:
+     *   `Atomics.store(buffer, 0, 1)`
+     * Reset before each new search with `Atomics.store(buffer, 0, 0)`.
+     */
+    set_stop_buffer(buffer: Int32Array): void;
 }
 
 export function build_info(): string;
@@ -118,21 +125,21 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_engine_free: (a: number, b: number) => void;
     readonly __wbg_engineclient_free: (a: number, b: number) => void;
-    readonly __wbg_get_searchiterationresponse_depth: (a: number) => number;
     readonly __wbg_get_searchiterationresponse_nodes: (a: number) => bigint;
     readonly __wbg_get_searchiterationresponse_score: (a: number) => number;
     readonly __wbg_get_searchiterationresponse_speed: (a: number) => bigint;
     readonly __wbg_get_searchiterationresponse_time: (a: number) => bigint;
+    readonly __wbg_get_searchiterationresponse_winrate: (a: number) => number;
     readonly __wbg_get_searchresponse_best_move: (a: number) => number;
     readonly __wbg_get_searchresponse_score: (a: number) => number;
     readonly __wbg_move_free: (a: number, b: number) => void;
     readonly __wbg_searchiterationresponse_free: (a: number, b: number) => void;
     readonly __wbg_searchresponse_free: (a: number, b: number) => void;
-    readonly __wbg_set_searchiterationresponse_depth: (a: number, b: number) => void;
     readonly __wbg_set_searchiterationresponse_nodes: (a: number, b: bigint) => void;
     readonly __wbg_set_searchiterationresponse_score: (a: number, b: number) => void;
     readonly __wbg_set_searchiterationresponse_speed: (a: number, b: bigint) => void;
     readonly __wbg_set_searchiterationresponse_time: (a: number, b: bigint) => void;
+    readonly __wbg_set_searchiterationresponse_winrate: (a: number, b: number) => void;
     readonly __wbg_set_searchresponse_best_move: (a: number, b: number) => void;
     readonly __wbg_set_searchresponse_score: (a: number, b: number) => void;
     readonly __wbg_timer_free: (a: number, b: number) => void;
@@ -179,6 +186,7 @@ export interface InitOutput {
     readonly wasmclient_new: (a: number, b: number, c: number) => number;
     readonly wasmclient_print_board: (a: number) => void;
     readonly wasmclient_run: (a: number, b: number, c: number) => void;
+    readonly wasmclient_set_stop_buffer: (a: number, b: number) => void;
     readonly main_js: () => void;
     readonly __wbindgen_export: (a: number, b: number) => number;
     readonly __wbindgen_export2: (a: number, b: number, c: number, d: number) => number;

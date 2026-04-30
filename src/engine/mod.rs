@@ -1,9 +1,12 @@
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::{Arc, atomic::AtomicBool};
 use wasm_bindgen::prelude::*;
 
 use crate::board::Board;
 use crate::mcts::mcts::MCTSTree;
 use crate::mv::Move;
 use crate::nnue::{Weights1, Weights2};
+use crate::search::constants::MAX_PLY;
 use crate::search::nn::NeuralNet;
 use crate::search::search_data::SearchData;
 use crate::search::search_root::{search_root, search_root_nodes, SearchIterationResponse, SearchResponse};
@@ -76,6 +79,23 @@ impl Engine {
         let res = search_root(&mut self.board, &mut self.search_data, &mut self.tt, &mut self.nn, on_iteration, &mut self.tree);
         self.best_move = Some(res.best_move);
         res
+    }
+
+    pub fn make_search_infinite(&mut self, on_iteration: Option<&dyn Fn(SearchIterationResponse)>) -> SearchResponse {
+        self.search_data.start_timer(u64::MAX, MAX_PLY as u32);
+        let res = search_root(&mut self.board, &mut self.search_data, &mut self.tt, &mut self.nn, on_iteration, &mut self.tree);
+        self.best_move = Some(res.best_move);
+        res
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn set_stop_flag(&mut self, flag: Arc<AtomicBool>) {
+        self.search_data.set_stop_flag(flag);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn clear_stop_flag(&mut self) {
+        self.search_data.clear_stop_flag();
     }
 
     pub fn make_search_nodes(&mut self, nodes: u64, on_iteration: Option<&dyn Fn(SearchIterationResponse)>) -> SearchResponse {
