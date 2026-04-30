@@ -54,6 +54,8 @@ export class SearchIterationResponse {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
+    get multi_pv(): number | undefined;
+    set multi_pv(value: number | null | undefined);
     nodes: bigint;
     score: number;
     speed: bigint;
@@ -125,6 +127,7 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_engine_free: (a: number, b: number) => void;
     readonly __wbg_engineclient_free: (a: number, b: number) => void;
+    readonly __wbg_get_searchiterationresponse_multi_pv: (a: number) => number;
     readonly __wbg_get_searchiterationresponse_nodes: (a: number) => bigint;
     readonly __wbg_get_searchiterationresponse_score: (a: number) => number;
     readonly __wbg_get_searchiterationresponse_speed: (a: number) => bigint;
@@ -135,6 +138,7 @@ export interface InitOutput {
     readonly __wbg_move_free: (a: number, b: number) => void;
     readonly __wbg_searchiterationresponse_free: (a: number, b: number) => void;
     readonly __wbg_searchresponse_free: (a: number, b: number) => void;
+    readonly __wbg_set_searchiterationresponse_multi_pv: (a: number, b: number) => void;
     readonly __wbg_set_searchiterationresponse_nodes: (a: number, b: bigint) => void;
     readonly __wbg_set_searchiterationresponse_score: (a: number, b: number) => void;
     readonly __wbg_set_searchiterationresponse_speed: (a: number, b: bigint) => void;

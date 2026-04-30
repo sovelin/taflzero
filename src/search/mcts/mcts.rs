@@ -135,9 +135,12 @@ impl MCTSTree {
         &self.nodes[ROOT_ID]
     }
 
-    pub fn get_pv(&self) -> Vec<Move> {
-        let mut pv = Vec::new();
-        let mut cur = ROOT_ID;
+    pub fn get_pv_from(&self, node_id: NodeId) -> Vec<Move> {
+        let mut cur = node_id;
+
+        let first_node = self.get_node(cur);
+
+        let mut pv = vec![first_node.mv.unwrap()];
 
         loop {
             let node = self.get_node(cur);
@@ -441,6 +444,30 @@ fn get_best_child(tree: &MCTSTree, temperature: f32) -> Option<NodeId> {
     Some(*root.children.last().unwrap())
 }
 
+/**
+    * Get the child corresponding to the multi-PV rank (1 = best, 2 = second best, etc).
+    * Returns None if there are fewer children than multi_pv.
+    */
+fn get_multi_pv_child(tree: &MCTSTree, node_id: NodeId, multi_pv: usize) -> Option<NodeId> {
+    let children: Vec<NodeId> = tree.get_node(node_id).children.clone();
+    if children.is_empty() {
+        return None;
+    }
+
+    let mut sorted_children = children.clone();
+    sorted_children.sort_by(|&a, &b| {
+        let va = tree.get_node(a).visits;
+        let vb = tree.get_node(b).visits;
+        vb.partial_cmp(&va).unwrap()
+    });
+
+    if multi_pv - 1 < sorted_children.len() {
+        Some(sorted_children[multi_pv - 1])
+    } else {
+        None
+    }
+}
+
 /// Data collected for a single leaf during batched selection.
 struct PendingLeaf {
     node_id: NodeId,
@@ -570,6 +597,10 @@ fn backpropagate(tree: &mut MCTSTree, path: &[NodeId], mut result: f32) {
     }
 }
 
+fn get_info_string() {
+
+}
+
 pub fn mcts_search(
     board: &mut Board,
     tree: &mut MCTSTree,
@@ -578,6 +609,7 @@ pub fn mcts_search(
     on_iteration: Option<&dyn Fn(SearchIterationResponse)>,
     iter_max: Option<u64>,
     config: &MCTSConfig,
+    multi_pv: Option<usize>
 ) -> Option<Move> {
     tree.reroot(board.zobrist);
     let mut mv_generator = MoveGen::new();
@@ -697,24 +729,39 @@ pub fn mcts_search(
 
             if let Some(callback) = on_iteration {
                 if let Some(best_id) = get_best_child(tree, 0.0) {
-                    let best = tree.get_node(best_id);
-                    let (score, winrate) = if best.visits > 0.0 {
-                        let v = (best.wins / best.visits).clamp(-0.9999, 0.9999);
-                        let winrate = (v + 1.0) / 2.0;
-                        ((111.714640912 * (1.5620688421 * v).tan()) as i32, winrate)
-                    } else {
-                        (0, 0.5)
-                    };
-                    let speed = if elapsed > 0 { iteration * 1000 / elapsed } else { 0 };
+                    fn response_from_move(node_id: NodeId, tree: &MCTSTree, elapsed: u64, callback: &dyn Fn(SearchIterationResponse), iteration: u64, multi_pv: Option<usize>) {
+                        let node = tree.get_node(node_id);
 
-                    callback(SearchIterationResponse {
-                        score,
-                        nodes: iteration,
-                        time: elapsed,
-                        speed,
-                        pv: tree.get_pv(),
-                        winrate
-                    });
+                        let (score, winrate) = if node.visits > 0.0 {
+                            let v = (node.wins / node.visits).clamp(-0.9999, 0.9999);
+                            let winrate = (v + 1.0) / 2.0;
+                            ((111.714640912 * (1.5620688421 * v).tan()) as i32, winrate)
+                        } else {
+                            (0, 0.5)
+                        };
+                        let speed = if elapsed > 0 { iteration * 1000 / elapsed } else { 0 };
+
+                        callback(SearchIterationResponse {
+                            score,
+                            nodes: iteration,
+                            time: elapsed,
+                            speed,
+                            pv: tree.get_pv_from(node_id),
+                            winrate,
+                            multi_pv,
+                        });
+                    }
+
+                    if multi_pv.is_some() {
+                        for rank in 1..=multi_pv.unwrap() {
+                            if let Some(multi_id) = get_multi_pv_child(tree, tree.get_root_id(), rank) {
+                                response_from_move(multi_id, tree, elapsed, callback, iteration, Some(rank));
+                            }
+                        }
+                    } else {
+                        response_from_move(best_id, tree, elapsed, callback, iteration, None);
+                    }
+
                 }
             }
         }

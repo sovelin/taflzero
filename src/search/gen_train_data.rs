@@ -108,7 +108,7 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> (Vec<PendingSa
             400
         };
 
-        let mv = mcts_search(&mut board, &mut mcts_tree, nn, search_data, None, Some(iterations), &config);
+        let mv = mcts_search(&mut board, &mut mcts_tree, nn, search_data, None, Some(iterations), &config, None);
         move_number += 1;
 
         if let Some(mv) = mv {

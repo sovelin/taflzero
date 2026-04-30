@@ -35,8 +35,15 @@ pub struct UciController<O: UciOutput> {
 fn format_info_message(iteration: SearchIterationResponse) -> String {
     let pv_str = iteration.pv().iter().map(|m| format!("{:?}", m)).collect::<Vec<_>>().join(" ");
 
+    let multipv_str = if let Some(mpv) = iteration.multi_pv {
+        format!(" multipv {}", mpv)
+    } else {
+        String::new()
+    };
+
     format!(
-        "info score cp {} winrate {:.1}% nodes {} time {} speed {} pv {}",
+        "info{} score cp {} winrate {:.1}% nodes {} time {} speed {} pv {}",
+        multipv_str,
         iteration.score,
         iteration.winrate * 100.0,
         iteration.nodes,
@@ -157,6 +164,7 @@ impl<O: UciOutput> UciController<O> {
                     env!("CARGO_PKG_NAME")
                 ));
                 self.send("option name NNFile type string default ./default_nn.onnx");
+                self.send("option name MultiPV type spin default 1 min 1 max 1000");
                 UciRunState::Continue
             }
             "setoption" => {
@@ -166,6 +174,16 @@ impl<O: UciOutput> UciController<O> {
                     self.collect_search(false);
                     self.engine_mut().set_nn(path.to_string());
                     self.send(&format!("NN file set to '{}'", path));
+                } else if tokens.len() >= 5 && tokens[1] == "name" && tokens[2] == "MultiPV" && tokens[3] == "value" {
+                    let multipv = tokens[4].parse::<usize>().unwrap_or(1);
+
+                    if multipv == 0 || multipv > 1000 {
+                        self.send("invalid MultiPV value");
+                        return UciRunState::Continue;
+                    }
+
+                    self.engine_mut().set_multi_pv(multipv);
+                    self.send(&format!("MultiPV set to {}", multipv));
                 } else {
                     self.send("unsupported setoption format");
                 }
