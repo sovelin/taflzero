@@ -54,9 +54,9 @@ fn format_info_message(iteration: SearchIterationResponse) -> String {
 }
 
 impl<O: UciOutput> UciController<O> {
-    pub fn new(tt_size_mb: usize, output: O, net_path: String) -> Self {
+    pub fn new(output: O, net_path: String) -> Self {
         Self {
-            engine: Some(Engine::new(tt_size_mb, net_path)),
+            engine: Some(Engine::new(net_path)),
             output,
             #[cfg(not(target_arch = "wasm32"))]
             search_thread: None,
@@ -197,7 +197,6 @@ impl<O: UciOutput> UciController<O> {
             }
             "board" => {
                 self.send(&format!("{:?}", self.engine().board()));
-                self.send(&format!("Eval: {}", self.engine().board().get_eval()));
                 UciRunState::Continue
             }
             "go" => {
@@ -399,9 +398,9 @@ pub struct ConsoleClient {
 }
 
 impl ConsoleClient {
-    pub fn new(tt_size_mb: usize, net_path: String) -> Self {
+    pub fn new(net_path: String) -> Self {
         Self {
-            controller: UciController::new(tt_size_mb, ConsoleBridge, net_path)
+            controller: UciController::new(ConsoleBridge, net_path)
         }
     }
 
@@ -468,10 +467,10 @@ pub struct WasmClient {
 #[wasm_bindgen]
 impl WasmClient {
     #[wasm_bindgen(constructor)]
-    pub fn new(event_name: String, tt_size: usize) -> Self {
+    pub fn new(event_name: String) -> Self {
         let bridge = WasmBridge::new(event_name);
         Self {
-            controller: UciController::new(tt_size, bridge, "".to_string()),
+            controller: UciController::new(bridge, "".to_string()),
         }
     }
 

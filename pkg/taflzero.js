@@ -221,11 +221,8 @@ export class EngineClient {
             wasm.__wbindgen_add_to_stack_pointer(16);
         }
     }
-    /**
-     * @param {number} tt_size_mb
-     */
-    constructor(tt_size_mb) {
-        const ret = wasm.engineclient_new(tt_size_mb);
+    constructor() {
+        const ret = wasm.engineclient_new();
         this.__wbg_ptr = ret >>> 0;
         EngineClientFinalization.register(this, this.__wbg_ptr, this);
         return this;
@@ -528,12 +525,11 @@ export class WasmClient {
     }
     /**
      * @param {string} event_name
-     * @param {number} tt_size
      */
-    constructor(event_name, tt_size) {
+    constructor(event_name) {
         const ptr0 = passStringToWasm0(event_name, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.wasmclient_new(ptr0, len0, tt_size);
+        const ret = wasm.wasmclient_new(ptr0, len0);
         this.__wbg_ptr = ret >>> 0;
         WasmClientFinalization.register(this, this.__wbg_ptr, this);
         return this;

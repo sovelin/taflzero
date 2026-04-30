@@ -1,14 +1,9 @@
 use crate::board::{Board, PRECOMPUTED};
 use crate::board::types::OptionalSquare;
-use crate::board::utils::{get_col, get_row};
-use crate::masks::LINE_MOVES;
 use crate::moves::movegen::MoveGen;
 use crate::moves::mv::Move;
-use crate::POSSIBLE_MOVES_COUNT;
 use crate::search::history::History;
 use crate::search::killer::Killer;
-use crate::search::king_mobility_change::king_mobility_change;
-use crate::types::Side;
 
 static HASH_MOVE_BONUS: i32 = 1000000;
 static KILLER_MOVE_BONUS: i32 = 900000;

@@ -4,7 +4,6 @@ use crate::mcts::mcts::{mcts_search, MCTSConfig, MCTSTree};
 use crate::moves::mv::Move;
 use crate::search::nn::NeuralNet;
 use crate::search::search_data::SearchData;
-use crate::search::transposition::TranspositionTable;
 
 #[wasm_bindgen]
 pub struct SearchIterationResponse {
@@ -34,7 +33,6 @@ pub struct SearchResponse {
 pub fn search_root(
     board: &mut Board,
     search_data: &mut SearchData,
-    tt: &mut TranspositionTable,
     nn: &mut NeuralNet,
     on_iteration: Option<&dyn Fn(SearchIterationResponse)>,
     tree: &mut MCTSTree,
@@ -53,7 +51,6 @@ pub fn search_root(
 pub fn search_root_nodes(
     board: &mut Board,
     search_data: &mut SearchData,
-    tt: &mut TranspositionTable,
     nn: &mut NeuralNet,
     on_iteration: Option<&dyn Fn(SearchIterationResponse)>,
     tree: &mut MCTSTree,
