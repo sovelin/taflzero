@@ -1,5 +1,4 @@
 use std::sync::LazyLock;
-use crate::types::Square;
 
 pub const BOARD_SIZE: usize = 11;
 pub const OCC_STATES: usize = 1 << BOARD_SIZE;

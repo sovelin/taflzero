@@ -13,7 +13,7 @@ export class EngineClient {
     check_terminal_state(): Side | undefined;
     check_terminal_state_for_fen(fen: string): Side | undefined;
     create_move_from_algebraic(mv_str: string): Move;
-    get_available_moves(from: number): Move[];
+    get_available_moves(): Move[];
     get_available_moves_from_square(from: number): Move[];
     get_board_state(): any[];
     get_board_str(): string;
@@ -25,7 +25,7 @@ export class EngineClient {
     make_search(time: number, depth: number): number;
     move_num_to_str(mv_num: number): string;
     move_str_to_num(mv_str: string): number;
-    constructor(tt_size_mb: number);
+    constructor();
     set_fen(fen: string): void;
     set_position_and_moves(fen: string, moves: Uint32Array): void;
     side_to_move(): Side;
@@ -87,7 +87,7 @@ export class Timer {
 export class WasmClient {
     free(): void;
     [Symbol.dispose](): void;
-    constructor(event_name: string, tt_size: number);
+    constructor(event_name: string);
     print_board(): void;
     run(cmd: string): void;
     /**
@@ -152,7 +152,7 @@ export interface InitOutput {
     readonly engineclient_check_terminal_state: (a: number) => number;
     readonly engineclient_check_terminal_state_for_fen: (a: number, b: number, c: number) => number;
     readonly engineclient_create_move_from_algebraic: (a: number, b: number, c: number) => number;
-    readonly engineclient_get_available_moves: (a: number, b: number, c: number) => void;
+    readonly engineclient_get_available_moves: (a: number, b: number) => void;
     readonly engineclient_get_available_moves_from_square: (a: number, b: number, c: number) => void;
     readonly engineclient_get_board_state: (a: number, b: number) => void;
     readonly engineclient_get_board_str: (a: number, b: number) => void;
@@ -164,7 +164,7 @@ export interface InitOutput {
     readonly engineclient_make_search: (a: number, b: number, c: number) => number;
     readonly engineclient_move_num_to_str: (a: number, b: number, c: number) => void;
     readonly engineclient_move_str_to_num: (a: number, b: number, c: number, d: number) => void;
-    readonly engineclient_new: (a: number) => number;
+    readonly engineclient_new: () => number;
     readonly engineclient_set_fen: (a: number, b: number, c: number) => void;
     readonly engineclient_set_position_and_moves: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly engineclient_side_to_move: (a: number) => number;
@@ -187,7 +187,7 @@ export interface InitOutput {
     readonly timer_elapsed_ms: (a: number) => bigint;
     readonly timer_new: () => number;
     readonly timer_start: (a: number) => void;
-    readonly wasmclient_new: (a: number, b: number, c: number) => number;
+    readonly wasmclient_new: (a: number, b: number) => number;
     readonly wasmclient_print_board: (a: number) => void;
     readonly wasmclient_run: (a: number, b: number, c: number) => void;
     readonly wasmclient_set_stop_buffer: (a: number, b: number) => void;

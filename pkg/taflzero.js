@@ -53,13 +53,12 @@ export class EngineClient {
         return Move.__wrap(ret);
     }
     /**
-     * @param {number} from
      * @returns {Move[]}
      */
-    get_available_moves(from) {
+    get_available_moves() {
         try {
             const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-            wasm.engineclient_get_available_moves(retptr, this.__wbg_ptr, from);
+            wasm.engineclient_get_available_moves(retptr, this.__wbg_ptr);
             var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
             var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
             var v1 = getArrayJsValueFromWasm0(r0, r1).slice();
@@ -221,11 +220,8 @@ export class EngineClient {
             wasm.__wbindgen_add_to_stack_pointer(16);
         }
     }
-    /**
-     * @param {number} tt_size_mb
-     */
-    constructor(tt_size_mb) {
-        const ret = wasm.engineclient_new(tt_size_mb);
+    constructor() {
+        const ret = wasm.engineclient_new();
         this.__wbg_ptr = ret >>> 0;
         EngineClientFinalization.register(this, this.__wbg_ptr, this);
         return this;
@@ -528,12 +524,11 @@ export class WasmClient {
     }
     /**
      * @param {string} event_name
-     * @param {number} tt_size
      */
-    constructor(event_name, tt_size) {
+    constructor(event_name) {
         const ptr0 = passStringToWasm0(event_name, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.wasmclient_new(ptr0, len0, tt_size);
+        const ret = wasm.wasmclient_new(ptr0, len0);
         this.__wbg_ptr = ret >>> 0;
         WasmClientFinalization.register(this, this.__wbg_ptr, this);
         return this;

@@ -108,7 +108,7 @@ fn main() {
 fn run_console_uci(net_path: String) {
     use std::io;
 
-    let mut client = ConsoleClient::new(32, net_path);
+    let mut client = ConsoleClient::new(net_path);
     let stdin = io::stdin();
     let mut line = String::new();
 

@@ -1,13 +1,10 @@
 use rand::rngs::StdRng;
 use rand::SeedableRng;
-use crate::capture_gen::CaptureGen;
 use crate::movegen::MAX_MOVES;
 use crate::moves::movegen::MoveGen;
 use crate::moves::mv::Move;
 use crate::moves::undo::UndoMove;
 use crate::search::constants::MAX_PLY;
-use crate::search::history::History;
-use crate::search::killer::Killer;
 use crate::timer::Timer;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -49,10 +46,7 @@ pub struct SearchData {
     pub nodes_searched: u64,
     pub best_move: Option<Move>,
     pub move_gens: Vec<MoveGen>,
-    pub capture_gens: Vec<CaptureGen>,
     pub undos: Vec<UndoMove>,
-    pub history: History,
-    pub killers: Killer,
     pub timer: Timer,
     pub time_limit: u64,
     pub depth_limit: u32,
@@ -70,11 +64,9 @@ impl SearchData {
     pub fn new() -> Self {
         let mut move_gens = Vec::with_capacity(MAX_PLY);
         let mut undos = Vec::with_capacity(MAX_PLY);
-        let mut capture_gens = Vec::with_capacity(MAX_PLY);
 
         for _ in 0..MAX_PLY {
             move_gens.push(MoveGen::new());
-            capture_gens.push(CaptureGen::new());
             undos.push(UndoMove::new());
         }
 
@@ -87,12 +79,9 @@ impl SearchData {
             nodes_searched: 0,
             best_move: None,
             move_gens,
-            capture_gens,
             undos,
             timer: Timer::new(),
             time_limit: 0,
-            history: History::new(),
-            killers: Killer::new(),
             cached_exceed: false,
             time_exceeded_checks: 0,
             temperatures,

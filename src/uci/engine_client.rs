@@ -16,8 +16,8 @@ struct EngineClient {
 #[wasm_bindgen]
 impl EngineClient {
     #[wasm_bindgen(constructor)]
-    pub fn new(tt_size_mb: usize) -> Self {
-        let engine = Engine::new(tt_size_mb, "".to_string());
+    pub fn new() -> Self {
+        let engine = Engine::new("".to_string());
 
         Self {
             engine,
@@ -105,7 +105,7 @@ impl EngineClient {
     }
 
     #[wasm_bindgen]
-    pub fn get_available_moves(&mut self, from: Square) -> Vec<Move> {
+    pub fn get_available_moves(&mut self) -> Vec<Move> {
         self.move_gen.generate_moves(self.engine.get_board_mutable());
         let mut available_moves = Vec::new();
 
