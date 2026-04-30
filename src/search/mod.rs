@@ -1,4 +1,3 @@
-mod search;
 pub mod constants;
 pub mod transposition;
 pub mod search_data;

@@ -5,8 +5,6 @@ mod check_fort;
 pub mod terminal;
 mod evaluate;
 
-pub use evaluate::evaluate;
-
 pub static MATE_SCORE: i32 = 10000;
 static MATE_SCORE_THRESHOLD: i32 = MATE_SCORE - 200;
 

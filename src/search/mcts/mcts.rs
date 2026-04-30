@@ -597,10 +597,6 @@ fn backpropagate(tree: &mut MCTSTree, path: &[NodeId], mut result: f32) {
     }
 }
 
-fn get_info_string() {
-
-}
-
 pub fn mcts_search(
     board: &mut Board,
     tree: &mut MCTSTree,
