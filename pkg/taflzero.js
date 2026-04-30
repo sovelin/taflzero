@@ -53,13 +53,12 @@ export class EngineClient {
         return Move.__wrap(ret);
     }
     /**
-     * @param {number} from
      * @returns {Move[]}
      */
-    get_available_moves(from) {
+    get_available_moves() {
         try {
             const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-            wasm.engineclient_get_available_moves(retptr, this.__wbg_ptr, from);
+            wasm.engineclient_get_available_moves(retptr, this.__wbg_ptr);
             var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
             var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
             var v1 = getArrayJsValueFromWasm0(r0, r1).slice();
