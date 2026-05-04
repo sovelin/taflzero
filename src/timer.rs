@@ -15,11 +15,15 @@ impl Timer {
     pub fn new() -> Timer {
         #[cfg(target_arch = "wasm32")]
         {
-            Timer { start: js_sys::Date::now() }
+            Timer {
+                start: js_sys::Date::now(),
+            }
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            Timer { time: std::time::Instant::now() }
+            Timer {
+                time: std::time::Instant::now(),
+            }
         }
     }
 

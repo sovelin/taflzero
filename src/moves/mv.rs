@@ -1,8 +1,8 @@
-use std::fmt::{Debug, Display};
-use wasm_bindgen::prelude::wasm_bindgen;
 use crate::board::constants::BOARD_SIZE;
 use crate::board::types::{Col, Row, Square};
-use crate::board::utils::{get_sq_algebraic};
+use crate::board::utils::get_sq_algebraic;
+use std::fmt::{Debug, Display};
+use wasm_bindgen::prelude::wasm_bindgen;
 
 #[repr(transparent)]
 #[derive(Copy, Clone)]
@@ -19,7 +19,6 @@ impl Default for Move {
 impl Debug for Move {
     #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-
         let from_sq = self.from();
         let to_sq = self.to();
         let alg_from = get_sq_algebraic(from_sq);
@@ -31,7 +30,6 @@ impl Debug for Move {
 impl Display for Move {
     #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-
         let from_sq = self.from();
         let to_sq = self.to();
         let alg_from = get_sq_algebraic(from_sq);
@@ -77,7 +75,7 @@ impl Move {
     pub fn create_null() -> Self {
         Move(0)
     }
-    
+
     #[inline]
     #[wasm_bindgen]
     pub fn from_u32(mv_u32: u32) -> Self {
@@ -113,7 +111,9 @@ pub fn create_move_from_algebraic(s: &str) -> Result<Move, String> {
     let to_col: Col = (to_file - b'a') as Col;
 
     let from_rank_str = &s[1..i];
-    let to_rank_str = s.get(i + 1..).ok_or_else(|| format!("Invalid move format (missing to-rank): {s}"))?;
+    let to_rank_str = s
+        .get(i + 1..)
+        .ok_or_else(|| format!("Invalid move format (missing to-rank): {s}"))?;
 
     let from_rank_num: usize = from_rank_str
         .parse()
@@ -140,7 +140,6 @@ impl PartialEq for Move {
     fn eq(&self, other: &Self) -> bool {
         self.0 == other.0
     }
-
 }
 
 #[cfg(test)]

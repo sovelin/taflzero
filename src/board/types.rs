@@ -9,7 +9,6 @@ pub enum Side {
     DEFENDERS = 1,
 }
 
-
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[wasm_bindgen]
 pub enum Piece {

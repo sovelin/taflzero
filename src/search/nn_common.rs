@@ -1,5 +1,5 @@
-use crate::board::constants::SQS;
 use crate::PRECOMPUTED;
+use crate::board::constants::SQS;
 use crate::position_export::BitPosition;
 
 pub const NUM_PLANES: usize = 6;

@@ -1,9 +1,3 @@
-use std::collections::HashSet;
-use std::hash::{BuildHasher, Hasher};
-use rand::distr::Distribution;
-use rand::rngs::StdRng;
-use rand::SeedableRng;
-use rand_distr::Gamma;
 use crate::Board;
 use crate::movegen::MoveGen;
 use crate::mv::Move;
@@ -15,6 +9,12 @@ use crate::search_root::SearchIterationResponse;
 use crate::terminal::check_terminal;
 use crate::types::{Side, ZobristHash};
 use crate::undo::UndoMove;
+use rand::SeedableRng;
+use rand::distr::Distribution;
+use rand::rngs::StdRng;
+use rand_distr::Gamma;
+use std::collections::HashSet;
+use std::hash::{BuildHasher, Hasher};
 
 type NodeId = usize;
 
@@ -120,7 +120,10 @@ pub struct MCTSTree {
 
 impl MCTSTree {
     pub fn new() -> Self {
-        MCTSTree { nodes: vec![], move_gen: MoveGen::new() }
+        MCTSTree {
+            nodes: vec![],
+            move_gen: MoveGen::new(),
+        }
     }
 
     pub fn get_node(&self, id: NodeId) -> &MCTSNode {
@@ -147,10 +150,12 @@ impl MCTSTree {
             if node.children.is_empty() {
                 break;
             }
-            let best = node.children.iter()
-                .max_by(|&&a, &&b| {
-                    self.get_node(a).visits.partial_cmp(&self.get_node(b).visits).unwrap()
-                });
+            let best = node.children.iter().max_by(|&&a, &&b| {
+                self.get_node(a)
+                    .visits
+                    .partial_cmp(&self.get_node(b).visits)
+                    .unwrap()
+            });
             match best {
                 Some(&child_id) => {
                     let child = self.get_node(child_id);
@@ -177,7 +182,13 @@ impl MCTSTree {
         ROOT_ID
     }
 
-    fn new_child(&mut self, mv: Move, parent_id: NodeId, prior: f32, zobrist_hash: ZobristHash) -> NodeId {
+    fn new_child(
+        &mut self,
+        mv: Move,
+        parent_id: NodeId,
+        prior: f32,
+        zobrist_hash: ZobristHash,
+    ) -> NodeId {
         let index: NodeId = self.nodes.len();
         let new_child = MCTSNode::new_child(mv, parent_id, prior, zobrist_hash);
         self.nodes.push(new_child);
@@ -189,7 +200,8 @@ impl MCTSTree {
     /// Reroot to the child of current root that matches `mv`.
     /// Returns true if found, false if tree was reset.
     pub fn reroot(&mut self, zobrist: ZobristHash) {
-        let Some(old_root_id) = self.nodes
+        let Some(old_root_id) = self
+            .nodes
             .iter()
             .enumerate()
             .filter(|(_, n)| n.zobrist_hash == zobrist)
@@ -253,7 +265,6 @@ impl MCTSTree {
         new_nodes[0].parent = None;
         self.nodes = new_nodes;
     }
-
 }
 
 pub fn get_left_moves(board: &Board, move_gen: &mut MoveGen) -> Vec<Move> {
@@ -323,7 +334,9 @@ impl MovesStack {
 
     fn unmake_last(&mut self, board: &mut Board) {
         let mut last_mv = self.undo.pop().expect("UndoMove empty");
-        board.unmake_move(&mut last_mv).expect("Failed to make undo");
+        board
+            .unmake_move(&mut last_mv)
+            .expect("Failed to make undo");
     }
 
     fn unmake_all(&mut self, board: &mut Board) {
@@ -346,7 +359,8 @@ fn expand_node(
     let moves = get_left_moves(board, move_gen);
 
     if !moves.is_empty() {
-        let logits: Vec<f32> = moves.iter()
+        let logits: Vec<f32> = moves
+            .iter()
             .map(|mv| nn_out.policy[move_to_policy_index(*mv) as usize])
             .collect();
         let priors = softmax(&logits);
@@ -378,11 +392,19 @@ fn debug_print_top_moves(tree: &MCTSTree, top_n: usize) {
     for (i, &child_id) in children.iter().take(top_n).enumerate() {
         let node = tree.get_node(child_id);
         let visits = node.visits;
-        let score = if visits > 0.0 { node.wins / visits } else { 0.0 };
+        let score = if visits > 0.0 {
+            node.wins / visits
+        } else {
+            0.0
+        };
 
         println!(
             "#{:<2} visits={:<8.0} score={:.3} prior={:.3} move={:?}",
-            i + 1, visits, score, node.prior, node.mv
+            i + 1,
+            visits,
+            score,
+            node.prior,
+            node.mv
         );
     }
 }
@@ -415,7 +437,9 @@ fn get_best_child(tree: &MCTSTree, temperature: f32) -> Option<NodeId> {
 
     if temperature <= 0.0 {
         // Greedy: pick most visited
-        return root.children.iter()
+        return root
+            .children
+            .iter()
             .max_by(|&&a, &&b| {
                 let va = tree.get_node(a).visits;
                 let vb = tree.get_node(b).visits;
@@ -426,14 +450,18 @@ fn get_best_child(tree: &MCTSTree, temperature: f32) -> Option<NodeId> {
 
     // Temperature-based sampling proportional to visits^(1/T)
     let inv_t = 1.0 / temperature;
-    let weights: Vec<f64> = root.children.iter()
+    let weights: Vec<f64> = root
+        .children
+        .iter()
         .map(|&id| (tree.get_node(id).visits as f64).powf(inv_t as f64))
         .collect();
     let sum: f64 = weights.iter().sum();
     let probs: Vec<f64> = weights.iter().map(|&w| w / sum).collect();
 
     let mut rng = StdRng::seed_from_u64(std::hash::RandomState::new().build_hasher().finish());
-    let r: f64 = rand::distr::Uniform::new(0.0f64, 1.0).unwrap().sample(&mut rng);
+    let r: f64 = rand::distr::Uniform::new(0.0f64, 1.0)
+        .unwrap()
+        .sample(&mut rng);
     let mut cumulative = 0.0;
     for (i, &p) in probs.iter().enumerate() {
         cumulative += p;
@@ -445,9 +473,9 @@ fn get_best_child(tree: &MCTSTree, temperature: f32) -> Option<NodeId> {
 }
 
 /**
-    * Get the child corresponding to the multi-PV rank (1 = best, 2 = second best, etc).
-    * Returns None if there are fewer children than multi_pv.
-    */
+ * Get the child corresponding to the multi-PV rank (1 = best, 2 = second best, etc).
+ * Returns None if there are fewer children than multi_pv.
+ */
 fn get_multi_pv_child(tree: &MCTSTree, node_id: NodeId, multi_pv: usize) -> Option<NodeId> {
     let children: Vec<NodeId> = tree.get_node(node_id).children.clone();
     if children.is_empty() {
@@ -517,7 +545,11 @@ fn select_leaf(
     let is_terminal = check_terminal(board);
 
     let pending = if let Some(winner) = is_terminal {
-        let value = if board.side_to_move == winner { 1.0 } else { -1.0 };
+        let value = if board.side_to_move == winner {
+            1.0
+        } else {
+            -1.0
+        };
         PendingLeaf {
             node_id: cur,
             path,
@@ -574,7 +606,8 @@ fn expand_with_nn_output(
     child_zobrists: &[ZobristHash],
 ) {
     if !legal_moves.is_empty() {
-        let logits: Vec<f32> = legal_moves.iter()
+        let logits: Vec<f32> = legal_moves
+            .iter()
             .map(|mv| policy[move_to_policy_index(*mv) as usize])
             .collect();
         let priors = softmax(&logits);
@@ -605,7 +638,7 @@ pub fn mcts_search(
     on_iteration: Option<&dyn Fn(SearchIterationResponse)>,
     iter_max: Option<u64>,
     config: &MCTSConfig,
-    multi_pv: Option<usize>
+    multi_pv: Option<usize>,
 ) -> Option<Move> {
     tree.reroot(board.zobrist);
     let mut mv_generator = MoveGen::new();
@@ -623,7 +656,12 @@ pub fn mcts_search(
 
     // Add Dirichlet noise to root priors
     if config.dirichlet_alpha > 0.0 {
-        add_dirichlet_noise(tree, root_id, config.dirichlet_alpha, config.dirichlet_epsilon);
+        add_dirichlet_noise(
+            tree,
+            root_id,
+            config.dirichlet_alpha,
+            config.dirichlet_epsilon,
+        );
     }
 
     loop {
@@ -671,13 +709,16 @@ pub fn mcts_search(
         }
 
         // --- Batch NN evaluation for non-terminal leaves ---
-        let nn_indices: Vec<usize> = pending_leaves.iter().enumerate()
+        let nn_indices: Vec<usize> = pending_leaves
+            .iter()
+            .enumerate()
             .filter(|(_, l)| l.terminal_value.is_none() && l.position.is_some())
             .map(|(i, _)| i)
             .collect();
 
         let nn_results = if !nn_indices.is_empty() {
-            let positions: Vec<&BitPosition> = nn_indices.iter()
+            let positions: Vec<&BitPosition> = nn_indices
+                .iter()
                 .map(|&i| pending_leaves[i].position.as_ref().unwrap())
                 .collect();
             nn.evaluate_batch(&positions)
@@ -725,7 +766,14 @@ pub fn mcts_search(
 
             if let Some(callback) = on_iteration {
                 if let Some(best_id) = get_best_child(tree, 0.0) {
-                    fn response_from_move(node_id: NodeId, tree: &MCTSTree, elapsed: u64, callback: &dyn Fn(SearchIterationResponse), iteration: u64, multi_pv: Option<usize>) {
+                    fn response_from_move(
+                        node_id: NodeId,
+                        tree: &MCTSTree,
+                        elapsed: u64,
+                        callback: &dyn Fn(SearchIterationResponse),
+                        iteration: u64,
+                        multi_pv: Option<usize>,
+                    ) {
                         let node = tree.get_node(node_id);
 
                         let (score, winrate) = if node.visits > 0.0 {
@@ -735,7 +783,11 @@ pub fn mcts_search(
                         } else {
                             (0, 0.5)
                         };
-                        let speed = if elapsed > 0 { iteration * 1000 / elapsed } else { 0 };
+                        let speed = if elapsed > 0 {
+                            iteration * 1000 / elapsed
+                        } else {
+                            0
+                        };
 
                         callback(SearchIterationResponse {
                             score,
@@ -750,14 +802,22 @@ pub fn mcts_search(
 
                     if multi_pv.is_some() {
                         for rank in 1..=multi_pv.unwrap() {
-                            if let Some(multi_id) = get_multi_pv_child(tree, tree.get_root_id(), rank) {
-                                response_from_move(multi_id, tree, elapsed, callback, iteration, Some(rank));
+                            if let Some(multi_id) =
+                                get_multi_pv_child(tree, tree.get_root_id(), rank)
+                            {
+                                response_from_move(
+                                    multi_id,
+                                    tree,
+                                    elapsed,
+                                    callback,
+                                    iteration,
+                                    Some(rank),
+                                );
                             }
                         }
                     } else {
                         response_from_move(best_id, tree, elapsed, callback, iteration, None);
                     }
-
                 }
             }
         }

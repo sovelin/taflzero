@@ -1,14 +1,14 @@
-use std::sync::LazyLock;
+use crate::board::constants::SQS;
+use crate::board::types::ZobristHash;
 use rand::rngs::StdRng;
 use rand::{RngCore, SeedableRng};
-use crate::board::constants::SQS;
-use crate::board::types::{ZobristHash};
+use std::sync::LazyLock;
 
 const PIECES_COUNT: usize = 4;
 
 type ZobristTable = [[ZobristHash; SQS]; PIECES_COUNT];
 
-pub struct  ZobristData {
+pub struct ZobristData {
     pub table: ZobristTable,
     pub side: ZobristHash,
 }
@@ -26,10 +26,7 @@ fn generate_zobrist() -> ZobristData {
 
     let side = rng.next_u64();
 
-    ZobristData {
-        table,
-        side
-    }
+    ZobristData { table, side }
 }
 
-pub static ZOBRIST_DATA: LazyLock<ZobristData>  = LazyLock::new(generate_zobrist);
+pub static ZOBRIST_DATA: LazyLock<ZobristData> = LazyLock::new(generate_zobrist);

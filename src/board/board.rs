@@ -1,12 +1,12 @@
+use super::constants::{ATTACKERS_MAX, BOARD_SIZE, DEFENDERS_MAX, HOLE, INITIAL_FEN, SQS};
+use super::types::{OptionalSquare, Piece, Side, Square, ZobristHash};
+use super::zobrist::ZOBRIST_DATA;
+use crate::board::PRECOMPUTED;
+use crate::board::fen::FenError;
+use crate::board::utils::get_square;
+use crate::nnue::{NNUE, STM_BIT, Weights1, Weights2, calculate_nnue_index, load_default_weights};
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
-use crate::board::fen::FenError;
-use crate::board::PRECOMPUTED;
-use crate::board::utils::get_square;
-use crate::nnue::{calculate_nnue_index, Weights1, Weights2, NNUE, STM_BIT, load_default_weights};
-use super::zobrist::{ZOBRIST_DATA};
-use super::types::{OptionalSquare, Piece, Side, Square, ZobristHash};
-use super::constants::{SQS, ATTACKERS_MAX, DEFENDERS_MAX, BOARD_SIZE, HOLE, INITIAL_FEN};
 
 pub struct Board {
     pub board: [Piece; SQS],
@@ -166,7 +166,6 @@ impl Board {
         let piece = self.board[sq];
         self.nnue.reset_input(calculate_nnue_index(piece, sq));
 
-
         self.zobrist ^= ZOBRIST_DATA.table[piece as usize][sq];
         self.board[sq] = Piece::EMPTY;
 
@@ -242,8 +241,8 @@ impl Debug for Board {
                 match p {
                     Piece::ATTACKER => write!(f, "\x1b[31mA\x1b[0m")?,
                     Piece::DEFENDER => write!(f, "\x1b[34mD\x1b[0m")?,
-                    Piece::KING     => write!(f, "\x1b[33mK\x1b[0m")?,
-                    Piece::EMPTY    => write!(f, ".")?,
+                    Piece::KING => write!(f, "\x1b[33mK\x1b[0m")?,
+                    Piece::EMPTY => write!(f, ".")?,
                 }
 
                 if c + 1 != size {
@@ -294,7 +293,7 @@ pub fn set_board_from_str(board: &mut Board, position: &str) {
 
             if let Some(piece) = piece {
                 if piece != Piece::EMPTY {
-                board.set_piece(sq, piece).expect("set_piece");
+                    board.set_piece(sq, piece).expect("set_piece");
                 }
                 index += 1;
             };

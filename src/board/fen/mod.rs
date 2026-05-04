@@ -1,4 +1,4 @@
-mod tests;
 mod fen;
+mod tests;
 
 pub use fen::FenError;

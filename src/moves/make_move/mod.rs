@@ -1,9 +1,9 @@
 pub mod is_capture_possible;
-mod mask_shield_captures;
 pub mod king_is_surrounded;
+mod mask_shield_captures;
 
-use crate::board::{Board, PRECOMPUTED};
 use crate::board::types::OptionalSquare;
+use crate::board::{Board, PRECOMPUTED};
 use crate::moves::make_move::is_capture_possible::is_capture_possible;
 use crate::moves::make_move::king_is_surrounded::king_is_surrounded;
 use crate::moves::make_move::mask_shield_captures::make_shield_wall_captures;
@@ -14,7 +14,8 @@ use crate::types::{Piece, Side, Square};
 impl Board {
     fn add_position_to_rep_table(&mut self) {
         if self.rep_table.contains_key(&self.zobrist) {
-            self.rep_table.insert(self.zobrist, self.rep_table.get(&self.zobrist).unwrap() + 1);
+            self.rep_table
+                .insert(self.zobrist, self.rep_table.get(&self.zobrist).unwrap() + 1);
         } else {
             self.rep_table.insert(self.zobrist, 1);
         }
@@ -33,7 +34,6 @@ impl Board {
         self.clear_piece(from);
         self.set_piece(to, piece)?;
 
-
         for sandwich in PRECOMPUTED.sandwich_captures[to as usize].iter() {
             if is_capture_possible(&self, sandwich.between_sq, to, sandwich.captor_sq) {
                 undo.add_captured_piece(CapturedPiece {
@@ -47,11 +47,12 @@ impl Board {
         self.last_move_to = to as OptionalSquare;
         make_shield_wall_captures(self, to, undo);
 
-
         // Capture king special handling
-        if self.king_sq != -1 && self.side_to_move == Side::ATTACKERS && PRECOMPUTED.vertical_horizontal_neighbors[self.king_sq as usize].contains(
-            &to
-        ) && king_is_surrounded(self) {
+        if self.king_sq != -1
+            && self.side_to_move == Side::ATTACKERS
+            && PRECOMPUTED.vertical_horizontal_neighbors[self.king_sq as usize].contains(&to)
+            && king_is_surrounded(self)
+        {
             // Capture the king
             undo.add_captured_piece(CapturedPiece {
                 square: self.king_sq as Square,
@@ -62,7 +63,6 @@ impl Board {
         }
 
         self.flip_side();
-
 
         self.add_position_to_rep_table();
         self.was_capture = undo.captured_pieces_count > 0;
@@ -82,14 +82,14 @@ mod tests {
     use crate::board::utils::get_square_from_algebraic;
     use crate::moves::mv::create_move_from_algebraic;
     use crate::moves::undo::{CapturedPiece, UndoMove};
-    use crate::tests::{expect_attacker_on, expect_attackers_count, expect_defenders_count, expect_king_on, expect_no_pice_on, expect_side_to_be};
+    use crate::tests::{
+        expect_attacker_on, expect_attackers_count, expect_defenders_count, expect_king_on,
+        expect_no_pice_on, expect_side_to_be,
+    };
 
     fn expect_undo_has_captured_piece(undo: &UndoMove, square: &str, piece: Piece) {
         let sq = get_square_from_algebraic(square);
-        let captured_piece = CapturedPiece {
-            square: sq,
-            piece,
-        };
+        let captured_piece = CapturedPiece { square: sq, piece };
         assert!(
             undo.captured_pieces().contains(&captured_piece),
             "Expected undo to have captured piece {:?} on square {}",
@@ -110,10 +110,9 @@ mod tests {
         expect_attacker_on(&board, "a4");
         expect_no_pice_on(&board, "a2");
         expect_attackers_count(&board, 1);
-        expect_defenders_count(&board,0);
+        expect_defenders_count(&board, 0);
         expect_side_to_be(&board, Side::DEFENDERS)
     }
-
 
     #[test]
     fn capture_defender_in_sandwich_prepare() {
@@ -165,9 +164,15 @@ mod tests {
     fn undo_should_fill_correctly() {
         let mut board = Board::new();
         board.set_side(Side::DEFENDERS);
-        board.set_piece(get_square_from_algebraic("a2"), Piece::ATTACKER).unwrap();
-        board.set_piece(get_square_from_algebraic("a5"), Piece::DEFENDER).unwrap();
-        board.set_piece(get_square_from_algebraic("a6"), Piece::ATTACKER).unwrap();
+        board
+            .set_piece(get_square_from_algebraic("a2"), Piece::ATTACKER)
+            .unwrap();
+        board
+            .set_piece(get_square_from_algebraic("a5"), Piece::DEFENDER)
+            .unwrap();
+        board
+            .set_piece(get_square_from_algebraic("a6"), Piece::ATTACKER)
+            .unwrap();
         let mv = create_move_from_algebraic("a2a4").unwrap();
 
         let mut undo = UndoMove::new();
@@ -176,10 +181,13 @@ mod tests {
         assert_eq!(undo.mv, mv);
         assert_eq!(undo.captured_pieces_count, 1);
 
-        assert_eq!(undo.captured_pieces()[0], CapturedPiece {
-            square: get_square_from_algebraic("a5"),
-            piece: Piece::DEFENDER
-        });
+        assert_eq!(
+            undo.captured_pieces()[0],
+            CapturedPiece {
+                square: get_square_from_algebraic("a5"),
+                piece: Piece::DEFENDER
+            }
+        );
 
         assert_eq!(undo.last_move_to, HOLE);
     }
@@ -191,12 +199,24 @@ mod tests {
         fn capture_2_surrounded_pieces() {
             let mut board = Board::new();
             board.set_side(Side::ATTACKERS);
-            board.set_piece(get_square_from_algebraic("c1"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("e2"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("f2"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("g1"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("e1"), Piece::DEFENDER).unwrap();
-            board.set_piece(get_square_from_algebraic("f1"), Piece::DEFENDER).unwrap();
+            board
+                .set_piece(get_square_from_algebraic("c1"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("e2"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("f2"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("g1"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("e1"), Piece::DEFENDER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("f1"), Piece::DEFENDER)
+                .unwrap();
             println!("{:?}", board);
 
             let mv = create_move_from_algebraic("c1d1").unwrap();
@@ -214,19 +234,35 @@ mod tests {
             // JS: "if there are 2 not fully rounded pieces on edge (without e2) -> not captured"
             let mut board = Board::new();
             board.set_side(Side::ATTACKERS);
-            board.set_piece(get_square_from_algebraic("c1"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("f2"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("g1"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("e1"), Piece::DEFENDER).unwrap();
-            board.set_piece(get_square_from_algebraic("f1"), Piece::DEFENDER).unwrap();
+            board
+                .set_piece(get_square_from_algebraic("c1"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("f2"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("g1"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("e1"), Piece::DEFENDER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("f1"), Piece::DEFENDER)
+                .unwrap();
 
             let mv = create_move_from_algebraic("c1d1").unwrap();
             let mut undo = UndoMove::new();
             board.make_move(mv, &mut undo).expect("make move failed");
 
             assert_eq!(undo.captured_pieces_count, 0);
-            assert_eq!(board.board[get_square_from_algebraic("e1") as usize], Piece::DEFENDER);
-            assert_eq!(board.board[get_square_from_algebraic("f1") as usize], Piece::DEFENDER);
+            assert_eq!(
+                board.board[get_square_from_algebraic("e1") as usize],
+                Piece::DEFENDER
+            );
+            assert_eq!(
+                board.board[get_square_from_algebraic("f1") as usize],
+                Piece::DEFENDER
+            );
         }
 
         #[test]
@@ -234,17 +270,28 @@ mod tests {
             // JS: "one piece surrounded -> no capture"
             let mut board = Board::new();
             board.set_side(Side::ATTACKERS);
-            board.set_piece(get_square_from_algebraic("c1"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("d3"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("e1"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("d1"), Piece::DEFENDER).unwrap();
+            board
+                .set_piece(get_square_from_algebraic("c1"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("d3"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("e1"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("d1"), Piece::DEFENDER)
+                .unwrap();
 
             let mv = create_move_from_algebraic("d3d2").unwrap();
             let mut undo = UndoMove::new();
             board.make_move(mv, &mut undo).expect("make move failed");
 
             assert_eq!(undo.captured_pieces_count, 0);
-            assert_eq!(board.board[get_square_from_algebraic("d1") as usize], Piece::DEFENDER);
+            assert_eq!(
+                board.board[get_square_from_algebraic("d1") as usize],
+                Piece::DEFENDER
+            );
         }
 
         #[test]
@@ -252,12 +299,24 @@ mod tests {
             // JS: "if there are 2 rounded pieces on edge, it could be captured (but king not captured)"
             let mut board = Board::new();
             board.set_side(Side::ATTACKERS);
-            board.set_piece(get_square_from_algebraic("c1"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("e2"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("f2"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("g1"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("e1"), Piece::DEFENDER).unwrap();
-            board.set_piece(get_square_from_algebraic("f1"), Piece::KING).unwrap();
+            board
+                .set_piece(get_square_from_algebraic("c1"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("e2"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("f2"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("g1"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("e1"), Piece::DEFENDER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("f1"), Piece::KING)
+                .unwrap();
 
             let mv = create_move_from_algebraic("c1d1").unwrap();
             let mut undo = UndoMove::new();
@@ -265,8 +324,14 @@ mod tests {
 
             assert_eq!(undo.captured_pieces_count, 1);
             expect_undo_has_captured_piece(&undo, "e1", Piece::DEFENDER);
-            assert_eq!(board.board[get_square_from_algebraic("e1") as usize], Piece::EMPTY);
-            assert_eq!(board.board[get_square_from_algebraic("f1") as usize], Piece::KING);
+            assert_eq!(
+                board.board[get_square_from_algebraic("e1") as usize],
+                Piece::EMPTY
+            );
+            assert_eq!(
+                board.board[get_square_from_algebraic("f1") as usize],
+                Piece::KING
+            );
         }
 
         #[test]
@@ -274,12 +339,24 @@ mod tests {
             // JS: "defenders also could capture"
             let mut board = Board::new();
             board.set_side(Side::DEFENDERS);
-            board.set_piece(get_square_from_algebraic("c1"), Piece::DEFENDER).unwrap();
-            board.set_piece(get_square_from_algebraic("e2"), Piece::KING).unwrap();
-            board.set_piece(get_square_from_algebraic("f2"), Piece::DEFENDER).unwrap();
-            board.set_piece(get_square_from_algebraic("g1"), Piece::DEFENDER).unwrap();
-            board.set_piece(get_square_from_algebraic("e1"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("f1"), Piece::ATTACKER).unwrap();
+            board
+                .set_piece(get_square_from_algebraic("c1"), Piece::DEFENDER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("e2"), Piece::KING)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("f2"), Piece::DEFENDER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("g1"), Piece::DEFENDER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("e1"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("f1"), Piece::ATTACKER)
+                .unwrap();
 
             let mv = create_move_from_algebraic("c1d1").unwrap();
             let mut undo = UndoMove::new();
@@ -288,8 +365,14 @@ mod tests {
             assert_eq!(undo.captured_pieces_count, 2);
             expect_undo_has_captured_piece(&undo, "e1", Piece::ATTACKER);
             expect_undo_has_captured_piece(&undo, "f1", Piece::ATTACKER);
-            assert_eq!(board.board[get_square_from_algebraic("e1") as usize], Piece::EMPTY);
-            assert_eq!(board.board[get_square_from_algebraic("f1") as usize], Piece::EMPTY);
+            assert_eq!(
+                board.board[get_square_from_algebraic("e1") as usize],
+                Piece::EMPTY
+            );
+            assert_eq!(
+                board.board[get_square_from_algebraic("f1") as usize],
+                Piece::EMPTY
+            );
         }
 
         #[test]
@@ -297,11 +380,21 @@ mod tests {
             // JS: "capture on corner with shieldwall"
             let mut board = Board::new();
             board.set_side(Side::DEFENDERS);
-            board.set_piece(get_square_from_algebraic("b2"), Piece::DEFENDER).unwrap();
-            board.set_piece(get_square_from_algebraic("c2"), Piece::DEFENDER).unwrap();
-            board.set_piece(get_square_from_algebraic("e1"), Piece::DEFENDER).unwrap();
-            board.set_piece(get_square_from_algebraic("b1"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("c1"), Piece::ATTACKER).unwrap();
+            board
+                .set_piece(get_square_from_algebraic("b2"), Piece::DEFENDER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("c2"), Piece::DEFENDER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("e1"), Piece::DEFENDER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("b1"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("c1"), Piece::ATTACKER)
+                .unwrap();
 
             let mv = create_move_from_algebraic("e1d1").unwrap();
             let mut undo = UndoMove::new();
@@ -310,19 +403,35 @@ mod tests {
             assert_eq!(undo.captured_pieces_count, 2);
             expect_undo_has_captured_piece(&undo, "b1", Piece::ATTACKER);
             expect_undo_has_captured_piece(&undo, "c1", Piece::ATTACKER);
-            assert_eq!(board.board[get_square_from_algebraic("b1") as usize], Piece::EMPTY);
-            assert_eq!(board.board[get_square_from_algebraic("c1") as usize], Piece::EMPTY);
+            assert_eq!(
+                board.board[get_square_from_algebraic("b1") as usize],
+                Piece::EMPTY
+            );
+            assert_eq!(
+                board.board[get_square_from_algebraic("c1") as usize],
+                Piece::EMPTY
+            );
         }
 
         #[test]
         fn capture_on_corner_with_shieldwall_bottom_left_attackers() {
             let mut board = Board::new();
             board.set_side(Side::ATTACKERS);
-            board.set_piece(get_square_from_algebraic("b2"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("c2"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("e1"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("b1"), Piece::DEFENDER).unwrap();
-            board.set_piece(get_square_from_algebraic("c1"), Piece::DEFENDER).unwrap();
+            board
+                .set_piece(get_square_from_algebraic("b2"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("c2"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("e1"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("b1"), Piece::DEFENDER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("c1"), Piece::DEFENDER)
+                .unwrap();
 
             let mv = create_move_from_algebraic("e1d1").unwrap();
             let mut undo = UndoMove::new();
@@ -331,19 +440,35 @@ mod tests {
             assert_eq!(undo.captured_pieces_count, 2);
             expect_undo_has_captured_piece(&undo, "b1", Piece::DEFENDER);
             expect_undo_has_captured_piece(&undo, "c1", Piece::DEFENDER);
-            assert_eq!(board.board[get_square_from_algebraic("b1") as usize], Piece::EMPTY);
-            assert_eq!(board.board[get_square_from_algebraic("c1") as usize], Piece::EMPTY);
+            assert_eq!(
+                board.board[get_square_from_algebraic("b1") as usize],
+                Piece::EMPTY
+            );
+            assert_eq!(
+                board.board[get_square_from_algebraic("c1") as usize],
+                Piece::EMPTY
+            );
         }
 
         #[test]
         fn capture_on_corner_with_shieldwall_bottom_right() {
             let mut board = Board::new();
             board.set_side(Side::DEFENDERS);
-            board.set_piece(get_square_from_algebraic("i2"), Piece::DEFENDER).unwrap();
-            board.set_piece(get_square_from_algebraic("j2"), Piece::DEFENDER).unwrap();
-            board.set_piece(get_square_from_algebraic("g1"), Piece::DEFENDER).unwrap();
-            board.set_piece(get_square_from_algebraic("i1"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("j1"), Piece::ATTACKER).unwrap();
+            board
+                .set_piece(get_square_from_algebraic("i2"), Piece::DEFENDER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("j2"), Piece::DEFENDER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("g1"), Piece::DEFENDER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("i1"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("j1"), Piece::ATTACKER)
+                .unwrap();
 
             let mv = create_move_from_algebraic("g1h1").unwrap();
             let mut undo = UndoMove::new();
@@ -352,19 +477,35 @@ mod tests {
             assert_eq!(undo.captured_pieces_count, 2);
             expect_undo_has_captured_piece(&undo, "i1", Piece::ATTACKER);
             expect_undo_has_captured_piece(&undo, "j1", Piece::ATTACKER);
-            assert_eq!(board.board[get_square_from_algebraic("i1") as usize], Piece::EMPTY);
-            assert_eq!(board.board[get_square_from_algebraic("j1") as usize], Piece::EMPTY);
+            assert_eq!(
+                board.board[get_square_from_algebraic("i1") as usize],
+                Piece::EMPTY
+            );
+            assert_eq!(
+                board.board[get_square_from_algebraic("j1") as usize],
+                Piece::EMPTY
+            );
         }
 
         #[test]
         fn capture_on_corner_with_shieldwall_top_left() {
             let mut board = Board::new();
             board.set_side(Side::DEFENDERS);
-            board.set_piece(get_square_from_algebraic("b10"), Piece::DEFENDER).unwrap();
-            board.set_piece(get_square_from_algebraic("c10"), Piece::DEFENDER).unwrap();
-            board.set_piece(get_square_from_algebraic("e11"), Piece::DEFENDER).unwrap();
-            board.set_piece(get_square_from_algebraic("b11"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("c11"), Piece::ATTACKER).unwrap();
+            board
+                .set_piece(get_square_from_algebraic("b10"), Piece::DEFENDER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("c10"), Piece::DEFENDER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("e11"), Piece::DEFENDER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("b11"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("c11"), Piece::ATTACKER)
+                .unwrap();
 
             let mv = create_move_from_algebraic("e11d11").unwrap();
             let mut undo = UndoMove::new();
@@ -373,19 +514,35 @@ mod tests {
             assert_eq!(undo.captured_pieces_count, 2);
             expect_undo_has_captured_piece(&undo, "b11", Piece::ATTACKER);
             expect_undo_has_captured_piece(&undo, "c11", Piece::ATTACKER);
-            assert_eq!(board.board[get_square_from_algebraic("b11") as usize], Piece::EMPTY);
-            assert_eq!(board.board[get_square_from_algebraic("c11") as usize], Piece::EMPTY);
+            assert_eq!(
+                board.board[get_square_from_algebraic("b11") as usize],
+                Piece::EMPTY
+            );
+            assert_eq!(
+                board.board[get_square_from_algebraic("c11") as usize],
+                Piece::EMPTY
+            );
         }
 
         #[test]
         fn capture_on_corner_with_shieldwall_top_right() {
             let mut board = Board::new();
             board.set_side(Side::DEFENDERS);
-            board.set_piece(get_square_from_algebraic("i10"), Piece::DEFENDER).unwrap();
-            board.set_piece(get_square_from_algebraic("j10"), Piece::DEFENDER).unwrap();
-            board.set_piece(get_square_from_algebraic("g11"), Piece::DEFENDER).unwrap();
-            board.set_piece(get_square_from_algebraic("i11"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("j11"), Piece::ATTACKER).unwrap();
+            board
+                .set_piece(get_square_from_algebraic("i10"), Piece::DEFENDER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("j10"), Piece::DEFENDER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("g11"), Piece::DEFENDER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("i11"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("j11"), Piece::ATTACKER)
+                .unwrap();
 
             let mv = create_move_from_algebraic("g11h11").unwrap();
             let mut undo = UndoMove::new();
@@ -394,19 +551,35 @@ mod tests {
             assert_eq!(undo.captured_pieces_count, 2);
             expect_undo_has_captured_piece(&undo, "i11", Piece::ATTACKER);
             expect_undo_has_captured_piece(&undo, "j11", Piece::ATTACKER);
-            assert_eq!(board.board[get_square_from_algebraic("i11") as usize], Piece::EMPTY);
-            assert_eq!(board.board[get_square_from_algebraic("j11") as usize], Piece::EMPTY);
+            assert_eq!(
+                board.board[get_square_from_algebraic("i11") as usize],
+                Piece::EMPTY
+            );
+            assert_eq!(
+                board.board[get_square_from_algebraic("j11") as usize],
+                Piece::EMPTY
+            );
         }
 
         #[test]
         fn capture_on_corner_with_shieldwall_top_right_attackers() {
             let mut board = Board::new();
             board.set_side(Side::ATTACKERS);
-            board.set_piece(get_square_from_algebraic("i10"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("j10"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("g11"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("i11"), Piece::DEFENDER).unwrap();
-            board.set_piece(get_square_from_algebraic("j11"), Piece::DEFENDER).unwrap();
+            board
+                .set_piece(get_square_from_algebraic("i10"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("j10"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("g11"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("i11"), Piece::DEFENDER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("j11"), Piece::DEFENDER)
+                .unwrap();
 
             let mv = create_move_from_algebraic("g11h11").unwrap();
             let mut undo = UndoMove::new();
@@ -415,8 +588,14 @@ mod tests {
             assert_eq!(undo.captured_pieces_count, 2);
             expect_undo_has_captured_piece(&undo, "i11", Piece::DEFENDER);
             expect_undo_has_captured_piece(&undo, "j11", Piece::DEFENDER);
-            assert_eq!(board.board[get_square_from_algebraic("i11") as usize], Piece::EMPTY);
-            assert_eq!(board.board[get_square_from_algebraic("j11") as usize], Piece::EMPTY);
+            assert_eq!(
+                board.board[get_square_from_algebraic("i11") as usize],
+                Piece::EMPTY
+            );
+            assert_eq!(
+                board.board[get_square_from_algebraic("j11") as usize],
+                Piece::EMPTY
+            );
         }
 
         #[test]
@@ -424,21 +603,33 @@ mod tests {
             let mut board = Board::new();
             board.set_side(Side::ATTACKERS);
 
-            board.set_piece(get_square_from_algebraic("k1"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("k11"), Piece::ATTACKER).unwrap();
+            board
+                .set_piece(get_square_from_algebraic("k1"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("k11"), Piece::ATTACKER)
+                .unwrap();
 
             for rank in 2..=10 {
                 let coord = format!("k{}", rank);
-                board.set_piece(get_square_from_algebraic(&coord), Piece::DEFENDER).unwrap();
+                board
+                    .set_piece(get_square_from_algebraic(&coord), Piece::DEFENDER)
+                    .unwrap();
             }
 
             for rank in 2..=10 {
-                if rank == 6 { continue; }
+                if rank == 6 {
+                    continue;
+                }
                 let coord = format!("j{}", rank);
-                board.set_piece(get_square_from_algebraic(&coord), Piece::ATTACKER).unwrap();
+                board
+                    .set_piece(get_square_from_algebraic(&coord), Piece::ATTACKER)
+                    .unwrap();
             }
 
-            board.set_piece(get_square_from_algebraic("h6"), Piece::ATTACKER).unwrap();
+            board
+                .set_piece(get_square_from_algebraic("h6"), Piece::ATTACKER)
+                .unwrap();
             println!("{:?}", board);
 
             let mv = create_move_from_algebraic("h6j6").unwrap();
@@ -453,17 +644,35 @@ mod tests {
         fn standard_captures_complex() {
             let mut board = Board::new();
             board.set_side(Side::ATTACKERS);
-            board.set_piece(get_square_from_algebraic("b2"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("c2"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("g1"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("e3"), Piece::ATTACKER).unwrap();
+            board
+                .set_piece(get_square_from_algebraic("b2"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("c2"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("g1"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("e3"), Piece::ATTACKER)
+                .unwrap();
 
-            board.set_piece(get_square_from_algebraic("d1"), Piece::DEFENDER).unwrap();
-            board.set_piece(get_square_from_algebraic("b1"), Piece::DEFENDER).unwrap();
-            board.set_piece(get_square_from_algebraic("e2"), Piece::DEFENDER).unwrap();
+            board
+                .set_piece(get_square_from_algebraic("d1"), Piece::DEFENDER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("b1"), Piece::DEFENDER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("e2"), Piece::DEFENDER)
+                .unwrap();
 
-            board.set_piece(get_square_from_algebraic("c1"), Piece::KING).unwrap();
-            board.set_piece(get_square_from_algebraic("d2"), Piece::ATTACKER).unwrap();
+            board
+                .set_piece(get_square_from_algebraic("c1"), Piece::KING)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("d2"), Piece::ATTACKER)
+                .unwrap();
 
             let mv = create_move_from_algebraic("g1e1").unwrap();
             let mut undo = UndoMove::new();
@@ -477,22 +686,45 @@ mod tests {
             expect_undo_has_captured_piece(&undo, "d1", Piece::DEFENDER);
             expect_undo_has_captured_piece(&undo, "e2", Piece::DEFENDER);
 
-            assert_eq!(board.board[get_square_from_algebraic("b1") as usize], Piece::EMPTY);
-            assert_eq!(board.board[get_square_from_algebraic("d1") as usize], Piece::EMPTY);
-            assert_eq!(board.board[get_square_from_algebraic("e2") as usize], Piece::EMPTY);
+            assert_eq!(
+                board.board[get_square_from_algebraic("b1") as usize],
+                Piece::EMPTY
+            );
+            assert_eq!(
+                board.board[get_square_from_algebraic("d1") as usize],
+                Piece::EMPTY
+            );
+            assert_eq!(
+                board.board[get_square_from_algebraic("e2") as usize],
+                Piece::EMPTY
+            );
         }
 
         #[test]
         fn capture_non_flanking_is_not_capture() {
             let mut board = Board::new();
             board.set_side(Side::ATTACKERS);
-            board.set_piece(get_square_from_algebraic("b1"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("c2"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("d3"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("e1"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("c1"), Piece::DEFENDER).unwrap();
-            board.set_piece(get_square_from_algebraic("d1"), Piece::DEFENDER).unwrap();
-            board.set_piece(get_square_from_algebraic("f6"), Piece::KING).unwrap();
+            board
+                .set_piece(get_square_from_algebraic("b1"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("c2"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("d3"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("e1"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("c1"), Piece::DEFENDER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("d1"), Piece::DEFENDER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("f6"), Piece::KING)
+                .unwrap();
 
             let mv = create_move_from_algebraic("d3d2").unwrap();
 
@@ -511,53 +743,83 @@ mod tests {
         use crate::undo::{CapturedPiece, UndoMove};
 
         #[test]
-        fn king_capture_possible_not_near_throne()  {
+        fn king_capture_possible_not_near_throne() {
             let mut board = Board::new();
             board.set_side(Side::ATTACKERS);
-            board.set_piece(get_square_from_algebraic("d5"), Piece::KING).unwrap();
-            board.set_piece(get_square_from_algebraic("d4"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("c5"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("e5"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("d7"), Piece::ATTACKER).unwrap();
+            board
+                .set_piece(get_square_from_algebraic("d5"), Piece::KING)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("d4"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("c5"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("e5"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("d7"), Piece::ATTACKER)
+                .unwrap();
 
             // make move d7d6
             let mv = create_move_from_algebraic("d7d6").unwrap();
             let mut undo = UndoMove::new();
             board.make_move(mv, &mut undo);
             assert_eq!(undo.captured_pieces_count, 1);
-            assert_eq!(undo.captured_pieces()[0], CapturedPiece {
-                square: get_square_from_algebraic("d5"),
-                piece: Piece::KING
-            });
+            assert_eq!(
+                undo.captured_pieces()[0],
+                CapturedPiece {
+                    square: get_square_from_algebraic("d5"),
+                    piece: Piece::KING
+                }
+            );
         }
 
         #[test]
         fn king_capture_not_possible_near_throne() {
             let mut board = Board::new();
             board.set_side(Side::ATTACKERS);
-            board.set_piece(get_square_from_algebraic("e6"), Piece::KING).unwrap();
-            board.set_piece(get_square_from_algebraic("e5"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("e7"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("a6"), Piece::ATTACKER).unwrap();
+            board
+                .set_piece(get_square_from_algebraic("e6"), Piece::KING)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("e5"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("e7"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("a6"), Piece::ATTACKER)
+                .unwrap();
             println!("{:?}", board);
             // make move e7e6
             let mv = create_move_from_algebraic("a6d6").unwrap();
             let mut undo = UndoMove::new();
             board.make_move(mv, &mut undo);
             assert_eq!(undo.captured_pieces_count, 1);
-            assert_eq!(undo.captured_pieces()[0], CapturedPiece {
-                square: get_square_from_algebraic("e6"),
-                piece: Piece::KING
-            });
+            assert_eq!(
+                undo.captured_pieces()[0],
+                CapturedPiece {
+                    square: get_square_from_algebraic("e6"),
+                    piece: Piece::KING
+                }
+            );
         }
 
         #[test]
         fn king_capture_impossible_if_not_surrounded() {
             let mut board = Board::new();
             board.set_side(Side::ATTACKERS);
-            board.set_piece(get_square_from_algebraic("e6"), Piece::KING).unwrap();
-            board.set_piece(get_square_from_algebraic("e5"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("a6"), Piece::ATTACKER).unwrap();
+            board
+                .set_piece(get_square_from_algebraic("e6"), Piece::KING)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("e5"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("a6"), Piece::ATTACKER)
+                .unwrap();
             println!("{:?}", board);
             // make move a6d6
             let mv = create_move_from_algebraic("a6d6").unwrap();
@@ -570,10 +832,18 @@ mod tests {
         fn king_capture_impossible_if_not_surrounded_fully_by_attackers() {
             let mut board = Board::new();
             board.set_side(Side::ATTACKERS);
-            board.set_piece(get_square_from_algebraic("e6"), Piece::KING).unwrap();
-            board.set_piece(get_square_from_algebraic("e5"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("a6"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("e7"), Piece::DEFENDER).unwrap();
+            board
+                .set_piece(get_square_from_algebraic("e6"), Piece::KING)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("e5"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("a6"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("e7"), Piece::DEFENDER)
+                .unwrap();
             println!("{:?}", board);
             // make move a6d6
             let mv = create_move_from_algebraic("a6d6").unwrap();
@@ -586,12 +856,24 @@ mod tests {
         fn king_already_surrounded_but_not_capture_move() {
             let mut board = Board::new();
             board.set_side(Side::ATTACKERS);
-            board.set_piece(get_square_from_algebraic("e6"), Piece::KING).unwrap();
-            board.set_piece(get_square_from_algebraic("e5"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("e7"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("d6"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("f6"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("d1"), Piece::ATTACKER).unwrap();
+            board
+                .set_piece(get_square_from_algebraic("e6"), Piece::KING)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("e5"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("e7"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("d6"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("f6"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("d1"), Piece::ATTACKER)
+                .unwrap();
             println!("{:?}", board);
             // make move e5e4
             let mv = create_move_from_algebraic("d1e1").unwrap();
@@ -604,25 +886,39 @@ mod tests {
         fn king_is_removing_and_go_back_working_correctly() {
             let mut board = Board::new();
             board.set_side(Side::ATTACKERS);
-            board.set_piece(get_square_from_algebraic("e6"), Piece::KING).unwrap();
-            board.set_piece(get_square_from_algebraic("e5"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("e7"), Piece::ATTACKER).unwrap();
-            board.set_piece(get_square_from_algebraic("a6"), Piece::ATTACKER).unwrap();
+            board
+                .set_piece(get_square_from_algebraic("e6"), Piece::KING)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("e5"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("e7"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("a6"), Piece::ATTACKER)
+                .unwrap();
             println!("{:?}", board);
             // make move e7e6
             let mv = create_move_from_algebraic("a6d6").unwrap();
             let mut undo = UndoMove::new();
             board.make_move(mv, &mut undo);
             assert_eq!(undo.captured_pieces_count, 1);
-            assert_eq!(undo.captured_pieces()[0], CapturedPiece {
-                square: get_square_from_algebraic("e6"),
-                piece: Piece::KING
-            });
+            assert_eq!(
+                undo.captured_pieces()[0],
+                CapturedPiece {
+                    square: get_square_from_algebraic("e6"),
+                    piece: Piece::KING
+                }
+            );
             assert_eq!(board.king_sq, -1);
 
             // Now undo the move and check if king is restored
             board.unmake_move(&mut undo).expect("undo move failed");
-            assert_eq!(board.king_sq, get_square_from_algebraic("e6") as OptionalSquare);
+            assert_eq!(
+                board.king_sq,
+                get_square_from_algebraic("e6") as OptionalSquare
+            );
         }
 
         #[test]

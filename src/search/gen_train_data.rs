@@ -1,17 +1,17 @@
-use std::fs::{OpenOptions};
-use std::io::{BufWriter, Write};
-use rand::prelude::StdRng;
-use rand::Rng;
-use crate::{Board, PRECOMPUTED};
-use crate::movegen::MoveGen;
 use crate::mcts::export::{LegalMask, PendingSample};
+use crate::mcts::mcts::{MCTSConfig, MCTSTree, mcts_search};
 use crate::mcts::utils::move_to_policy_index;
+use crate::movegen::MoveGen;
 use crate::position_export::BitPosition;
-use crate::mcts::mcts::{mcts_search, MCTSConfig, MCTSTree};
 use crate::search::nn::NeuralNet;
 use crate::search_data::SearchData;
-use crate::terminal::{check_terminal, get_terminal, is_threefold_repetition, TerminalType};
+use crate::terminal::{TerminalType, check_terminal, get_terminal, is_threefold_repetition};
 use crate::types::{Piece, Side};
+use crate::{Board, PRECOMPUTED};
+use rand::Rng;
+use rand::prelude::StdRng;
+use std::fs::OpenOptions;
+use std::io::{BufWriter, Write};
 
 fn set_piece_to_random_square(
     board: &mut Board,
@@ -39,34 +39,18 @@ fn set_random_position(rnd: &mut StdRng) -> Board {
     let attacker_pieces_count = rnd.gen_range(24..=50);
     let defender_pieces_count = rnd.gen_range(0..=12);
 
-    set_piece_to_random_square(
-        &mut board,
-        &mut empty_squares,
-        rnd,
-        Piece::KING,
-    );
+    set_piece_to_random_square(&mut board, &mut empty_squares, rnd, Piece::KING);
 
     for _ in 0..attacker_pieces_count {
-        set_piece_to_random_square(
-            &mut board,
-            &mut empty_squares,
-            rnd,
-            Piece::ATTACKER,
-        );
+        set_piece_to_random_square(&mut board, &mut empty_squares, rnd, Piece::ATTACKER);
     }
 
     for _ in 0..defender_pieces_count {
-        set_piece_to_random_square(
-            &mut board,
-            &mut empty_squares,
-            rnd,
-            Piece::DEFENDER,
-        );
+        set_piece_to_random_square(&mut board, &mut empty_squares, rnd, Piece::DEFENDER);
     }
 
     board
 }
-
 
 fn terminal_type_str(t: &TerminalType) -> &'static str {
     match t {
@@ -78,17 +62,21 @@ fn terminal_type_str(t: &TerminalType) -> &'static str {
     }
 }
 
-fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> (Vec<PendingSample>, Option<Side>, Option<&'static str>) {
+fn play_game(
+    nn: &mut NeuralNet,
+    search_data: &mut SearchData,
+) -> (Vec<PendingSample>, Option<Side>, Option<&'static str>) {
     // let mut board = set_random_position(&mut search_data.random_generator);
     let mut board = Board::new();
-    board.setup_initial_position().expect("Setup initial position failed");
+    board
+        .setup_initial_position()
+        .expect("Setup initial position failed");
 
     // Aggressive setup for start
     // board.set_fen("1aaaaaaaaa1/3aaaaa3/11/aa3d3aa/a3ddd3a/aa1ddkdd1aa/a3ddd3a/aa3d3aa/11/3aaaaa3/1aaaaaaaaa1 a").expect("Set fen failed");
 
     //board.set_fen("2aaaaaaa2/4aaa4/11/aa3d3aa/a3ddd3a/aa1ddkdd1aa/a3ddd3a/aa3d3aa/11/3aaaaa3/2aaaaaaa2 a").expect("Set fen failed");
-   // board.set_fen("2aaaaaaa2/5a5/11/aa3d3aa/a3ddd3a/aa1ddkdd1aa/a3ddd3a/aa3d3aa/11/4aaa4/2aaaaaaa2 a").expect("Set fen failed");
-
+    // board.set_fen("2aaaaaaa2/5a5/11/aa3d3aa/a3ddd3a/aa1ddkdd1aa/a3ddd3a/aa3d3aa/11/4aaa4/2aaaaaaa2 a").expect("Set fen failed");
 
     let mut res = vec![];
 
@@ -108,7 +96,16 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> (Vec<PendingSa
             400
         };
 
-        let mv = mcts_search(&mut board, &mut mcts_tree, nn, search_data, None, Some(iterations), &config, None);
+        let mv = mcts_search(
+            &mut board,
+            &mut mcts_tree,
+            nn,
+            search_data,
+            None,
+            Some(iterations),
+            &config,
+            None,
+        );
         move_number += 1;
 
         if let Some(mv) = mv {
@@ -127,7 +124,11 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> (Vec<PendingSa
             if no_capture_counter >= 500 || move_number >= 700 {
                 // end the game as a draw
                 game_result = None;
-                terminal_str = Some(if no_capture_counter >= 500 { "draw_nocapture" } else { "draw_limit" });
+                terminal_str = Some(if no_capture_counter >= 500 {
+                    "draw_nocapture"
+                } else {
+                    "draw_limit"
+                });
                 break;
             }
 
@@ -156,7 +157,6 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> (Vec<PendingSa
                 terminal_str = Some("def_no_moves");
                 println!("{}", board);
                 Some(Side::DEFENDERS)
-
             } else {
                 terminal_str = Some("atk_no_moves");
                 println!("{}", board);
@@ -173,7 +173,12 @@ fn play_game(nn: &mut NeuralNet, search_data: &mut SearchData) -> (Vec<PendingSa
     (res, game_result, terminal_str)
 }
 
-pub fn gen_train_data(output_path: &str, log_path: &str, nn: &mut NeuralNet, game_limit: Option<usize>) {
+pub fn gen_train_data(
+    output_path: &str,
+    log_path: &str,
+    nn: &mut NeuralNet,
+    game_limit: Option<usize>,
+) {
     let mut search_data = SearchData::new();
 
     let file = OpenOptions::new()
@@ -201,14 +206,18 @@ pub fn gen_train_data(output_path: &str, log_path: &str, nn: &mut NeuralNet, gam
     loop {
         if let Some(limit) = game_limit {
             if positions_generated >= limit {
-                println!("Datagen finished: generated {} positions", positions_generated);
+                println!(
+                    "Datagen finished: generated {} positions",
+                    positions_generated
+                );
                 break;
             }
         }
 
         let (res, game_result, terminal_str) = play_game(nn, &mut search_data);
-        if game_result.is_none() { continue; }
-
+        if game_result.is_none() {
+            continue;
+        }
 
         let is_defender_win = game_result == Some(Side::DEFENDERS);
 
@@ -219,7 +228,6 @@ pub fn gen_train_data(output_path: &str, log_path: &str, nn: &mut NeuralNet, gam
             }
         }
 
-
         positions_generated += res.len();
         games_saved += 1;
         match game_result {
@@ -229,15 +237,33 @@ pub fn gen_train_data(output_path: &str, log_path: &str, nn: &mut NeuralNet, gam
         }
 
         let total_saved = attacker_wins_saved + defender_wins_saved + draws_saved;
-        let atk_pct = if total_saved > 0 { attacker_wins_saved as f64 / total_saved as f64 * 100.0 } else { 0.0 };
-        let avg_game_len = if games_saved > 0 { positions_generated as f64 / games_saved as f64 } else { 0.0 };
+        let atk_pct = if total_saved > 0 {
+            attacker_wins_saved as f64 / total_saved as f64 * 100.0
+        } else {
+            0.0
+        };
+        let avg_game_len = if games_saved > 0 {
+            positions_generated as f64 / games_saved as f64
+        } else {
+            0.0
+        };
         let result_str = match game_result {
             Some(Side::ATTACKERS) => "ATK WIN",
             Some(Side::DEFENDERS) => "DEF WIN",
             None => "DRAW",
         };
-        println!("{} | game #{} ({} samples) | atk={} def={} draw={} | atk%={:.1}% | avg_len={:.1} | positions={}",
-            result_str, games_saved, res.len(), attacker_wins_saved, defender_wins_saved, draws_saved, atk_pct, avg_game_len, positions_generated);
+        println!(
+            "{} | game #{} ({} samples) | atk={} def={} draw={} | atk%={:.1}% | avg_len={:.1} | positions={}",
+            result_str,
+            games_saved,
+            res.len(),
+            attacker_wins_saved,
+            defender_wins_saved,
+            draws_saved,
+            atk_pct,
+            avg_game_len,
+            positions_generated
+        );
 
         // Write to gamelog: terminal_type,game_length
         if let Some(t) = terminal_str {
@@ -248,13 +274,14 @@ pub fn gen_train_data(output_path: &str, log_path: &str, nn: &mut NeuralNet, gam
         for sample in res {
             sample.write_to(&mut writer).expect("Cannot write sample");
         }
-
     }
 }
 
 pub fn dump_single_sample(output_path: &str) {
     let mut board = Board::new();
-    board.setup_initial_position().expect("Setup initial position failed");
+    board
+        .setup_initial_position()
+        .expect("Setup initial position failed");
 
     let mut move_gen = MoveGen::new();
     move_gen.generate_moves(&board);
@@ -273,12 +300,7 @@ pub fn dump_single_sample(output_path: &str) {
     }
 
     let policy = vec![(move_index, 7)];
-    let sample = PendingSample::from_manual(
-        BitPosition::from_board(&board),
-        legal_mask,
-        policy,
-        1,
-    );
+    let sample = PendingSample::from_manual(BitPosition::from_board(&board), legal_mask, policy, 1);
 
     let file = OpenOptions::new()
         .create(true)
@@ -289,5 +311,8 @@ pub fn dump_single_sample(output_path: &str) {
     let mut writer = BufWriter::new(file);
     sample.write_to(&mut writer).expect("Cannot write sample");
 
-    println!("DUMP_SAMPLE index={} legal_moves={}", move_index, move_gen.count);
+    println!(
+        "DUMP_SAMPLE index={} legal_moves={}",
+        move_index, move_gen.count
+    );
 }

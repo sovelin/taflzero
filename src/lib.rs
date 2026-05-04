@@ -1,24 +1,23 @@
 use std::panic;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-pub mod engine;
 pub mod board;
-pub mod moves;
-pub mod search;
+pub mod engine;
 pub mod evaluation;
-pub mod utils;
+pub mod moves;
+pub mod nnue;
+pub mod search;
 mod tests;
 mod timer;
 mod uci;
-pub mod nnue;
+pub mod utils;
 
-pub use engine::*;
 pub use board::*;
+pub use engine::*;
+pub use evaluation::*;
 pub use moves::*;
 pub use search::*;
-pub use evaluation::*;
 pub use uci::*;
-
 
 #[wasm_bindgen]
 pub fn hello() -> String {

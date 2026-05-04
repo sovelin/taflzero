@@ -44,7 +44,6 @@ fn expect_attacker_not_in_attackers_array(board: &Board, sq: Square) {
     assert!(!board.attackers[..board.attackers_count as usize].contains(&sq));
 }
 
-
 pub fn expect_defender_on(board: &Board, sq_str: &str) {
     let sq = get_square_from_algebraic(sq_str);
     assert_eq!(board.board[sq], Piece::DEFENDER);

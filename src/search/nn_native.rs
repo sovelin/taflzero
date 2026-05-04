@@ -1,13 +1,13 @@
+use super::nn_common::{NUM_PLANES, NnOutput, POLICY_SIZE, SAMPLE_SIZE, build_input_data};
+use crate::masks::BOARD_SIZE;
+use crate::position_export::BitPosition;
 use ndarray::{Array, IxDyn};
-use ort::session::Session;
-use ort::value::Value;
 #[cfg(feature = "cuda")]
 use ort::execution_providers::CUDAExecutionProvider;
 #[cfg(feature = "directml")]
 use ort::execution_providers::DirectMLExecutionProvider;
-use crate::masks::BOARD_SIZE;
-use crate::position_export::BitPosition;
-use super::nn_common::{build_input_data, NnOutput, NUM_PLANES, POLICY_SIZE, SAMPLE_SIZE};
+use ort::session::Session;
+use ort::value::Value;
 
 pub struct NeuralNet {
     session: Session,
@@ -29,11 +29,26 @@ impl NeuralNet {
         let mut builder = Session::builder().unwrap();
 
         #[cfg(all(feature = "cuda", feature = "directml"))]
-        { builder = builder.with_execution_providers([CUDAExecutionProvider::default().build(), DirectMLExecutionProvider::default().build()]).unwrap(); }
+        {
+            builder = builder
+                .with_execution_providers([
+                    CUDAExecutionProvider::default().build(),
+                    DirectMLExecutionProvider::default().build(),
+                ])
+                .unwrap();
+        }
         #[cfg(all(feature = "cuda", not(feature = "directml")))]
-        { builder = builder.with_execution_providers([CUDAExecutionProvider::default().build()]).unwrap(); }
+        {
+            builder = builder
+                .with_execution_providers([CUDAExecutionProvider::default().build()])
+                .unwrap();
+        }
         #[cfg(all(feature = "directml", not(feature = "cuda")))]
-        { builder = builder.with_execution_providers([DirectMLExecutionProvider::default().build()]).unwrap(); }
+        {
+            builder = builder
+                .with_execution_providers([DirectMLExecutionProvider::default().build()])
+                .unwrap();
+        }
 
         let mut session = builder
             .commit_from_file(path)
@@ -44,7 +59,8 @@ impl NeuralNet {
         let warmup_tensor = Array::from_shape_vec(
             IxDyn(&[8, NUM_PLANES, BOARD_SIZE, BOARD_SIZE]),
             warmup_input,
-        ).unwrap();
+        )
+        .unwrap();
         let warmup_value = Value::from_array(warmup_tensor).unwrap();
 
         // Warmup run (first call is slow due to kernel compilation)
@@ -55,16 +71,18 @@ impl NeuralNet {
         let start = std::time::Instant::now();
         for _ in 0..bench_runs {
             let input = vec![0.0f32; SAMPLE_SIZE * 8];
-            let tensor = Array::from_shape_vec(
-                IxDyn(&[8, NUM_PLANES, BOARD_SIZE, BOARD_SIZE]),
-                input,
-            ).unwrap();
+            let tensor =
+                Array::from_shape_vec(IxDyn(&[8, NUM_PLANES, BOARD_SIZE, BOARD_SIZE]), input)
+                    .unwrap();
             let val = Value::from_array(tensor).unwrap();
             let _ = session.run(ort::inputs![val]).unwrap();
         }
         let elapsed = start.elapsed();
-        println!("[NN] Warmup done. batch=8 forward: {:.2}ms avg ({} runs)",
-            elapsed.as_secs_f64() / bench_runs as f64 * 1000.0, bench_runs);
+        println!(
+            "[NN] Warmup done. batch=8 forward: {:.2}ms avg ({} runs)",
+            elapsed.as_secs_f64() / bench_runs as f64 * 1000.0,
+            bench_runs
+        );
 
         Self { session }
     }

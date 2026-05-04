@@ -118,8 +118,8 @@ mod tests {
         }
 
         mod mass_neighbor_retrieval {
-            use crate::board::utils::{get_all_neighbors, get_vertical_horizontal_neighbors};
             use super::*;
+            use crate::board::utils::{get_all_neighbors, get_vertical_horizontal_neighbors};
 
             #[test]
             fn vertical_horizontal_center() {
@@ -142,10 +142,7 @@ mod tests {
             #[test]
             fn all_neighbors_center() {
                 let sibs = get_all_neighbors(get_square_from_algebraic("e6"));
-                expect_exactly_neighbors(
-                    &["e7", "e5", "d6", "f6", "d7", "f7", "d5", "f5"],
-                    &sibs,
-                );
+                expect_exactly_neighbors(&["e7", "e5", "d6", "f6", "d7", "f7", "d5", "f5"], &sibs);
             }
 
             #[test]

@@ -1,21 +1,20 @@
-use rand::rngs::StdRng;
-use rand::SeedableRng;
 use crate::movegen::MAX_MOVES;
 use crate::moves::movegen::MoveGen;
 use crate::moves::mv::Move;
 use crate::moves::undo::UndoMove;
 use crate::search::constants::MAX_PLY;
 use crate::timer::Timer;
+use rand::SeedableRng;
+use rand::rngs::StdRng;
 
 #[cfg(not(target_arch = "wasm32"))]
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 #[cfg(target_arch = "wasm32")]
-use {
-    std::cell::RefCell,
-    js_sys::Int32Array,
-    wasm_bindgen::prelude::*,
-};
+use {js_sys::Int32Array, std::cell::RefCell, wasm_bindgen::prelude::*};
 
 // Bind Atomics.load from JavaScript for WASM stop-flag polling.
 #[cfg(target_arch = "wasm32")]
@@ -108,12 +107,17 @@ impl SearchData {
         #[cfg(target_arch = "wasm32")]
         return WASM_STOP_BUF.with(|b| {
             b.borrow().as_ref().map_or(false, |arr| {
-                atomics_load_i32(arr.as_ref(), 0).ok().map_or(false, |v| v != 0)
+                atomics_load_i32(arr.as_ref(), 0)
+                    .ok()
+                    .map_or(false, |v| v != 0)
             })
         });
 
         #[cfg(not(target_arch = "wasm32"))]
-        return self.stop_flag.as_ref().map_or(false, |f| f.load(Ordering::Relaxed));
+        return self
+            .stop_flag
+            .as_ref()
+            .map_or(false, |f| f.load(Ordering::Relaxed));
     }
 
     pub fn time_exceeded(&mut self) -> bool {
@@ -123,7 +127,7 @@ impl SearchData {
     pub fn time_exceeded_quick(&mut self) -> bool {
         self.time_exceeded_checks += 1;
         if self.time_exceeded_checks < 10000 {
-            return self.cached_exceed
+            return self.cached_exceed;
         }
 
         self.time_exceeded_checks = 0;

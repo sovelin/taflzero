@@ -20,7 +20,9 @@ fn build_line_mask(pos: usize, occ: Mask) -> Mask {
     let mut i = pos as isize - 1;
     while i >= 0 {
         let bit = 1u16 << i;
-        if (occ & bit) != 0 { break; }
+        if (occ & bit) != 0 {
+            break;
+        }
         mask |= bit;
         i -= 1;
     }
@@ -28,7 +30,9 @@ fn build_line_mask(pos: usize, occ: Mask) -> Mask {
     let mut i = pos + 1;
     while i < BOARD_SIZE {
         let bit = 1u16 << i;
-        if (occ & bit) != 0 { break; }
+        if (occ & bit) != 0 {
+            break;
+        }
         mask |= bit;
         i += 1;
     }
@@ -72,8 +76,7 @@ pub static LINE_CAPTURES: LazyLock<[[[i8; OCC_STATES]; 2]; BOARD_SIZE]> = LazyLo
     for sq in 0..BOARD_SIZE {
         for dir in ALL_DIRECTIONS {
             for occ in 0..OCC_STATES {
-                table[sq][dir as usize][occ] =
-                    build_line_mask_dir(occ as Mask, sq, dir);
+                table[sq][dir as usize][occ] = build_line_mask_dir(occ as Mask, sq, dir);
             }
         }
     }
