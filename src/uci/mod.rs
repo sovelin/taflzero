@@ -181,6 +181,7 @@ impl<O: UciOutput> UciController<O> {
                 ));
                 self.send("option name NNFile type string default ./default_nn.onnx");
                 self.send("option name MultiPV type spin default 1 min 1 max 1000");
+                self.send("option name Variant type combo default copenhagen11x11 var copenhagen11x11 var historical11x11");
                 UciRunState::Continue
             }
             "setoption" => {
@@ -208,6 +209,23 @@ impl<O: UciOutput> UciController<O> {
 
                     self.engine_mut().set_multi_pv(multipv);
                     self.send(&format!("MultiPV set to {}", multipv));
+                } else if tokens.len() >= 5
+                    && tokens[1] == "name"
+                    && tokens[2] == "Variant"
+                    && tokens[3] == "value"
+                {
+                    let variant = tokens[4];
+
+                    let rules = get_rules_enum_from_str(variant);
+
+                    return if let Some(rules) = rules {
+                        self.engine_mut().set_variant(rules);
+                        self.send(&format!("variant set to {}", variant));
+                        UciRunState::Continue
+                    } else {
+                        self.send("unknown variant");
+                        UciRunState::Continue
+                    };
                 } else {
                     self.send("unsupported setoption format");
                 }
@@ -243,13 +261,13 @@ impl<O: UciOutput> UciController<O> {
         match args[0] {
             "startpos" => {
                 if args.len() == 1 {
-                    self.set_moves(INITIAL_FEN, &[]);
+                    self.set_initial_moves(&[]);
                     self.send("position set to startpos");
                     return;
                 }
 
                 if args[1] == "moves" {
-                    self.set_moves(INITIAL_FEN, &args[2..]);
+                    self.set_initial_moves(&args[2..]);
                     self.send(&format!(
                         "position set to startpos ({} moves)",
                         args.len() - 2
@@ -299,6 +317,23 @@ impl<O: UciOutput> UciController<O> {
         }
 
         self.engine_mut().set_position_and_moves(fen, legal_moves);
+    }
+
+    fn set_initial_moves(&mut self, moves_str: &[&str]) {
+        let mut legal_moves = Vec::with_capacity(moves_str.len());
+
+        for mv_str in moves_str {
+            match create_move_from_algebraic(mv_str) {
+                Ok(mv) => legal_moves.push(mv),
+                Err(err) => {
+                    self.send(&format!("invalid move '{}': {}", mv_str, err));
+                    return;
+                }
+            }
+        }
+
+        self.engine_mut()
+            .set_initial_position_and_moves(legal_moves);
     }
 
     fn handle_go(&mut self, args: &[&str]) {
@@ -460,6 +495,7 @@ impl ConsoleClient {
 }
 
 use crate::board::constants::INITIAL_FEN;
+use crate::rules::{RulesEnum, get_rules_enum_from_str};
 use crate::search::constants::MAX_PLY;
 #[cfg(target_arch = "wasm32")]
 use js_sys::global;
@@ -526,6 +562,10 @@ impl WasmClient {
 
     pub fn run(&mut self, cmd: &str) {
         self.controller.run(cmd);
+    }
+
+    pub fn set_nn(&mut self, data: &[u8]) {
+        self.controller.engine_mut().set_nn_bytes(data);
     }
 
     /// Register a SharedArrayBuffer-backed Int32Array as the stop signal.

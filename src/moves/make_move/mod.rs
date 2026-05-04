@@ -45,7 +45,10 @@ impl Board {
         }
 
         self.last_move_to = to as OptionalSquare;
-        make_shield_wall_captures(self, to, undo);
+
+        if self.get_rules().has_shield_walls {
+            make_shield_wall_captures(self, to, undo);
+        }
 
         // Capture king special handling
         if self.king_sq != -1
@@ -202,6 +205,7 @@ mod tests {
 
     mod shieldwall_rule {
         use super::*;
+        use crate::rules::RulesEnum;
 
         #[test]
         fn capture_2_surrounded_pieces() {
@@ -604,6 +608,34 @@ mod tests {
                 board.board[get_square_from_algebraic("j11") as usize],
                 Piece::EMPTY
             );
+        }
+
+        #[test]
+        fn shieldwall_capture_disabled_on_historical_variant() {
+            let mut board = Board::new();
+            board.set_rules(RulesEnum::Historical11x11);
+            board.set_side(Side::ATTACKERS);
+            board
+                .set_piece(get_square_from_algebraic("i10"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("j10"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("g11"), Piece::ATTACKER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("i11"), Piece::DEFENDER)
+                .unwrap();
+            board
+                .set_piece(get_square_from_algebraic("j11"), Piece::DEFENDER)
+                .unwrap();
+
+            let mv = create_move_from_algebraic("g11h11").unwrap();
+            let mut undo = UndoMove::new();
+            board.make_move(mv, &mut undo).expect("make move failed");
+
+            assert_eq!(undo.captured_pieces_count, 0);
         }
 
         #[test]

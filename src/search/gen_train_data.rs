@@ -3,6 +3,7 @@ use crate::mcts::mcts::{MCTSConfig, MCTSTree, mcts_search};
 use crate::mcts::utils::move_to_policy_index;
 use crate::movegen::MoveGen;
 use crate::position_export::BitPosition;
+use crate::rules::RulesEnum;
 use crate::search::nn::NeuralNet;
 use crate::search_data::SearchData;
 use crate::terminal::{TerminalType, check_terminal, get_terminal, is_threefold_repetition};
@@ -12,6 +13,8 @@ use rand::Rng;
 use rand::prelude::StdRng;
 use std::fs::OpenOptions;
 use std::io::{BufWriter, Write};
+
+const NODES_PER_MOVE: u64 = 100;
 
 fn set_piece_to_random_square(
     board: &mut Board,
@@ -65,9 +68,11 @@ fn terminal_type_str(t: &TerminalType) -> &'static str {
 fn play_game(
     nn: &mut NeuralNet,
     search_data: &mut SearchData,
+    variant: RulesEnum,
 ) -> (Vec<PendingSample>, Option<Side>, Option<&'static str>) {
     // let mut board = set_random_position(&mut search_data.random_generator);
     let mut board = Board::new();
+    board.set_rules(variant);
     board
         .setup_initial_position()
         .expect("Setup initial position failed");
@@ -91,9 +96,9 @@ fn play_game(
         config.temperature = if move_number < 60 { 1.0 } else { 0.0 };
 
         let iterations = if board.side_to_move == Side::ATTACKERS {
-            400
+            NODES_PER_MOVE
         } else {
-            400
+            NODES_PER_MOVE
         };
 
         let mv = mcts_search(
@@ -178,6 +183,7 @@ pub fn gen_train_data(
     log_path: &str,
     nn: &mut NeuralNet,
     game_limit: Option<usize>,
+    variant: RulesEnum,
 ) {
     let mut search_data = SearchData::new();
 
@@ -214,7 +220,7 @@ pub fn gen_train_data(
             break;
         }
 
-        let (res, game_result, terminal_str) = play_game(nn, &mut search_data);
+        let (res, game_result, terminal_str) = play_game(nn, &mut search_data, variant);
         if game_result.is_none() {
             continue;
         }

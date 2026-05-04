@@ -246,6 +246,17 @@ export class EngineClient {
         wasm.engineclient_set_position_and_moves(this.__wbg_ptr, ptr0, len0, ptr1, len1);
     }
     /**
+     * @param {string} variant
+     */
+    set_variant(variant) {
+        const ptr0 = passStringToWasm0(variant, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.engineclient_set_variant(this.__wbg_ptr, ptr0, len0);
+    }
+    setup_initial_position() {
+        wasm.engineclient_setup_initial_position(this.__wbg_ptr);
+    }
+    /**
      * @returns {Side}
      */
     side_to_move() {
@@ -543,6 +554,14 @@ export class WasmClient {
         const ptr0 = passStringToWasm0(cmd, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
         wasm.wasmclient_run(this.__wbg_ptr, ptr0, len0);
+    }
+    /**
+     * @param {Uint8Array} data
+     */
+    set_nn(data) {
+        const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_export);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.wasmclient_set_nn(this.__wbg_ptr, ptr0, len0);
     }
     /**
      * Register a SharedArrayBuffer-backed Int32Array as the stop signal.
@@ -1053,6 +1072,13 @@ function isLikeNone(x) {
 function passArray32ToWasm0(arg, malloc) {
     const ptr = malloc(arg.length * 4, 4) >>> 0;
     getUint32ArrayMemory0().set(arg, ptr / 4);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
+}
+
+function passArray8ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 1, 1) >>> 0;
+    getUint8ArrayMemory0().set(arg, ptr / 1);
     WASM_VECTOR_LEN = arg.length;
     return ptr;
 }

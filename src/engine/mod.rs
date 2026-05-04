@@ -5,6 +5,7 @@ use wasm_bindgen::prelude::*;
 use crate::board::Board;
 use crate::mcts::mcts::MCTSTree;
 use crate::mv::Move;
+use crate::rules::RulesEnum;
 use crate::search::constants::MAX_PLY;
 use crate::search::nn::NeuralNet;
 use crate::search::search_data::SearchData;
@@ -58,12 +59,17 @@ impl Engine {
         }
     }
 
+    pub fn set_variant(&mut self, rules: RulesEnum) {
+        self.board.set_rules(rules);
+    }
+
     pub fn set_nn(&mut self, path: String) {
         self.config.net_path = path;
-
-        // try catching error here and returning it instead of panicking
-
         self.nn = NeuralNet::new(self.config.net_path.as_str());
+    }
+
+    pub fn set_nn_bytes(&mut self, data: &[u8]) {
+        self.nn = NeuralNet::from_bytes(data);
     }
 
     pub fn set_multi_pv(&mut self, multi_pv: usize) {
@@ -81,6 +87,18 @@ impl Engine {
         for mv in moves {
             self.board.make_move_simple(mv).unwrap();
         }
+    }
+
+    pub fn set_initial_position_and_moves(&mut self, moves: Vec<Move>) {
+        self.board.setup_initial_position().unwrap();
+
+        for mv in moves {
+            self.board.make_move_simple(mv).unwrap();
+        }
+    }
+
+    pub fn set_start_position(&mut self) {
+        self.board.setup_initial_position().unwrap();
     }
 
     pub fn make_search(

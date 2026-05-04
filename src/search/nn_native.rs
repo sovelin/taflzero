@@ -87,6 +87,14 @@ impl NeuralNet {
         Self { session }
     }
 
+    pub fn from_bytes(data: &[u8]) -> Self {
+        let session = Session::builder()
+            .unwrap()
+            .commit_from_memory(data)
+            .expect("Unable to load neural net from bytes");
+        Self { session }
+    }
+
     pub fn evaluate_position(&mut self, pos: &BitPosition) -> NnOutput {
         self.evaluate_batch(&[pos]).pop().unwrap()
     }

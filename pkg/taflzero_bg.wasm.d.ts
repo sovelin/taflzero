@@ -43,6 +43,8 @@ export const engineclient_move_str_to_num: (a: number, b: number, c: number, d: 
 export const engineclient_new: () => number;
 export const engineclient_set_fen: (a: number, b: number, c: number) => void;
 export const engineclient_set_position_and_moves: (a: number, b: number, c: number, d: number, e: number) => void;
+export const engineclient_set_variant: (a: number, b: number, c: number) => void;
+export const engineclient_setup_initial_position: (a: number) => void;
 export const engineclient_side_to_move: (a: number) => number;
 export const get_board_size: () => number;
 export const get_col: (a: number) => number;
@@ -66,6 +68,7 @@ export const timer_start: (a: number) => void;
 export const wasmclient_new: (a: number, b: number) => number;
 export const wasmclient_print_board: (a: number) => void;
 export const wasmclient_run: (a: number, b: number, c: number) => void;
+export const wasmclient_set_nn: (a: number, b: number, c: number) => void;
 export const wasmclient_set_stop_buffer: (a: number, b: number) => void;
 export const main_js: () => void;
 export const __wbindgen_export: (a: number, b: number) => number;

@@ -28,6 +28,8 @@ export class EngineClient {
     constructor();
     set_fen(fen: string): void;
     set_position_and_moves(fen: string, moves: Uint32Array): void;
+    set_variant(variant: string): void;
+    setup_initial_position(): void;
     side_to_move(): Side;
 }
 
@@ -90,6 +92,7 @@ export class WasmClient {
     constructor(event_name: string);
     print_board(): void;
     run(cmd: string): void;
+    set_nn(data: Uint8Array): void;
     /**
      * Register a SharedArrayBuffer-backed Int32Array as the stop signal.
      * The main thread can stop an ongoing `go infinite` by calling:
@@ -167,6 +170,8 @@ export interface InitOutput {
     readonly engineclient_new: () => number;
     readonly engineclient_set_fen: (a: number, b: number, c: number) => void;
     readonly engineclient_set_position_and_moves: (a: number, b: number, c: number, d: number, e: number) => void;
+    readonly engineclient_set_variant: (a: number, b: number, c: number) => void;
+    readonly engineclient_setup_initial_position: (a: number) => void;
     readonly engineclient_side_to_move: (a: number) => number;
     readonly get_board_size: () => number;
     readonly get_col: (a: number) => number;
@@ -190,6 +195,7 @@ export interface InitOutput {
     readonly wasmclient_new: (a: number, b: number) => number;
     readonly wasmclient_print_board: (a: number) => void;
     readonly wasmclient_run: (a: number, b: number, c: number) => void;
+    readonly wasmclient_set_nn: (a: number, b: number, c: number) => void;
     readonly wasmclient_set_stop_buffer: (a: number, b: number) => void;
     readonly main_js: () => void;
     readonly __wbindgen_export: (a: number, b: number) => number;

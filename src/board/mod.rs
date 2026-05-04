@@ -3,6 +3,7 @@ pub mod constants;
 mod fen;
 pub mod position_export;
 mod precompute;
+pub mod rules;
 mod tests;
 pub mod types;
 pub mod utils;

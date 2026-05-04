@@ -40,6 +40,7 @@ function parseArgs(argv) {
         anchorPairs: 100,
         earlyStoppingPatience: 0,
         noRestoreBest: false,
+        variant: "copenhagen11x11",
     };
 
     for (let i = 0; i < argv.length; i += 1) {
@@ -78,6 +79,7 @@ function parseArgs(argv) {
         else if (a === "--anchor-pairs") args.anchorPairs = intArg(next(), a, 1);
         else if (a === "--early-stopping-patience") args.earlyStoppingPatience = intArg(next(), a, 0);
         else if (a === "--no-restore-best") args.noRestoreBest = true;
+        else if (a === "--variant") args.variant = required(next(), a);
         else if (a === "--help" || a === "-h") {
             printHelp();
             process.exit(0);
@@ -146,6 +148,9 @@ function printHelp() {
             "Anchor testing (absolute Elo measurement):",
             "  --anchor-net <path>       Play each accepted net against this anchor for absolute Elo",
             "  --anchor-pairs <N>        Pairs to play against anchor (default: 100)",
+            "",
+            "Variant:",
+            "  --variant <name>          Game variant: copenhagen11x11 | historical11x11 (default: copenhagen11x11)",
             "",
             "Runtime:",
             "  --workers <N>             Parallel engine processes for datagen (default: 1)",
@@ -281,6 +286,8 @@ async function main() {
             engineBin,
             "--datagen-count",
             String(args.gamesPerGen),
+            "--variant",
+            args.variant,
         ];
         if (args.workers > 1) {
             genDatasetArgs.push("--workers", String(args.workers));
@@ -346,6 +353,7 @@ async function main() {
                 "--max-pairs", String(args.noGatePairs),
                 "--no-gate",
                 "--result-file", resultFile,
+                "--variant", args.variant,
             ];
 
             const MAX_RETRIES = 3;
@@ -401,6 +409,7 @@ async function main() {
                 "--sprt-alpha", String(args.sprtAlpha),
                 "--sprt-beta", String(args.sprtBeta),
                 "--result-file", resultFile,
+                "--variant", args.variant,
             ];
 
             const MAX_SPRT_RETRIES = 3;
@@ -468,6 +477,7 @@ async function main() {
                     "--max-pairs", String(args.anchorPairs),
                     "--no-gate",
                     "--result-file", anchorResultFile,
+                    "--variant", args.variant,
                 ];
 
                 const MAX_RETRIES = 3;

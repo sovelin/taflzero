@@ -10,6 +10,7 @@ function parseArgs(argv) {
         engineBin: null,
         release: true,
         workers: 1,
+        variant: "copenhagen11x11",
     };
 
     for (let i = 0; i < argv.length; i += 1) {
@@ -34,6 +35,8 @@ function parseArgs(argv) {
                 throw new Error(`Invalid --workers: ${raw}`);
             }
             args.workers = v;
+        } else if (a === "--variant") {
+            args.variant = argv[++i] ?? args.variant;
         } else if (a === "--debug") {
             args.release = false;
         } else if (a === "--help" || a === "-h") {
@@ -76,7 +79,7 @@ function run(cmd, cmdArgs, cwd = process.cwd()) {
     });
 }
 
-function buildEngineArgs(netPath, outPath, count, gamelogPath) {
+function buildEngineArgs(netPath, outPath, count, gamelogPath, variant) {
     const engineArgs = [
         "--net",
         path.normalize(netPath),
@@ -84,6 +87,8 @@ function buildEngineArgs(netPath, outPath, count, gamelogPath) {
         path.normalize(outPath),
         "--gamelog",
         path.normalize(gamelogPath),
+        "--variant",
+        variant,
     ];
     if (count != null) {
         engineArgs.push("--datagen-count", String(count));
@@ -119,7 +124,7 @@ async function main() {
     const gamelogPath = `${args.out}.gamelog`;
 
     if (workers === 1 || totalGames == null) {
-        const engineArgs = buildEngineArgs(args.net, args.out, totalGames, gamelogPath);
+        const engineArgs = buildEngineArgs(args.net, args.out, totalGames, gamelogPath, args.variant);
         await runEngine(args, engineArgs);
         return;
     }
@@ -142,7 +147,7 @@ async function main() {
             const idx = batchIndex++;
             const tmpFile = `${args.out}.worker${workerId}.${idx}.tmp`;
             tmpFiles.push(tmpFile);
-            const engineArgs = buildEngineArgs(args.net, tmpFile, batch, gamelogPath);
+            const engineArgs = buildEngineArgs(args.net, tmpFile, batch, gamelogPath, args.variant);
 
             for (let attempt = 1; attempt <= MAX_BATCH_RETRIES; attempt++) {
                 try { fs.unlinkSync(tmpFile); } catch {}

@@ -43,6 +43,7 @@ function parseArgs(argv) {
         sprtBeta: 0.05,
         resultFile: null,
         noGate: false,
+        variant: "copenhagen11x11",
     };
 
     for (let i = 0; i < argv.length; i++) {
@@ -62,6 +63,7 @@ function parseArgs(argv) {
         else if (a === "--sprt-beta") args.sprtBeta = parseFloat(next());
         else if (a === "--result-file") args.resultFile = next();
         else if (a === "--no-gate") args.noGate = true;
+        else if (a === "--variant") args.variant = next();
         else if (a === "--help" || a === "-h") { printHelp(); process.exit(0); }
         else throw new Error(`Unknown arg: ${a}`);
     }
@@ -263,10 +265,15 @@ class UciEngine {
 
 // ─── Opening generation ──────────────────────────────────────────────────────
 
-function createOpening(movesCount) {
-    const engine = new EngineClient(4);
-    const initialFen = "3aaaaa3/5a5/11/a4d4a/a3ddd3a/aa1ddkdd1aa/a3ddd3a/a4d4a/11/5a5/3aaaaa3 a";
-    engine.set_fen(initialFen);
+const createEngineClient = (variant) => {
+    const engine = new EngineClient();
+    engine.set_variant(variant);
+    engine.setup_initial_position();
+    return engine;
+}
+
+function createOpening(movesCount, variant) {
+    const engine = createEngineClient(variant);
 
     for (let i = 0; i < movesCount; i++) {
         const totalSq = get_total_squares();
@@ -292,8 +299,8 @@ function createOpening(movesCount) {
 // ─── Game logic ──────────────────────────────────────────────────────────────
 
 class GameController {
-    constructor() {
-        this.engine = new EngineClient(4);
+    constructor(variant) {
+        this.engine = createEngineClient(variant);
     }
 
     checkTerminal(fen, moves) {
@@ -402,16 +409,19 @@ async function playPair(ctrl, mainEngine, candidateEngine, opening, nodes) {
 
 // ─── Worker ──────────────────────────────────────────────────────────────────
 
-async function createWorkerPair(engineBin, mainNet, candidateNet) {
+async function createWorkerPair(engineBin, mainNet, candidateNet, variant) {
     const mainArgs = ["--net", path.normalize(mainNet)];
     const candidateArgs = ["--net", path.normalize(candidateNet)];
 
     const mainEngine = new UciEngine(engineBin, mainArgs, "main");
     const candidateEngine = new UciEngine(engineBin, candidateArgs, "candidate");
-    const ctrl = new GameController();
+    const ctrl = new GameController(variant);
 
     await mainEngine.init();
     await candidateEngine.init();
+
+    mainEngine.send(`setoption name Variant value ${variant}`);
+    candidateEngine.send(`setoption name Variant value ${variant}`);
 
     return { mainEngine, candidateEngine, ctrl };
 }
@@ -439,12 +449,12 @@ async function main() {
     console.log(`[SPRT] elo0=${args.sprtElo0}, elo1=${args.sprtElo1}, alpha=${args.sprtAlpha}, beta=${args.sprtBeta}`);
     console.log(`[SPRT] bounds: B=${initialStatus.lowerBound.toFixed(3)}, A=${initialStatus.upperBound.toFixed(3)}`);
     console.log(`[Match] main=${args.mainNet}, candidate=${args.candidateNet}`);
-    console.log(`[Match] nodes=${args.nodes}, openingMoves=${args.openingMoves}, workers=${args.workers}, maxPairs=${args.maxPairs}`);
+    console.log(`[Match] nodes=${args.nodes}, openingMoves=${args.openingMoves}, workers=${args.workers}, maxPairs=${args.maxPairs}, variant=${args.variant}`);
 
     // Spawn worker pairs
     const workerPairs = [];
     for (let i = 0; i < args.workers; i++) {
-        workerPairs.push(await createWorkerPair(args.engineBin, args.mainNet, args.candidateNet));
+        workerPairs.push(await createWorkerPair(args.engineBin, args.mainNet, args.candidateNet, args.variant));
     }
 
     let pairsCompleted = 0;
@@ -455,7 +465,7 @@ async function main() {
     const openingQueue = [];
     function refillOpenings(count) {
         for (let i = 0; i < count; i++) {
-            openingQueue.push(createOpening(args.openingMoves));
+            openingQueue.push(createOpening(args.openingMoves, args.variant));
         }
     }
 

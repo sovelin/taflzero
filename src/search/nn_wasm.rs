@@ -14,8 +14,11 @@ pub struct NeuralNet {
 impl NeuralNet {
     pub fn new(_path: &str) -> Self {
         println!("[NN] wasm build: using embedded ONNX model (gen0323.onnx)");
+        Self::from_bytes(EMBEDDED_MODEL)
+    }
 
-        let mut reader = Cursor::new(EMBEDDED_MODEL);
+    pub fn from_bytes(data: &[u8]) -> Self {
+        let mut reader = Cursor::new(data);
         let model = tract_onnx::onnx()
             .model_for_read(&mut reader)
             .unwrap()

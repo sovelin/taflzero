@@ -3,6 +3,7 @@ use super::types::{OptionalSquare, Piece, Side, Square, ZobristHash};
 use super::zobrist::ZOBRIST_DATA;
 use crate::board::PRECOMPUTED;
 use crate::board::fen::FenError;
+use crate::board::rules::{Rules, RulesEnum};
 use crate::board::utils::get_square;
 use crate::nnue::{NNUE, STM_BIT, Weights1, Weights2, calculate_nnue_index, load_default_weights};
 use std::collections::HashMap;
@@ -24,6 +25,7 @@ pub struct Board {
     pub last_move_to: OptionalSquare,
     pub nnue: NNUE,
     pub was_capture: bool,
+    pub rules: RulesEnum,
 }
 
 impl Default for Board {
@@ -51,6 +53,7 @@ impl Board {
             last_move_to: HOLE,
             nnue: NNUE::new(w1, w2),
             was_capture: false,
+            rules: RulesEnum::Copenhagen11x11,
         }
     }
 
@@ -62,6 +65,14 @@ impl Board {
 
     pub fn set_nnue(&mut self, w1: Weights1, w2: Weights2) {
         self.nnue = NNUE::new(w1, w2);
+    }
+
+    pub fn get_rules(&self) -> Rules {
+        self.rules.rules()
+    }
+
+    pub fn set_rules(&mut self, rules: RulesEnum) {
+        self.rules = rules;
     }
 
     pub fn clear(&mut self) {
@@ -196,7 +207,8 @@ impl Board {
     }
 
     pub fn setup_initial_position(&mut self) -> Result<(), FenError> {
-        self.set_fen(INITIAL_FEN)
+        self.clear();
+        self.set_fen(self.rules.rules().initial_fen.as_str())
     }
 
     pub fn set_side(&mut self, side: Side) {
