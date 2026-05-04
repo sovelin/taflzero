@@ -28,6 +28,7 @@ export class EngineClient {
     constructor();
     set_fen(fen: string): void;
     set_position_and_moves(fen: string, moves: Uint32Array): void;
+    set_variant(variant: string): void;
     side_to_move(): Side;
 }
 
@@ -167,6 +168,7 @@ export interface InitOutput {
     readonly engineclient_new: () => number;
     readonly engineclient_set_fen: (a: number, b: number, c: number) => void;
     readonly engineclient_set_position_and_moves: (a: number, b: number, c: number, d: number, e: number) => void;
+    readonly engineclient_set_variant: (a: number, b: number, c: number) => void;
     readonly engineclient_side_to_move: (a: number) => number;
     readonly get_board_size: () => number;
     readonly get_col: (a: number) => number;

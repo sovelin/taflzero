@@ -246,6 +246,14 @@ export class EngineClient {
         wasm.engineclient_set_position_and_moves(this.__wbg_ptr, ptr0, len0, ptr1, len1);
     }
     /**
+     * @param {string} variant
+     */
+    set_variant(variant) {
+        const ptr0 = passStringToWasm0(variant, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.engineclient_set_variant(this.__wbg_ptr, ptr0, len0);
+    }
+    /**
      * @returns {Side}
      */
     side_to_move() {

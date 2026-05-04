@@ -12,6 +12,14 @@ pub enum RulesEnum {
     Historical11x11,
 }
 
+pub fn get_rules_enum_from_str(rules_str: &str) -> Option<RulesEnum> {
+    match rules_str {
+        "copenhagen11x11" => Some(RulesEnum::Copenhagen11x11),
+        "historical11x11" => Some(RulesEnum::Historical11x11),
+        _ => None,
+    }
+}
+
 impl RulesEnum {
     pub fn rules(&self) -> Rules {
         match self {

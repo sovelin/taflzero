@@ -43,6 +43,7 @@ export const engineclient_move_str_to_num: (a: number, b: number, c: number, d: 
 export const engineclient_new: () => number;
 export const engineclient_set_fen: (a: number, b: number, c: number) => void;
 export const engineclient_set_position_and_moves: (a: number, b: number, c: number, d: number, e: number) => void;
+export const engineclient_set_variant: (a: number, b: number, c: number) => void;
 export const engineclient_side_to_move: (a: number) => number;
 export const get_board_size: () => number;
 export const get_col: (a: number) => number;

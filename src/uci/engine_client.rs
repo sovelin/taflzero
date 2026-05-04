@@ -3,6 +3,7 @@ use crate::{Board, Engine, EngineConfig};
 use crate::movegen::MoveGen;
 use crate::mv::{create_move_from_algebraic, Move};
 use crate::nnue::load_default_weights;
+use crate::rules::get_rules_enum_from_str;
 use crate::search::nn::NeuralNet;
 use crate::terminal::check_terminal;
 use crate::types::{Piece, Side, Square};
@@ -145,5 +146,13 @@ impl EngineClient {
     #[wasm_bindgen]
     pub fn make_move(&mut self, mv: Move) {
         self.engine.make_move(mv).unwrap();
+    }
+
+    #[wasm_bindgen]
+    pub fn set_variant(&mut self, variant: &str) {
+        let variant = get_rules_enum_from_str(variant);
+        if let Some(variant) = variant {
+            self.engine.set_variant(variant);
+        }
     }
 }

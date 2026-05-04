@@ -187,16 +187,16 @@ impl<O: UciOutput> UciController<O> {
                     self.send(&format!("MultiPV set to {}", multipv));
                 } else if tokens.len() >= 5 && tokens[1] == "name" && tokens[2] == "Variant" && tokens[3] == "value" {
                     let variant = tokens[4];
-                    match variant {
-                        "copenhagen11x11" => {
-                            self.engine_mut().set_variant(RulesEnum::Copenhagen11x11);
-                            self.send("variant set to copenhagen11x11");
-                        }
-                        "historical11x11" => {
-                            self.engine_mut().set_variant(RulesEnum::Historical11x11);
-                            self.send("variant set to historical11x11");
-                        }
-                        _ => self.send("unknown variant"),
+
+                    let rules = get_rules_enum_from_str(variant);
+
+                    return if let Some(rules) = rules {
+                        self.engine_mut().set_variant(rules);
+                        self.send(&format!("variant set to {}", variant));
+                        UciRunState::Continue
+                    } else {
+                        self.send("unknown variant");
+                        UciRunState::Continue
                     }
                 }
 
@@ -452,7 +452,7 @@ use wasm_bindgen::{prelude::*, JsCast};
 #[cfg(target_arch = "wasm32")]
 use web_sys::{CustomEvent, CustomEventInit};
 use crate::board::constants::INITIAL_FEN;
-use crate::rules::RulesEnum;
+use crate::rules::{get_rules_enum_from_str, RulesEnum};
 use crate::search::constants::MAX_PLY;
 
 #[cfg(target_arch = "wasm32")]
