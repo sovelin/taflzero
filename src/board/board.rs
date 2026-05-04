@@ -206,7 +206,8 @@ impl Board {
     }
 
     pub fn setup_initial_position(&mut self) -> Result<(), FenError> {
-        self.set_fen(INITIAL_FEN)
+        self.clear();
+        self.set_fen(self.rules.rules().initial_fen.as_str())
     }
 
     pub fn set_side(&mut self, side: Side) {

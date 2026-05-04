@@ -40,7 +40,7 @@ impl Rules {
             has_edge_win: true,
             has_fort_win: false,
             has_shield_walls: false,
-            initial_fen: "3aaaaa3/5a5/11/a4d4a/a3ddd3a/aa1ddkdd1aa/a3ddd3a/a4d4a/11/5a5/3aaaaa3 a".to_string(),
+            initial_fen: "4aaa4/4aaa4/5d5/5d5/aa3d3aa/aadddkdddaa/aa3d3aa/5d5/5d5/4aaa4/4aaa4 a".to_string(),
             is_king_strong: false
         }
     }
