@@ -1,6 +1,6 @@
-use taflzero::{ConsoleClient, UciRunState};
 use taflzero::gen_train_data::gen_train_data;
 use taflzero::search::nn::NeuralNet;
+use taflzero::{ConsoleClient, UciRunState};
 
 struct CliArgs {
     net_path: String,
@@ -72,13 +72,21 @@ fn parse_args() -> CliArgs {
             }
             _ => {
                 eprintln!("Unknown arg: {arg}");
-                eprintln!("Usage: taflzero [--net <model.onnx>] [--datagen <output.bin>] [--datagen-count <games>] [--dump-sample <output.bin>]");
+                eprintln!(
+                    "Usage: taflzero [--net <model.onnx>] [--datagen <output.bin>] [--datagen-count <games>] [--dump-sample <output.bin>]"
+                );
                 std::process::exit(2);
             }
         }
     }
 
-    CliArgs { net_path, datagen_path, datagen_count, gamelog_path, dump_sample_path }
+    CliArgs {
+        net_path,
+        datagen_path,
+        datagen_count,
+        gamelog_path,
+        dump_sample_path,
+    }
 }
 
 fn main() {
@@ -97,7 +105,9 @@ fn main() {
     if let Some(path) = cli.datagen_path {
         let mut nn = NeuralNet::new(&cli.net_path);
 
-        let log_path = cli.gamelog_path.unwrap_or_else(|| format!("{}.gamelog", path));
+        let log_path = cli
+            .gamelog_path
+            .unwrap_or_else(|| format!("{}.gamelog", path));
         gen_train_data(&path, &log_path, &mut nn, cli.datagen_count);
         return;
     }

@@ -1,17 +1,17 @@
 use std::error::Error;
 use std::fmt::Display;
 
+use crate::board::Board;
 use crate::board::constants::BOARD_SIZE;
-use crate::board::types::{Piece, Side, Square, Row, Col};
+use crate::board::types::{Col, Piece, Row, Side, Square};
 use crate::board::utils::get_square;
-use crate::board::{Board};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FenError {
     MissingSide,
     InvalidRowsCount(usize),
     InvalidChar(char),
-    RowTooWide{ row: usize, got: usize },
+    RowTooWide { row: usize, got: usize },
     UnknownSide(char),
     InvalidSetPiece,
 }
@@ -20,9 +20,13 @@ impl Display for FenError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             FenError::MissingSide => write!(f, "FEN must contain side to move (space + 'a'|'d')"),
-            FenError::InvalidRowsCount(got) => write!(f, "Invalid number of rows: {got}, expected {BOARD_SIZE}"),
+            FenError::InvalidRowsCount(got) => {
+                write!(f, "Invalid number of rows: {got}, expected {BOARD_SIZE}")
+            }
             FenError::InvalidChar(ch) => write!(f, "Invalid FEN character: {ch}"),
-            FenError::RowTooWide{row, got} => write!(f, "Row {row} is too wide: {got} > {BOARD_SIZE}"),
+            FenError::RowTooWide { row, got } => {
+                write!(f, "Row {row} is too wide: {got} > {BOARD_SIZE}")
+            }
             FenError::UnknownSide(ch) => write!(f, "Unknown side char: {ch} (expected 'a' or 'd')"),
             FenError::InvalidSetPiece => write!(f, "Failed to set piece on board"),
         }
@@ -77,7 +81,10 @@ impl Board {
 
             if let Some(piece) = char_to_piece(ch) {
                 if col as usize >= BOARD_SIZE {
-                    return Err(FenError::RowTooWide { row: row_idx as usize, got: col as usize + 1 });
+                    return Err(FenError::RowTooWide {
+                        row: row_idx as usize,
+                        got: col as usize + 1,
+                    });
                 }
                 let sq: Square = get_square(row_idx, col);
 
@@ -97,7 +104,10 @@ impl Board {
         }
 
         if (col as usize) > BOARD_SIZE {
-            return Err(FenError::RowTooWide { row: row_idx as usize, got: col as usize });
+            return Err(FenError::RowTooWide {
+                row: row_idx as usize,
+                got: col as usize,
+            });
         }
 
         Ok(())
@@ -118,7 +128,11 @@ impl Board {
             self.set_row_from_fen(row_fen, row_idx)?;
         }
 
-        let s = side_part.trim().chars().next().ok_or(FenError::MissingSide)?;
+        let s = side_part
+            .trim()
+            .chars()
+            .next()
+            .ok_or(FenError::MissingSide)?;
         let desired = side_from_char(s).ok_or(FenError::UnknownSide(s))?;
         if self.side_to_move != desired {
             self.flip_side();

@@ -1,7 +1,12 @@
-use std::sync::LazyLock;
 use crate::board::constants::{BOARD_SIZE, SQS};
 use crate::board::types::{Col, Row, Square};
-use crate::board::utils::{get_all_neighbors, get_bottom_left_neighbor, get_bottom_left_sq, get_bottom_neighbor, get_bottom_right_neighbor, get_bottom_right_sq, get_col, get_corners_sq, get_left_neighbor, get_right_neighbor, get_row, get_throne_sq, get_top_left_neighbor, get_top_left_sq, get_top_neighbor, get_top_right_neighbor, get_top_right_sq, get_vertical_horizontal_neighbors};
+use crate::board::utils::{
+    get_all_neighbors, get_bottom_left_neighbor, get_bottom_left_sq, get_bottom_neighbor,
+    get_bottom_right_neighbor, get_bottom_right_sq, get_col, get_corners_sq, get_left_neighbor,
+    get_right_neighbor, get_row, get_throne_sq, get_top_left_neighbor, get_top_left_sq,
+    get_top_neighbor, get_top_right_neighbor, get_top_right_sq, get_vertical_horizontal_neighbors,
+};
+use std::sync::LazyLock;
 
 type CellsArray<T> = [Option<T>; SQS];
 
@@ -113,10 +118,12 @@ impl Precomputed {
         let mut top_left_neighbor: CellsArray<Square> = [None; SQS];
         let mut bottom_right_neighbor: CellsArray<Square> = [None; SQS];
         let mut bottom_left_neighbor: CellsArray<Square> = [None; SQS];
-        let mut vertical_horizontal_neighbors: [Vec<Square>; SQS] = std::array::from_fn(|_| Vec::new());
+        let mut vertical_horizontal_neighbors: [Vec<Square>; SQS] =
+            std::array::from_fn(|_| Vec::new());
         let mut all_neighbors: [Vec<Square>; SQS] = std::array::from_fn(|_| Vec::new());
         let mut manhattan_distance = [[0; SQS]; SQS];
-        let mut sandwich_captures: [Vec<SandwichCapture>; SQS] = std::array::from_fn(|_| Vec::new());
+        let mut sandwich_captures: [Vec<SandwichCapture>; SQS] =
+            std::array::from_fn(|_| Vec::new());
 
         for i in 0..SQS {
             row[i] = get_row(i);
@@ -151,9 +158,19 @@ impl Precomputed {
         }
 
         Self {
-            row, col, left_neighbor, right_neighbor, top_neighbor, bottom_neighbor,
-            top_right_neighbor, top_left_neighbor, bottom_right_neighbor, bottom_left_neighbor,
-            vertical_horizontal_neighbors, all_neighbors, manhattan_distance,
+            row,
+            col,
+            left_neighbor,
+            right_neighbor,
+            top_neighbor,
+            bottom_neighbor,
+            top_right_neighbor,
+            top_left_neighbor,
+            bottom_right_neighbor,
+            bottom_left_neighbor,
+            vertical_horizontal_neighbors,
+            all_neighbors,
+            manhattan_distance,
             throne_sq: get_throne_sq(),
             corners_sq: get_corners_sq(),
             top_left_sq: get_top_left_sq(),

@@ -5,7 +5,6 @@ use crate::board::{Board, PRECOMPUTED};
 use crate::types::OptionalSquare;
 use std::collections::{HashSet, VecDeque};
 
-
 struct Area {
     pub squares: HashSet<Square>,
     pub is_move_possible: bool,
@@ -19,7 +18,10 @@ struct AreaList {
 
 impl AreaList {
     pub fn new() -> Self {
-        Self { areas: vec![], board_map:  [None; SQS] }
+        Self {
+            areas: vec![],
+            board_map: [None; SQS],
+        }
     }
 
     pub fn get_area_index(&self, sq: Square) -> Option<usize> {
@@ -31,8 +33,7 @@ impl AreaList {
     }
 
     pub fn is_square_in_move_possible_area(&self, sq: Square) -> bool {
-        let area_index = self.board_map[sq]
-            .expect(&format!("Square {} is not in any area", sq));
+        let area_index = self.board_map[sq].expect(&format!("Square {} is not in any area", sq));
 
         self.areas[area_index].is_move_possible
     }
@@ -117,14 +118,15 @@ pub fn king_contacts_attackers(board: &Board) -> bool {
 }
 
 pub fn get_attackers_areas(board: &Board) -> AreaList {
-    let mut available_attackers: HashSet<Square> = board.attackers[..board.attackers_count as usize]
+    let mut available_attackers: HashSet<Square> = board.attackers
+        [..board.attackers_count as usize]
         .iter()
         .cloned()
         .collect();
 
     let mut areas = AreaList::new();
 
-    while !available_attackers.is_empty()  {
+    while !available_attackers.is_empty() {
         let next_attacker = *available_attackers.iter().next().unwrap();
 
         let mut area = Area {
@@ -147,7 +149,10 @@ pub fn get_attackers_areas(board: &Board) -> AreaList {
                     available_attackers.remove(&sq);
                 }
 
-                let is_achievable = piece != Piece::DEFENDER && piece != Piece::KING && !PRECOMPUTED.corners_sq.contains(&sq) && sq != PRECOMPUTED.throne_sq;
+                let is_achievable = piece != Piece::DEFENDER
+                    && piece != Piece::KING
+                    && !PRECOMPUTED.corners_sq.contains(&sq)
+                    && sq != PRECOMPUTED.throne_sq;
 
                 if is_achievable {
                     area.squares.insert(sq);
@@ -172,7 +177,11 @@ pub fn get_attackers_areas(board: &Board) -> AreaList {
     areas
 }
 
-fn is_theoretically_possible_to_capture(area_list: &AreaList, a: Option<Square>, b: Option<Square>) -> bool {
+fn is_theoretically_possible_to_capture(
+    area_list: &AreaList,
+    a: Option<Square>,
+    b: Option<Square>,
+) -> bool {
     if let (Some(a), Some(b)) = (a, b) {
         if !area_list.is_square_in_area(a) || !area_list.is_square_in_area(b) {
             return false;
@@ -682,7 +691,9 @@ mod tests {
     #[test]
     fn edge_case_1() {
         let mut board = Board::new();
-        board.set_fen("3a3dad1/5dddd1k/9dd/a3a6/a4a1aa2/aa1dd6/a3dd4a/a9a/7d1aa/5a5/3aaaaa3 a").unwrap();
+        board
+            .set_fen("3a3dad1/5dddd1k/9dd/a3a6/a4a1aa2/aa1dd6/a3dd4a/a9a/7d1aa/5a5/3aaaaa3 a")
+            .unwrap();
 
         assert!(!check_fort(&mut board));
     }
@@ -690,7 +701,9 @@ mod tests {
     #[test]
     fn edge_case_2() {
         let mut board = Board::new();
-        board.set_fen("3a3dad1/5dddd1k/6ddadd/11/a4a1aa2/11/11/11/11/11/11 a").unwrap();
+        board
+            .set_fen("3a3dad1/5dddd1k/6ddadd/11/a4a1aa2/11/11/11/11/11/11 a")
+            .unwrap();
 
         assert!(!check_fort(&mut board));
     }
@@ -698,25 +711,29 @@ mod tests {
     #[test]
     fn edge_case_3() {
         let mut board = Board::new();
-        board.set_fen("3a3dad1/5dddd1k/6ddadd/6ddddd/11/11/11/11/11/11/11 a").unwrap();
+        board
+            .set_fen("3a3dad1/5dddd1k/6ddadd/6ddddd/11/11/11/11/11/11/11 a")
+            .unwrap();
 
         assert!(!check_fort(&mut board));
     }
 
-
     #[test]
     fn edge_case_4() {
         let mut board = Board::new();
-        board.set_fen("7dad1/5dddd1k/6ddadd/6ddddd/11/11/11/11/11/11/11 a").unwrap();
+        board
+            .set_fen("7dad1/5dddd1k/6ddadd/6ddddd/11/11/11/11/11/11/11 a")
+            .unwrap();
 
         assert!(check_fort(&mut board));
     }
 
-
     #[test]
     fn edge_case_5() {
         let mut board = Board::new();
-        board.set_fen("4daadad1/5dddd1k/6ddadd/6ddddd/11/11/11/11/11/11/11 a").unwrap();
+        board
+            .set_fen("4daadad1/5dddd1k/6ddadd/6ddddd/11/11/11/11/11/11/11 a")
+            .unwrap();
 
         assert!(check_fort(&mut board));
     }
@@ -724,7 +741,9 @@ mod tests {
     #[test]
     fn edge_case_6() {
         let mut board = Board::new();
-        board.set_fen("4daadad1/5dddd1k/6ddadd/6ddddd/11/11/11/11/11/11/11 a").unwrap();
+        board
+            .set_fen("4daadad1/5dddd1k/6ddadd/6ddddd/11/11/11/11/11/11/11 a")
+            .unwrap();
 
         assert!(check_fort(&mut board));
     }
@@ -744,7 +763,7 @@ mod tests {
                      AAAAAAAAAAA
                      AAAAAAAAAAA
                      AAAAAAAAAAA
-                     .AAAAAAAAA."
+                     .AAAAAAAAA.",
         );
 
         println!("{:?}", board);
@@ -767,7 +786,7 @@ mod tests {
                      AAAAAAAAAAA
                      AAAAAAAAAAA
                      AAAAAAAAAAA
-                     ..AAAAAAAA."
+                     ..AAAAAAAA.",
         );
 
         println!("{:?}", board);
@@ -790,7 +809,7 @@ mod tests {
                      AAAAAAAAAAA
                      AAAAAAAAAAA
                      AAAAAAAAAAA
-                     ..AAAAAAAA."
+                     ..AAAAAAAA.",
         );
 
         assert!(check_fort(&mut board));
@@ -801,7 +820,7 @@ mod tests {
         let mut board = Board::new();
         set_board_from_str(
             &mut board,
-           "...........
+            "...........
                     ...........
                     ...........
                     ...........
@@ -811,7 +830,8 @@ mod tests {
                     ...D..A.D..
                     ...D..D.D..
                     ...DDD.DD..
-                    ...DDDKDD..");
+                    ...DDDKDD..",
+        );
 
         assert!(check_fort(&mut board));
     }
@@ -831,7 +851,8 @@ mod tests {
                     ...D.AA.D..
                     ...D..D.D..
                     ...DDD.DD..
-                    ...DDDKDD..");
+                    ...DDDKDD..",
+        );
 
         assert!(!check_fort(&mut board));
     }

@@ -1,12 +1,17 @@
-use crate::board::{get_side_by_piece, Board, PRECOMPUTED};
 use crate::board::constants::BOARD_SIZE;
 use crate::board::types::{Piece, Side, Square};
 use crate::board::utils::{get_col, get_row};
+use crate::board::{Board, PRECOMPUTED, get_side_by_piece};
 use crate::moves::undo::{CapturedPiece, UndoMove};
 use crate::types::OptionalSquare;
 
 #[derive(Copy, Clone)]
-pub enum ShieldSide { Top, Bottom, Left, Right }
+pub enum ShieldSide {
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
 
 #[inline]
 fn shield_sides(to_sq: Square) -> Vec<ShieldSide> {
@@ -15,10 +20,18 @@ fn shield_sides(to_sq: Square) -> Vec<ShieldSide> {
     let r = PRECOMPUTED.row[to_sq];
     let c = PRECOMPUTED.col[to_sq];
 
-    if r <= 1 { v.push(Bottom); }
-    if r >= BOARD_SIZE - 2 { v.push(Top); }
-    if c <= 1 { v.push(Left); }
-    if c >= BOARD_SIZE - 2 { v.push(Right); }
+    if r <= 1 {
+        v.push(Bottom);
+    }
+    if r >= BOARD_SIZE - 2 {
+        v.push(Top);
+    }
+    if c <= 1 {
+        v.push(Left);
+    }
+    if c >= BOARD_SIZE - 2 {
+        v.push(Right);
+    }
     v
 }
 
@@ -84,7 +97,6 @@ fn captures_on_side(board: &mut Board, side: Side, which: ShieldSide, undo: &mut
         let piece = board.board[sq];
         undo.add_captured_piece(CapturedPiece { square: sq, piece });
         board.clear_piece(sq);
-
     }
 
     let mut start_sq: usize = 0;
@@ -100,8 +112,10 @@ fn captures_on_side(board: &mut Board, side: Side, which: ShieldSide, undo: &mut
             seq_started = false;
         } else if is_friend(board, side, next_sq) || is_always_friend(next_sq) {
             if seq.len() > 1 {
-                if board.last_move_to == start_sq as OptionalSquare || board.last_move_to == next_sq as OptionalSquare {
-                res.extend_from_slice(&seq);
+                if board.last_move_to == start_sq as OptionalSquare
+                    || board.last_move_to == next_sq as OptionalSquare
+                {
+                    res.extend_from_slice(&seq);
                 }
                 seq.clear();
             }
@@ -143,7 +157,9 @@ pub fn make_shield_wall_captures(board: &mut Board, to_sq: Square, undo: &mut Un
     }
 
     let sides = shield_sides(to_sq);
-    if sides.is_empty() { return; }
+    if sides.is_empty() {
+        return;
+    }
 
     for s in sides {
         captures_on_side(board, board.side_to_move, s, undo);

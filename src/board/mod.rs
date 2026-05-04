@@ -1,12 +1,12 @@
 pub mod board;
 pub mod constants;
+mod fen;
+pub mod position_export;
+mod precompute;
+mod tests;
 pub mod types;
 pub mod utils;
 mod zobrist;
-mod tests;
-mod fen;
-mod precompute;
-pub mod position_export;
 
 pub use board::*;
 pub use precompute::*;

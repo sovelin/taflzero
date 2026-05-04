@@ -1,16 +1,16 @@
-use wasm_bindgen::prelude::wasm_bindgen;
-use crate::{Board, Engine, EngineConfig};
 use crate::movegen::MoveGen;
-use crate::mv::{create_move_from_algebraic, Move};
+use crate::mv::{Move, create_move_from_algebraic};
 use crate::nnue::load_default_weights;
 use crate::search::nn::NeuralNet;
 use crate::terminal::check_terminal;
 use crate::types::{Piece, Side, Square};
+use crate::{Board, Engine, EngineConfig};
+use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen]
 struct EngineClient {
     engine: Engine,
-    move_gen: MoveGen
+    move_gen: MoveGen,
 }
 
 #[wasm_bindgen]
@@ -106,7 +106,8 @@ impl EngineClient {
 
     #[wasm_bindgen]
     pub fn get_available_moves(&mut self) -> Vec<Move> {
-        self.move_gen.generate_moves(self.engine.get_board_mutable());
+        self.move_gen
+            .generate_moves(self.engine.get_board_mutable());
         let mut available_moves = Vec::new();
 
         for index in 0..self.move_gen.count {
@@ -118,7 +119,8 @@ impl EngineClient {
 
     #[wasm_bindgen]
     pub fn get_available_moves_from_square(&mut self, from: Square) -> Vec<Move> {
-        self.move_gen.generate_moves(self.engine.get_board_mutable());
+        self.move_gen
+            .generate_moves(self.engine.get_board_mutable());
         let mut available_moves = Vec::new();
 
         for index in 0..self.move_gen.count {

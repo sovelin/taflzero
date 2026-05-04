@@ -6,7 +6,7 @@ use crate::types::{Piece, Side};
 #[derive(Clone, Copy)]
 pub struct BitPosition {
     pub planes: [u8; 16 * 3], // [attackers | defenders | king]
-    pub stm: u8, // 1 for attackers, 0 for defenders
+    pub stm: u8,              // 1 for attackers, 0 for defenders
 }
 
 impl BitPosition {
@@ -50,14 +50,13 @@ impl BitPosition {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use crate::{set_board_from_str, Board};
     use crate::board::constants::BOARD_SIZE;
     use crate::board::position_export::BitPosition;
     use crate::board::utils::get_square;
     use crate::types::Side;
+    use crate::{Board, set_board_from_str};
 
     fn defenders_plane(bit_position: &BitPosition, plane: usize) -> String {
         let base = plane * 16;
@@ -82,7 +81,6 @@ mod tests {
         out
     }
 
-
     #[test]
     fn test_bit_position() {
         let mut board = Board::new();
@@ -99,7 +97,7 @@ mod tests {
              ...........
              ...........
              ...........
-             ..........."
+             ...........",
         );
 
         let bit_position = BitPosition::from_board(&board);
@@ -107,7 +105,9 @@ mod tests {
         // Check the first plane (attackers)
         let attackers_plane = defenders_plane(&bit_position, 0);
         println!("Plane 0 (Attackers):\n{}", attackers_plane);
-        assert_eq!(attackers_plane, r"...........
+        assert_eq!(
+            attackers_plane,
+            r"...........
 ...........
 ...........
 ...XXX.....
@@ -118,11 +118,14 @@ mod tests {
 ...........
 ...........
 ...........
-");
+"
+        );
 
         let plane1 = defenders_plane(&bit_position, 1);
         println!("Plane 1 (Defenders):\n{}", plane1);
-        assert_eq!(plane1, r"...........
+        assert_eq!(
+            plane1,
+            r"...........
 ...........
 ...........
 ...........
@@ -133,11 +136,14 @@ mod tests {
 ...........
 ...........
 ...........
-");
+"
+        );
 
         let plane2 = defenders_plane(&bit_position, 2);
         println!("Plane 2 (King):\n{}", plane2);
-        assert_eq!(plane2, r"...........
+        assert_eq!(
+            plane2,
+            r"...........
 ...........
 ...........
 ...........
@@ -148,7 +154,8 @@ mod tests {
 ...........
 ...........
 ...........
-");
+"
+        );
     }
 
     #[test]

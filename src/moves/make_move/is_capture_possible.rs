@@ -1,6 +1,6 @@
-use std::sync::LazyLock;
-use crate::board::{get_side_by_piece, Board, PRECOMPUTED};
 use crate::board::types::{Piece, Square};
+use crate::board::{Board, PRECOMPUTED, get_side_by_piece};
+use std::sync::LazyLock;
 
 pub static ENEMY_SQUARES: LazyLock<[usize; 5]> = LazyLock::new(|| {
     [
@@ -21,18 +21,21 @@ pub fn is_potential_thread(board: &Board, target_sq: Square, enemy_sq: Square) -
         return false;
     }
 
-
     let target_side = get_side_by_piece(board.board[target_sq]);
     let enemy_side = get_side_by_piece(board.board[enemy_sq]);
 
     target_side != enemy_side
 }
 
-pub fn is_capture_possible(board: &Board, target_sq: Square, enemy_sq_1: Square, enemy_sq_2: Square) -> bool {
+pub fn is_capture_possible(
+    board: &Board,
+    target_sq: Square,
+    enemy_sq_1: Square,
+    enemy_sq_2: Square,
+) -> bool {
     if board.board[target_sq] == Piece::KING || board.board[target_sq] == Piece::EMPTY {
         return false;
     }
-
 
     let is_threat_1 = is_potential_thread(board, target_sq, enemy_sq_1);
     let is_threat_2 = is_potential_thread(board, target_sq, enemy_sq_2);
@@ -286,7 +289,7 @@ mod tests {
     #[test]
     fn no_capture_when_king_on_throne_and_trying_to_capture_defender() {
         let mut board = Board::new();
-        board.set_piece(get_square_from_algebraic("f6"), Piece::KING);     // throne
+        board.set_piece(get_square_from_algebraic("f6"), Piece::KING); // throne
         board.set_piece(get_square_from_algebraic("f5"), Piece::DEFENDER); // target
         board.set_piece(get_square_from_algebraic("f4"), Piece::ATTACKER); // second side
 
@@ -301,7 +304,7 @@ mod tests {
     #[test]
     fn capture_when_king_on_throne_captures_attacker_with_help_of_defender() {
         let mut board = Board::new();
-        board.set_piece(get_square_from_algebraic("f6"), Piece::KING);     // throne
+        board.set_piece(get_square_from_algebraic("f6"), Piece::KING); // throne
         board.set_piece(get_square_from_algebraic("f5"), Piece::ATTACKER); // target
         board.set_piece(get_square_from_algebraic("f4"), Piece::DEFENDER); // second side
 
@@ -316,7 +319,7 @@ mod tests {
     #[test]
     fn no_capture_when_king_on_throne_but_no_second_defender() {
         let mut board = Board::new();
-        board.set_piece(get_square_from_algebraic("f6"), Piece::KING);     // throne
+        board.set_piece(get_square_from_algebraic("f6"), Piece::KING); // throne
         board.set_piece(get_square_from_algebraic("f5"), Piece::ATTACKER); // target
 
         assert!(!is_capture_possible(

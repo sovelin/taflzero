@@ -1,0 +1,26 @@
+on: [push, pull_request]
+name: All of the Rust Commit Checks
+
+permissions:
+  actions: read # An explanation.
+
+jobs:
+  rust_checks:
+    name: Rust Checks
+    runs-on: ubuntu-latest
+
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+
+    permissions:
+      security-events: write # An explanation.
+      actions: read # An explanation.
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Run Rust Checks
+        run: |
+          cargo fmt --all --check

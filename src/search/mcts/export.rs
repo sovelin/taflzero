@@ -3,7 +3,7 @@ use crate::mcts::mcts::MCTSTree;
 use crate::mcts::utils::move_to_policy_index;
 use crate::position_export::BitPosition;
 use crate::types::Side;
-use std::io::{Write, Result};
+use std::io::{Result, Write};
 
 pub const ACTIONS: usize = 121 * 4 * 10; // 4840
 pub const LEGAL_MASK_BYTES: usize = (ACTIONS + 7) / 8; // 605
@@ -64,8 +64,6 @@ fn compute_value(side_to_move: Side, result: Option<Side>) -> i8 {
     }
 }
 
-
-
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct PolicyTarget {
@@ -125,7 +123,11 @@ impl PendingSample {
     }
 
     pub fn set_value_from_result(&mut self, result: Option<Side>) {
-        let stm_side = if self.bit_position.stm == 0 { Side::ATTACKERS } else { Side::DEFENDERS };
+        let stm_side = if self.bit_position.stm == 0 {
+            Side::ATTACKERS
+        } else {
+            Side::DEFENDERS
+        };
         self.value = compute_value(stm_side, result);
     }
 }
@@ -157,7 +159,6 @@ impl MCTSTree {
         let root = self.get_root();
         let mut policy: Vec<PolicyTarget> = vec![];
 
-
         for &child_id in *&root.children() {
             let node = self.get_node(child_id);
             let visits_f = node.visits();
@@ -178,7 +179,7 @@ impl MCTSTree {
         }
 
         PendingSample {
-            bit_position:  BitPosition::from_board(board),
+            bit_position: BitPosition::from_board(board),
             legal_mask: self.build_legal_mask_from_board(board),
             policy,
             value: 0, // to be set later

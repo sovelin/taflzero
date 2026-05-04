@@ -1,7 +1,7 @@
-use once_cell::sync::Lazy;
-use std::sync::Arc;
 use crate::board::constants::SQS;
 use crate::types::{Piece, Square};
+use once_cell::sync::Lazy;
+use std::sync::Arc;
 
 pub const INPUTS: usize = 364;
 pub const HIDDEN: usize = 256;
@@ -34,7 +34,6 @@ pub static FC2_RAW: &str = include_str!("../../nnue-324x256-gen4/fc2.25.weights.
 
 // pub static FC1_RAW: &str = include_str!("../../nnue-fair-gen14-324x64/fc1.31.weights.csv");
 // pub static FC2_RAW: &str = include_str!("../../nnue-fair-gen14-324x64/fc2.31.weights.csv");
-
 
 // pub static FC1_RAW: &str = include_str!("../../nnue-fair-gen13-324x128/fc1.24.weights.csv");
 // pub static FC2_RAW: &str = include_str!("../../nnue-fair-gen13-324x128/fc2.24.weights.csv");

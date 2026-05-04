@@ -1,10 +1,11 @@
-use std::io::Cursor;
-use tract_onnx::prelude::*;
+use super::nn_common::{NUM_PLANES, NnOutput, POLICY_SIZE, build_input_data};
 use crate::masks::BOARD_SIZE;
 use crate::position_export::BitPosition;
-use super::nn_common::{build_input_data, NnOutput, NUM_PLANES, POLICY_SIZE};
+use std::io::Cursor;
+use tract_onnx::prelude::*;
 
-const EMBEDDED_MODEL: &[u8] = include_bytes!("../../zero-trainer/weights/modern-6x64/gen0146.candidate.fp32.onnx");
+const EMBEDDED_MODEL: &[u8] =
+    include_bytes!("../../zero-trainer/weights/modern-6x64/gen0146.candidate.fp32.onnx");
 
 pub struct NeuralNet {
     plan: TypedRunnableModel<TypedModel>,

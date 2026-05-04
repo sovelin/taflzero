@@ -47,14 +47,21 @@ mod tests {
     use crate::board::utils::get_square_from_algebraic;
     use crate::moves::mv::Move;
     use crate::moves::undo::{CapturedPiece, UndoMove};
-    use crate::tests::{expect_attacker_on, expect_attackers_count, expect_defender_on, expect_defenders_count, expect_side_to_be};
+    use crate::tests::{
+        expect_attacker_on, expect_attackers_count, expect_defender_on, expect_defenders_count,
+        expect_side_to_be,
+    };
 
     #[test]
     fn test_unmake_move() {
         let board = &mut Board::new();
         board.set_side(Side::DEFENDERS);
-        board.set_piece(get_square_from_algebraic("b5"), Piece::ATTACKER).unwrap();
-        board.set_piece(get_square_from_algebraic("b7"), Piece::ATTACKER).unwrap();
+        board
+            .set_piece(get_square_from_algebraic("b5"), Piece::ATTACKER)
+            .unwrap();
+        board
+            .set_piece(get_square_from_algebraic("b7"), Piece::ATTACKER)
+            .unwrap();
         println!("{:?}", board);
 
         let mut undo = UndoMove::new();
@@ -81,6 +88,9 @@ mod tests {
         expect_defender_on(board, "b6");
         expect_defenders_count(board, 1);
         expect_side_to_be(board, Side::ATTACKERS);
-        assert_eq!(board.last_move_to, get_square_from_algebraic("a9") as OptionalSquare);
+        assert_eq!(
+            board.last_move_to,
+            get_square_from_algebraic("a9") as OptionalSquare
+        );
     }
 }

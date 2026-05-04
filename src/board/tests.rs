@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
     use crate::board::board::Board;
-    use crate::board::types::{Piece};
-    use crate::board::utils::{get_square_from_algebraic};
+    use crate::board::types::Piece;
+    use crate::board::utils::get_square_from_algebraic;
     use crate::tests::*;
 
     #[test]

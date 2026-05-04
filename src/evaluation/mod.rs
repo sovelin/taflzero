@@ -1,7 +1,7 @@
 use crate::board::types::Side;
 
-mod defenders_is_surrounded;
 mod check_fort;
+mod defenders_is_surrounded;
 pub mod terminal;
 
 pub static MATE_SCORE: i32 = 10000;

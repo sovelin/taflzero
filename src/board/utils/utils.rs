@@ -1,6 +1,6 @@
-use wasm_bindgen::prelude::wasm_bindgen;
 use crate::board::constants::BOARD_SIZE;
 use crate::board::types::{Col, Piece, Row, Side, Square};
+use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen]
 #[inline(always)]
@@ -28,7 +28,6 @@ pub fn get_col(sq: Square) -> Col {
     sq % BOARD_SIZE
 }
 
-
 pub fn get_side_by_piece(piece: Piece) -> Result<Side, String> {
     match piece {
         Piece::ATTACKER => Ok(Side::ATTACKERS),
@@ -39,7 +38,7 @@ pub fn get_side_by_piece(piece: Piece) -> Result<Side, String> {
 }
 
 pub fn get_throne_sq() -> Square {
-   get_square(5, 5)
+    get_square(5, 5)
 }
 
 pub fn get_corners_sq() -> Vec<Square> {
@@ -183,7 +182,6 @@ pub fn is_edge_square(sq: Square) -> bool {
 #[wasm_bindgen]
 pub fn get_sq_algebraic(sq: Square) -> String {
     let mut first = b'a';
-
 
     let col = get_col(sq);
     let row = get_row(sq);

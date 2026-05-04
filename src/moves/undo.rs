@@ -1,7 +1,7 @@
-use std::fmt::Debug;
 use crate::board::constants::HOLE;
 use crate::board::types::{OptionalSquare, Piece, Square};
 use crate::moves::mv::Move;
+use std::fmt::Debug;
 
 static MAX_CAPTURED_PIECES: u8 = 10;
 
@@ -13,7 +13,11 @@ pub struct CapturedPiece {
 
 impl Debug for CapturedPiece {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "CapturedPiece {{ square: {}, piece: {:?} }}", self.square, self.piece)
+        write!(
+            f,
+            "CapturedPiece {{ square: {}, piece: {:?} }}",
+            self.square, self.piece
+        )
     }
 }
 
@@ -43,7 +47,6 @@ impl UndoMove {
 
     pub fn clear_captured_pieces(&mut self) {
         self.captured_pieces_count = 0;
-
     }
 
     pub fn captured_pieces(&self) -> &[CapturedPiece] {

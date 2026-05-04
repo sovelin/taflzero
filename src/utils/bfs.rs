@@ -1,6 +1,6 @@
-use std::collections::{VecDeque};
 use crate::board::constants::SQS;
 use crate::board::types::Square;
+use std::collections::VecDeque;
 
 pub fn bfs(
     is_archivable: impl Fn(Square) -> bool,
@@ -39,18 +39,14 @@ pub fn bfs(
 
 #[cfg(test)]
 mod tests {
-    use crate::board::{Board, PRECOMPUTED};
+    use super::bfs;
     use crate::board::constants::SQS;
     use crate::board::types::{Piece, Square};
     use crate::board::utils::get_square_from_algebraic;
-    use super::bfs;
+    use crate::board::{Board, PRECOMPUTED};
 
     fn expect_cell_in_result(res: &[bool; SQS], sq: Square) {
-        assert!(
-            res[sq],
-            "Expected square {} to be in the result set",
-            sq
-        );
+        assert!(res[sq], "Expected square {} to be in the result set", sq);
     }
 
     fn expect_res_size(res: &[bool; SQS], expected_size: usize) {
@@ -65,13 +61,27 @@ mod tests {
     #[test]
     fn go_to_cornets_from_restricted_areas() {
         let mut board = Board::new();
-        board.set_piece(get_square_from_algebraic("d4"), Piece::ATTACKER).unwrap();
-        board.set_piece(get_square_from_algebraic("d3"), Piece::ATTACKER).unwrap();
-        board.set_piece(get_square_from_algebraic("d2"), Piece::ATTACKER).unwrap();
-        board.set_piece(get_square_from_algebraic("d1"), Piece::ATTACKER).unwrap();
-        board.set_piece(get_square_from_algebraic("c4"), Piece::ATTACKER).unwrap();
-        board.set_piece(get_square_from_algebraic("b4"), Piece::ATTACKER).unwrap();
-        board.set_piece(get_square_from_algebraic("a4"), Piece::ATTACKER).unwrap();
+        board
+            .set_piece(get_square_from_algebraic("d4"), Piece::ATTACKER)
+            .unwrap();
+        board
+            .set_piece(get_square_from_algebraic("d3"), Piece::ATTACKER)
+            .unwrap();
+        board
+            .set_piece(get_square_from_algebraic("d2"), Piece::ATTACKER)
+            .unwrap();
+        board
+            .set_piece(get_square_from_algebraic("d1"), Piece::ATTACKER)
+            .unwrap();
+        board
+            .set_piece(get_square_from_algebraic("c4"), Piece::ATTACKER)
+            .unwrap();
+        board
+            .set_piece(get_square_from_algebraic("b4"), Piece::ATTACKER)
+            .unwrap();
+        board
+            .set_piece(get_square_from_algebraic("a4"), Piece::ATTACKER)
+            .unwrap();
 
         let res = bfs(
             |sq| board.board[sq] == Piece::EMPTY,
@@ -95,13 +105,27 @@ mod tests {
     fn go_from_different_corners_and_one_restricted() {
         let mut board = Board::new();
 
-        board.set_piece(get_square_from_algebraic("d4"), Piece::ATTACKER).unwrap();
-        board.set_piece(get_square_from_algebraic("d3"), Piece::ATTACKER).unwrap();
-        board.set_piece(get_square_from_algebraic("d2"), Piece::ATTACKER).unwrap();
-        board.set_piece(get_square_from_algebraic("d1"), Piece::ATTACKER).unwrap();
-        board.set_piece(get_square_from_algebraic("c4"), Piece::ATTACKER).unwrap();
-        board.set_piece(get_square_from_algebraic("b4"), Piece::ATTACKER).unwrap();
-        board.set_piece(get_square_from_algebraic("a4"), Piece::ATTACKER).unwrap();
+        board
+            .set_piece(get_square_from_algebraic("d4"), Piece::ATTACKER)
+            .unwrap();
+        board
+            .set_piece(get_square_from_algebraic("d3"), Piece::ATTACKER)
+            .unwrap();
+        board
+            .set_piece(get_square_from_algebraic("d2"), Piece::ATTACKER)
+            .unwrap();
+        board
+            .set_piece(get_square_from_algebraic("d1"), Piece::ATTACKER)
+            .unwrap();
+        board
+            .set_piece(get_square_from_algebraic("c4"), Piece::ATTACKER)
+            .unwrap();
+        board
+            .set_piece(get_square_from_algebraic("b4"), Piece::ATTACKER)
+            .unwrap();
+        board
+            .set_piece(get_square_from_algebraic("a4"), Piece::ATTACKER)
+            .unwrap();
 
         let res = bfs(
             |sq| board.board[sq] == Piece::EMPTY,
@@ -119,14 +143,28 @@ mod tests {
     fn correct_handle_accessible_fields() {
         let mut board = Board::new();
 
-        board.set_piece(get_square_from_algebraic("a10"), Piece::ATTACKER).unwrap();
-        board.set_piece(get_square_from_algebraic("b11"), Piece::ATTACKER).unwrap();
-        board.set_piece(get_square_from_algebraic("c11"), Piece::ATTACKER).unwrap();
-        board.set_piece(get_square_from_algebraic("d10"), Piece::ATTACKER).unwrap();
-        board.set_piece(get_square_from_algebraic("c9"), Piece::ATTACKER).unwrap();
-        board.set_piece(get_square_from_algebraic("b9"), Piece::ATTACKER).unwrap();
+        board
+            .set_piece(get_square_from_algebraic("a10"), Piece::ATTACKER)
+            .unwrap();
+        board
+            .set_piece(get_square_from_algebraic("b11"), Piece::ATTACKER)
+            .unwrap();
+        board
+            .set_piece(get_square_from_algebraic("c11"), Piece::ATTACKER)
+            .unwrap();
+        board
+            .set_piece(get_square_from_algebraic("d10"), Piece::ATTACKER)
+            .unwrap();
+        board
+            .set_piece(get_square_from_algebraic("c9"), Piece::ATTACKER)
+            .unwrap();
+        board
+            .set_piece(get_square_from_algebraic("b9"), Piece::ATTACKER)
+            .unwrap();
 
-        board.set_piece(get_square_from_algebraic("b10"), Piece::KING).unwrap();
+        board
+            .set_piece(get_square_from_algebraic("b10"), Piece::KING)
+            .unwrap();
         println!("{:?}", board);
 
         let res = bfs(

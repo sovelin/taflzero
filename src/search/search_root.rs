@@ -1,9 +1,9 @@
-use wasm_bindgen::prelude::wasm_bindgen;
 use crate::board::Board;
-use crate::mcts::mcts::{mcts_search, MCTSConfig, MCTSTree};
+use crate::mcts::mcts::{MCTSConfig, MCTSTree, mcts_search};
 use crate::moves::mv::Move;
 use crate::search::nn::NeuralNet;
 use crate::search::search_data::SearchData;
+use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen]
 pub struct SearchIterationResponse {
@@ -36,11 +36,19 @@ pub fn search_root(
     nn: &mut NeuralNet,
     on_iteration: Option<&dyn Fn(SearchIterationResponse)>,
     tree: &mut MCTSTree,
-    multi_pv: Option<usize>
+    multi_pv: Option<usize>,
 ) -> SearchResponse {
-
     let config = MCTSConfig::default_play();
-    let best_move = mcts_search(board, tree, nn, search_data, on_iteration, None, &config, multi_pv);
+    let best_move = mcts_search(
+        board,
+        tree,
+        nn,
+        search_data,
+        on_iteration,
+        None,
+        &config,
+        multi_pv,
+    );
 
     SearchResponse {
         best_move: best_move.unwrap_or_default(),
@@ -55,11 +63,19 @@ pub fn search_root_nodes(
     on_iteration: Option<&dyn Fn(SearchIterationResponse)>,
     tree: &mut MCTSTree,
     nodes: u64,
-    multi_pv: Option<usize>
+    multi_pv: Option<usize>,
 ) -> SearchResponse {
-
     let config = MCTSConfig::default_play();
-    let best_move = mcts_search(board, tree, nn, search_data, on_iteration, Some(nodes), &config, multi_pv);
+    let best_move = mcts_search(
+        board,
+        tree,
+        nn,
+        search_data,
+        on_iteration,
+        Some(nodes),
+        &config,
+        multi_pv,
+    );
 
     SearchResponse {
         best_move: best_move.unwrap_or_default(),

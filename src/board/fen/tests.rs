@@ -1,13 +1,16 @@
 #[cfg(test)]
 mod tests {
-    use crate::board::{Board};
+    use crate::board::Board;
     use crate::board::constants::INITIAL_FEN;
     use crate::board::types::{Piece, Side};
     use crate::board::utils::get_square_from_algebraic;
 
     mod set_fen {
-        use crate::tests::{expect_attacker_on, expect_attackers_count, expect_defender_on, expect_defenders_count, expect_king_not_exists, expect_king_on, expect_side_to_be};
         use super::*;
+        use crate::tests::{
+            expect_attacker_on, expect_attackers_count, expect_defender_on, expect_defenders_count,
+            expect_king_not_exists, expect_king_on, expect_side_to_be,
+        };
 
         #[test]
         fn one_king_two_attackers_two_defenders_defenders_to_move() {

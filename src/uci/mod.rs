@@ -1,9 +1,9 @@
-pub mod engine_client;
 pub mod constants;
+pub mod engine_client;
 
+use crate::Engine;
 use crate::mv::create_move_from_algebraic;
 use crate::search::search_root::SearchIterationResponse;
-use crate::Engine;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UciRunState {
@@ -16,7 +16,10 @@ pub trait UciOutput: Clone + Send + 'static {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 #[cfg(not(target_arch = "wasm32"))]
 struct SearchThread {
@@ -33,7 +36,12 @@ pub struct UciController<O: UciOutput> {
 }
 
 fn format_info_message(iteration: SearchIterationResponse) -> String {
-    let pv_str = iteration.pv().iter().map(|m| format!("{:?}", m)).collect::<Vec<_>>().join(" ");
+    let pv_str = iteration
+        .pv()
+        .iter()
+        .map(|m| format!("{:?}", m))
+        .collect::<Vec<_>>()
+        .join(" ");
 
     let multipv_str = if let Some(mpv) = iteration.multi_pv {
         format!(" multipv {}", mpv)
@@ -64,11 +72,15 @@ impl<O: UciOutput> UciController<O> {
     }
 
     pub fn engine(&self) -> &Engine {
-        self.engine.as_ref().expect("engine is busy in search thread")
+        self.engine
+            .as_ref()
+            .expect("engine is busy in search thread")
     }
 
     pub fn engine_mut(&mut self) -> &mut Engine {
-        self.engine.as_mut().expect("engine is busy in search thread")
+        self.engine
+            .as_mut()
+            .expect("engine is busy in search thread")
     }
 
     fn send(&self, message: &str) {
@@ -129,7 +141,11 @@ impl<O: UciOutput> UciController<O> {
             engine
         });
 
-        self.search_thread = Some(SearchThread { handle, stop_flag, bestmove_sent });
+        self.search_thread = Some(SearchThread {
+            handle,
+            stop_flag,
+            bestmove_sent,
+        });
     }
 
     pub fn run(&mut self, cmd: &str) -> UciRunState {
@@ -168,13 +184,21 @@ impl<O: UciOutput> UciController<O> {
                 UciRunState::Continue
             }
             "setoption" => {
-                if tokens.len() >= 5 && tokens[1] == "name" && tokens[2] == "NNFile" && tokens[3] == "value" {
+                if tokens.len() >= 5
+                    && tokens[1] == "name"
+                    && tokens[2] == "NNFile"
+                    && tokens[3] == "value"
+                {
                     let path = tokens[4];
                     #[cfg(not(target_arch = "wasm32"))]
                     self.collect_search(false);
                     self.engine_mut().set_nn(path.to_string());
                     self.send(&format!("NN file set to '{}'", path));
-                } else if tokens.len() >= 5 && tokens[1] == "name" && tokens[2] == "MultiPV" && tokens[3] == "value" {
+                } else if tokens.len() >= 5
+                    && tokens[1] == "name"
+                    && tokens[2] == "MultiPV"
+                    && tokens[3] == "value"
+                {
                     let multipv = tokens[4].parse::<usize>().unwrap_or(1);
 
                     if multipv == 0 || multipv > 1000 {
@@ -226,7 +250,10 @@ impl<O: UciOutput> UciController<O> {
 
                 if args[1] == "moves" {
                     self.set_moves(INITIAL_FEN, &args[2..]);
-                    self.send(&format!("position set to startpos ({} moves)", args.len() - 2));
+                    self.send(&format!(
+                        "position set to startpos ({} moves)",
+                        args.len() - 2
+                    ));
                     return;
                 }
 
@@ -246,7 +273,11 @@ impl<O: UciOutput> UciController<O> {
                 }
 
                 self.set_moves(&fen, &args[4..]);
-                self.send(&format!("position set to fen '{}' ({} moves)", fen, args.len() - 4));
+                self.send(&format!(
+                    "position set to fen '{}' ({} moves)",
+                    fen,
+                    args.len() - 4
+                ));
             }
             _ => {
                 self.send("unknown position command");
@@ -301,18 +332,24 @@ impl<O: UciOutput> UciController<O> {
         {
             let output = self.output.clone();
             self.spawn_search(move |engine| {
-                engine.make_search_nodes(nodes, Some(&|iteration: SearchIterationResponse| {
-                    output.send(&format_info_message(iteration));
-                }));
+                engine.make_search_nodes(
+                    nodes,
+                    Some(&|iteration: SearchIterationResponse| {
+                        output.send(&format_info_message(iteration));
+                    }),
+                );
             });
         }
 
         #[cfg(target_arch = "wasm32")]
         {
             let output = self.output.clone();
-            self.engine_mut().make_search_nodes(nodes, Some(&|iteration: SearchIterationResponse| {
-                output.send(&format_info_message(iteration));
-            }));
+            self.engine_mut().make_search_nodes(
+                nodes,
+                Some(&|iteration: SearchIterationResponse| {
+                    output.send(&format_info_message(iteration));
+                }),
+            );
             if let Some(mv) = self.engine().best_move() {
                 self.send(&format!("bestmove {:?}", mv));
             } else {
@@ -338,18 +375,26 @@ impl<O: UciOutput> UciController<O> {
         {
             let output = self.output.clone();
             self.spawn_search(move |engine| {
-                engine.make_search(movetime, MAX_PLY as u32, Some(&|iteration: SearchIterationResponse| {
-                    output.send(&format_info_message(iteration));
-                }));
+                engine.make_search(
+                    movetime,
+                    MAX_PLY as u32,
+                    Some(&|iteration: SearchIterationResponse| {
+                        output.send(&format_info_message(iteration));
+                    }),
+                );
             });
         }
 
         #[cfg(target_arch = "wasm32")]
         {
             let output = self.output.clone();
-            self.engine_mut().make_search(movetime, MAX_PLY as u32, Some(&|iteration: SearchIterationResponse| {
-                output.send(&format_info_message(iteration));
-            }));
+            self.engine_mut().make_search(
+                movetime,
+                MAX_PLY as u32,
+                Some(&|iteration: SearchIterationResponse| {
+                    output.send(&format_info_message(iteration));
+                }),
+            );
             if let Some(mv) = self.engine().best_move() {
                 self.send(&format!("bestmove {:?}", mv));
             } else {
@@ -372,9 +417,10 @@ impl<O: UciOutput> UciController<O> {
         #[cfg(target_arch = "wasm32")]
         {
             let output = self.output.clone();
-            self.engine_mut().make_search_infinite(Some(&|iteration: SearchIterationResponse| {
-                output.send(&format_info_message(iteration));
-            }));
+            self.engine_mut()
+                .make_search_infinite(Some(&|iteration: SearchIterationResponse| {
+                    output.send(&format_info_message(iteration));
+                }));
             if let Some(mv) = self.engine().best_move() {
                 self.send(&format!("bestmove {:?}", mv));
             } else {
@@ -400,7 +446,7 @@ pub struct ConsoleClient {
 impl ConsoleClient {
     pub fn new(net_path: String) -> Self {
         Self {
-            controller: UciController::new(ConsoleBridge, net_path)
+            controller: UciController::new(ConsoleBridge, net_path),
         }
     }
 
@@ -413,14 +459,14 @@ impl ConsoleClient {
     }
 }
 
+use crate::board::constants::INITIAL_FEN;
+use crate::search::constants::MAX_PLY;
 #[cfg(target_arch = "wasm32")]
 use js_sys::global;
 #[cfg(target_arch = "wasm32")]
-use wasm_bindgen::{prelude::*, JsCast};
+use wasm_bindgen::{JsCast, prelude::*};
 #[cfg(target_arch = "wasm32")]
 use web_sys::{CustomEvent, CustomEventInit};
-use crate::board::constants::INITIAL_FEN;
-use crate::search::constants::MAX_PLY;
 
 #[cfg(target_arch = "wasm32")]
 fn broadcast(event_name: &str, msg: &str) {

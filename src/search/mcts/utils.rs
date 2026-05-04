@@ -46,7 +46,8 @@ fn get_distance(mv: Move) -> usize {
     let from_col = get_col(from);
     let to_col = get_col(to);
 
-    ((from_row as isize - to_row as isize).abs() + (from_col as isize - to_col as isize).abs()) as usize
+    ((from_row as isize - to_row as isize).abs() + (from_col as isize - to_col as isize).abs())
+        as usize
 }
 
 pub fn move_to_policy_index(mv: Move) -> u16 {
@@ -58,9 +59,7 @@ pub fn move_to_policy_index(mv: Move) -> u16 {
 
     debug_assert!(distance >= 1 && distance <= MAX_DISTANCE);
 
-    from * (DIRECTIONS * MAX_DISTANCE)
-        + direction * MAX_DISTANCE
-        + (distance - 1)
+    from * (DIRECTIONS * MAX_DISTANCE) + direction * MAX_DISTANCE + (distance - 1)
 }
 
 pub fn policy_index_to_move(index: u16) -> Option<Move> {
@@ -95,7 +94,7 @@ pub fn policy_index_to_move(index: u16) -> Option<Move> {
 
 #[cfg(test)]
 mod tests {
-    use crate::board::utils::{get_square};
+    use crate::board::utils::get_square;
     use crate::mv::Move;
     use crate::search::mcts::utils::{move_to_policy_index, policy_index_to_move};
 
