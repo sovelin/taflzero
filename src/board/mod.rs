@@ -7,6 +7,7 @@ mod tests;
 mod fen;
 mod precompute;
 pub mod position_export;
+pub mod rules;
 
 pub use board::*;
 pub use precompute::*;

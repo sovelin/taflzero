@@ -4,9 +4,11 @@ use crate::board::types::Piece;
 pub fn king_is_surrounded(board: &Board) -> bool {
     let king_sq = board.king_sq;
 
-    if PRECOMPUTED.vertical_horizontal_neighbors.len() < 4 {
+    if board.get_rules().is_king_strong && PRECOMPUTED.vertical_horizontal_neighbors.len() < 4 {
         return false;
     }
+
+    let mut is_near_throne = king_sq as usize == PRECOMPUTED.throne_sq;
 
     let mut surround_count = 0;
     for sq in PRECOMPUTED.vertical_horizontal_neighbors[king_sq as usize].iter() {
@@ -15,7 +17,45 @@ pub fn king_is_surrounded(board: &Board) -> bool {
         }
     }
 
-    surround_count >= 4
+    if board.get_rules().is_king_strong {
+        return surround_count >= 4
+    }
+
+    for sq in PRECOMPUTED.vertical_horizontal_neighbors[PRECOMPUTED.throne_sq].iter() {
+        if *sq == king_sq as usize {
+            is_near_throne = true;
+        }
+    }
+
+
+    if is_near_throne {
+        return surround_count >= 4
+    }
+
+    println!("here");
+
+    let top_neighbor = PRECOMPUTED.top_neighbor[king_sq as usize];
+    let bottom_neighbor = PRECOMPUTED.bottom_neighbor[king_sq as usize];
+    let left_neighbor = PRECOMPUTED.left_neighbor[king_sq as usize];
+    let right_neighbor = PRECOMPUTED.right_neighbor[king_sq as usize];
+
+    if let Some(top) = top_neighbor {
+        if let Some(bottom) = bottom_neighbor {
+            if board.board[top] == Piece::ATTACKER && board.board[bottom] == Piece::ATTACKER {
+                return true;
+            }
+        }
+    }
+
+    if let Some(left) = left_neighbor {
+        if let Some(right) = right_neighbor {
+            if board.board[left] == Piece::ATTACKER && board.board[right] == Piece::ATTACKER {
+                return true;
+            }
+        }
+    }
+
+    false
 }
 
 #[cfg(test)]
@@ -118,5 +158,158 @@ mod tests {
 
         let is_surrounded = king_is_surrounded(&board);
         assert!(is_surrounded);
+    }
+
+    mod historical_variant {
+        use crate::board::Board;
+        use crate::board::types::Piece;
+        use crate::board::utils::get_square_from_algebraic;
+        use crate::rules::RulesEnum;
+        use crate::set_board_from_str;
+        use super::*;
+
+        #[test]
+        fn surrounded_by_attackers_from_all_sides_on_throne() {
+            let mut board = Board::new();
+            board.set_rules(RulesEnum::Historical11x11);
+
+            set_board_from_str(
+                &mut board,
+                "...........
+                     ...........
+                     ...........
+                     ...........
+                     .....A.....
+                     ....AKA....
+                     .....A.....
+                     ...........
+                     ...........
+                     ...........
+                     ..........."
+            );
+
+            let is_surrounded = king_is_surrounded(&board);
+            assert!(is_surrounded);
+        }
+
+        #[test]
+         fn surrounded_by_attackers_from_3_sides_on_throne_is_not_win() {
+             let mut board = Board::new();
+             board.set_rules(RulesEnum::Historical11x11);
+
+             set_board_from_str(
+                 &mut board,
+                 "...........
+                     ...........
+                     ...........
+                     ...........
+                     .....D.....
+                     ....AKA....
+                     .....A.....
+                     ...........
+                     ...........
+                     ...........
+                     ..........."
+             );
+
+             let is_surrounded = king_is_surrounded(&board);
+             assert!(!is_surrounded);
+         }
+
+        #[test]
+        fn surrounded_by_attackers_from_3_sides_and_throne_is_win() {
+            let mut board = Board::new();
+            board.set_rules(RulesEnum::Historical11x11);
+
+            set_board_from_str(
+                &mut board,
+                "...........
+                     ...........
+                     ...........
+                     .....A.....
+                     ....AKA....
+                     ...........
+                     ...........
+                     ...........
+                     ...........
+                     ...........
+                     ..........."
+            );
+
+            let is_surrounded = king_is_surrounded(&board);
+            assert!(is_surrounded);
+         }
+
+        #[test]
+        fn surrounded_by_attackers_from_2_horizontal_sides_on_other_sq_is_win() {
+            let mut board = Board::new();
+            board.set_rules(RulesEnum::Historical11x11);
+
+            set_board_from_str(
+                &mut board,
+                "...........
+                     ..D........
+                     .AKA.......
+                     ..D........
+                     ...........
+                     ...........
+                     ...........
+                     ...........
+                     ...........
+                     ...........
+                     ..........."
+            );
+
+            let is_surrounded = king_is_surrounded(&board);
+            assert!(is_surrounded);
+         }
+
+        #[test]
+        fn surrounded_by_attackers_from_2_vertical_sides_on_other_sq_is_win() {
+            let mut board = Board::new();
+            board.set_rules(RulesEnum::Historical11x11);
+
+            set_board_from_str(
+                &mut board,
+                "...........
+                     ..A........
+                     .DKD.......
+                     ..A........
+                     ...........
+                     ...........
+                     ...........
+                     ...........
+                     ...........
+                     ...........
+                     ..........."
+            );
+
+            let is_surrounded = king_is_surrounded(&board);
+            assert!(is_surrounded);
+        }
+
+        #[test]
+        fn surrounded_by_attack0ers_from_2_different_sides_is_not_win() {
+            let mut board = Board::new();
+            board.set_rules(RulesEnum::Historical11x11);
+
+            set_board_from_str(
+                &mut board,
+                "...........
+                     ..A........
+                     .AKD.......
+                     ..D........
+                     ...........
+                     ...........
+                     ...........
+                     ...........
+                     ...........
+                     ...........
+                     ..........."
+            );
+
+            let is_surrounded = king_is_surrounded(&board);
+            assert!(!is_surrounded);
+        }
     }
 }

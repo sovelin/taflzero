@@ -2,11 +2,16 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 use crate::board::fen::FenError;
 use crate::board::PRECOMPUTED;
+use crate::board::rules::{Rules, RulesEnum};
 use crate::board::utils::get_square;
 use crate::nnue::{calculate_nnue_index, Weights1, Weights2, NNUE, STM_BIT, load_default_weights};
 use super::zobrist::{ZOBRIST_DATA};
 use super::types::{OptionalSquare, Piece, Side, Square, ZobristHash};
 use super::constants::{SQS, ATTACKERS_MAX, DEFENDERS_MAX, BOARD_SIZE, HOLE, INITIAL_FEN};
+
+
+
+
 
 pub struct Board {
     pub board: [Piece; SQS],
@@ -24,6 +29,7 @@ pub struct Board {
     pub last_move_to: OptionalSquare,
     pub nnue: NNUE,
     pub was_capture: bool,
+    pub rules: RulesEnum
 }
 
 impl Board {
@@ -45,6 +51,7 @@ impl Board {
             last_move_to: HOLE,
             nnue: NNUE::new(w1, w2),
             was_capture: false,
+            rules: RulesEnum::Copenhagen11x11
         }
     }
 
@@ -56,6 +63,14 @@ impl Board {
 
     pub fn set_nnue(&mut self, w1: Weights1, w2: Weights2) {
         self.nnue = NNUE::new(w1, w2);
+    }
+
+    pub fn get_rules(&self) -> Rules {
+        self.rules.rules()
+    }
+
+    pub fn set_rules(&mut self, rules: RulesEnum) {
+        self.rules = rules;
     }
 
     pub fn clear(&mut self) {
