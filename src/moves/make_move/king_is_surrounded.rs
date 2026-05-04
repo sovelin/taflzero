@@ -32,8 +32,6 @@ pub fn king_is_surrounded(board: &Board) -> bool {
         return surround_count >= 4
     }
 
-    println!("here");
-
     let top_neighbor = PRECOMPUTED.top_neighbor[king_sq as usize];
     let bottom_neighbor = PRECOMPUTED.bottom_neighbor[king_sq as usize];
     let left_neighbor = PRECOMPUTED.left_neighbor[king_sq as usize];

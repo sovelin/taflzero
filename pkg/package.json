@@ -11,5 +11,8 @@
   "types": "taflzero.d.ts",
   "sideEffects": [
     "./snippets/*"
-  ]
+  ],
+  "dependencies": {
+    "taflzero": "../pkg"
+  }
 }

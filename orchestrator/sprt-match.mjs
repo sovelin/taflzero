@@ -263,10 +263,16 @@ class UciEngine {
 
 // ─── Opening generation ──────────────────────────────────────────────────────
 
-function createOpening(movesCount) {
-    const engine = new EngineClient(4);
-    const initialFen = "3aaaaa3/5a5/11/a4d4a/a3ddd3a/aa1ddkdd1aa/a3ddd3a/a4d4a/11/5a5/3aaaaa3 a";
+const createEngineClient = () => {
+    const engine = new EngineClient();
+    engine.set_variant("historical11x11");
+    const initialFen = "4aaa4/4aaa4/5d5/5d5/aa3d3aa/aadddkdddaa/aa3d3aa/5d5/5d5/4aaa4/4aaa4 a"
     engine.set_fen(initialFen);
+    return engine;
+}
+
+function createOpening(movesCount) {
+    const engine = createEngineClient();
 
     for (let i = 0; i < movesCount; i++) {
         const totalSq = get_total_squares();
@@ -293,7 +299,7 @@ function createOpening(movesCount) {
 
 class GameController {
     constructor() {
-        this.engine = new EngineClient(4);
+        this.engine = createEngineClient();
     }
 
     checkTerminal(fen, moves) {
