@@ -67,6 +67,8 @@ pub fn defenders_is_surrounded(board: &Board) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::error::Error;
+
     use super::defenders_is_surrounded;
     use crate::board::Board;
     use crate::board::types::Piece;
@@ -218,23 +220,28 @@ mod tests {
     }
 
     #[test]
-    fn not_surrounded_if_at_leadt_one_piece_could_go_to_edge() {
+    fn not_surrounded_if_at_leadt_one_piece_could_go_to_edge() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
-        board.set_fen("2a8/11/aa3aa2a1/1da2a5/ad1aaa5/1aa1k1a2aa/3a1aa3a/1a2a6/11/11/11 d");
+        board.set_fen("2a8/11/aa3aa2a1/1da2a5/ad1aaa5/1aa1k1a2aa/3a1aa3a/1a2a6/11/11/11 d")?;
 
         let is_surrounded = defenders_is_surrounded(&board);
         assert!(!is_surrounded);
+
+        Ok(())
     }
 
     #[test]
-    fn edge_case_when_capture_happen_with_surrounding() {
+    fn edge_case_when_capture_happen_with_surrounding() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
-        board.set_fen("11/11/3aa5a/2akdaaa1a1/3a1d1da1d/4a2d1aa/4ad1daa1/2aaadda3/5aa4/11/6a4 a");
+        board
+            .set_fen("11/11/3aa5a/2akdaaa1a1/3a1d1da1d/4a2d1aa/4ad1daa1/2aaadda3/5aa4/11/6a4 a")?;
         // make move
         board
             .make_move_simple(create_move_from_algebraic("k9k8").unwrap())
             .unwrap();
         let is_surrounded = defenders_is_surrounded(&board);
         assert!(is_surrounded);
+
+        Ok(())
     }
 }

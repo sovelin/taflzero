@@ -76,6 +76,8 @@ impl Board {
 
 #[cfg(test)]
 mod tests {
+    use std::error::Error;
+
     use crate::board::Board;
     use crate::board::constants::HOLE;
     use crate::board::types::{Piece, Side};
@@ -99,55 +101,61 @@ mod tests {
     }
 
     #[test]
-    fn simple_move() {
+    fn simple_move() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
         board.side_to_move = Side::ATTACKERS;
-        board.set_piece(get_square_from_algebraic("a2"), Piece::ATTACKER);
+        board.set_piece(get_square_from_algebraic("a2"), Piece::ATTACKER)?;
         let mv = create_move_from_algebraic("a2a4").unwrap();
 
-        board.make_move_simple(mv);
+        board.make_move_simple(mv)?;
 
         expect_attacker_on(&board, "a4");
         expect_no_pice_on(&board, "a2");
         expect_attackers_count(&board, 1);
         expect_defenders_count(&board, 0);
-        expect_side_to_be(&board, Side::DEFENDERS)
+        expect_side_to_be(&board, Side::DEFENDERS);
+
+        Ok(())
     }
 
     #[test]
-    fn capture_defender_in_sandwich_prepare() {
+    fn capture_defender_in_sandwich_prepare() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
         board.side_to_move = Side::ATTACKERS;
-        board.set_piece(get_square_from_algebraic("a2"), Piece::ATTACKER);
-        board.set_piece(get_square_from_algebraic("a4"), Piece::DEFENDER);
-        board.set_piece(get_square_from_algebraic("a5"), Piece::ATTACKER);
+        board.set_piece(get_square_from_algebraic("a2"), Piece::ATTACKER)?;
+        board.set_piece(get_square_from_algebraic("a4"), Piece::DEFENDER)?;
+        board.set_piece(get_square_from_algebraic("a5"), Piece::ATTACKER)?;
 
         let mv = create_move_from_algebraic("a2a3").unwrap();
-        board.make_move_simple(mv);
+        board.make_move_simple(mv)?;
 
         expect_attacker_on(&board, "a3");
         expect_attacker_on(&board, "a5");
         expect_no_pice_on(&board, "a4");
         expect_attackers_count(&board, 2);
         expect_defenders_count(&board, 0);
+
+        Ok(())
     }
 
     #[test]
-    fn king_not_captured_in_sandwich() {
+    fn king_not_captured_in_sandwich() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
         board.side_to_move = Side::ATTACKERS;
-        board.set_piece(get_square_from_algebraic("a2"), Piece::ATTACKER);
-        board.set_piece(get_square_from_algebraic("a4"), Piece::KING);
-        board.set_piece(get_square_from_algebraic("a5"), Piece::ATTACKER);
+        board.set_piece(get_square_from_algebraic("a2"), Piece::ATTACKER)?;
+        board.set_piece(get_square_from_algebraic("a4"), Piece::KING)?;
+        board.set_piece(get_square_from_algebraic("a5"), Piece::ATTACKER)?;
 
         let mv = create_move_from_algebraic("a2a3").unwrap();
-        board.make_move_simple(mv);
+        board.make_move_simple(mv)?;
 
         expect_attacker_on(&board, "a3");
         expect_attacker_on(&board, "a5");
         expect_king_on(&board, "a4");
         expect_attackers_count(&board, 2);
         expect_defenders_count(&board, 0);
+
+        Ok(())
     }
 
     #[test]
@@ -736,14 +744,16 @@ mod tests {
     }
 
     mod king_capture_rule {
+        use std::error::Error;
+
         use crate::Board;
         use crate::board::utils::get_square_from_algebraic;
         use crate::mv::create_move_from_algebraic;
-        use crate::types::{OptionalSquare, Piece, Side, Square};
+        use crate::types::{OptionalSquare, Piece, Side};
         use crate::undo::{CapturedPiece, UndoMove};
 
         #[test]
-        fn king_capture_possible_not_near_throne() {
+        fn king_capture_possible_not_near_throne() -> Result<(), Box<dyn Error>> {
             let mut board = Board::new();
             board.set_side(Side::ATTACKERS);
             board
@@ -765,7 +775,7 @@ mod tests {
             // make move d7d6
             let mv = create_move_from_algebraic("d7d6").unwrap();
             let mut undo = UndoMove::new();
-            board.make_move(mv, &mut undo);
+            board.make_move(mv, &mut undo)?;
             assert_eq!(undo.captured_pieces_count, 1);
             assert_eq!(
                 undo.captured_pieces()[0],
@@ -774,10 +784,12 @@ mod tests {
                     piece: Piece::KING
                 }
             );
+
+            Ok(())
         }
 
         #[test]
-        fn king_capture_not_possible_near_throne() {
+        fn king_capture_not_possible_near_throne() -> Result<(), Box<dyn Error>> {
             let mut board = Board::new();
             board.set_side(Side::ATTACKERS);
             board
@@ -796,7 +808,7 @@ mod tests {
             // make move e7e6
             let mv = create_move_from_algebraic("a6d6").unwrap();
             let mut undo = UndoMove::new();
-            board.make_move(mv, &mut undo);
+            board.make_move(mv, &mut undo)?;
             assert_eq!(undo.captured_pieces_count, 1);
             assert_eq!(
                 undo.captured_pieces()[0],
@@ -805,10 +817,12 @@ mod tests {
                     piece: Piece::KING
                 }
             );
+
+            Ok(())
         }
 
         #[test]
-        fn king_capture_impossible_if_not_surrounded() {
+        fn king_capture_impossible_if_not_surrounded() -> Result<(), Box<dyn Error>> {
             let mut board = Board::new();
             board.set_side(Side::ATTACKERS);
             board
@@ -824,12 +838,15 @@ mod tests {
             // make move a6d6
             let mv = create_move_from_algebraic("a6d6").unwrap();
             let mut undo = UndoMove::new();
-            board.make_move(mv, &mut undo);
+            board.make_move(mv, &mut undo)?;
             assert_eq!(undo.captured_pieces_count, 0);
+
+            Ok(())
         }
 
         #[test]
-        fn king_capture_impossible_if_not_surrounded_fully_by_attackers() {
+        fn king_capture_impossible_if_not_surrounded_fully_by_attackers()
+        -> Result<(), Box<dyn Error>> {
             let mut board = Board::new();
             board.set_side(Side::ATTACKERS);
             board
@@ -848,12 +865,14 @@ mod tests {
             // make move a6d6
             let mv = create_move_from_algebraic("a6d6").unwrap();
             let mut undo = UndoMove::new();
-            board.make_move(mv, &mut undo);
+            board.make_move(mv, &mut undo)?;
             assert_eq!(undo.captured_pieces_count, 0);
+
+            Ok(())
         }
 
         #[test]
-        fn king_already_surrounded_but_not_capture_move() {
+        fn king_already_surrounded_but_not_capture_move() -> Result<(), Box<dyn Error>> {
             let mut board = Board::new();
             board.set_side(Side::ATTACKERS);
             board
@@ -878,12 +897,14 @@ mod tests {
             // make move e5e4
             let mv = create_move_from_algebraic("d1e1").unwrap();
             let mut undo = UndoMove::new();
-            board.make_move(mv, &mut undo);
+            board.make_move(mv, &mut undo)?;
             assert_eq!(undo.captured_pieces_count, 0);
+
+            Ok(())
         }
 
         #[test]
-        fn king_is_removing_and_go_back_working_correctly() {
+        fn king_is_removing_and_go_back_working_correctly() -> Result<(), Box<dyn Error>> {
             let mut board = Board::new();
             board.set_side(Side::ATTACKERS);
             board
@@ -902,7 +923,7 @@ mod tests {
             // make move e7e6
             let mv = create_move_from_algebraic("a6d6").unwrap();
             let mut undo = UndoMove::new();
-            board.make_move(mv, &mut undo);
+            board.make_move(mv, &mut undo)?;
             assert_eq!(undo.captured_pieces_count, 1);
             assert_eq!(
                 undo.captured_pieces()[0],
@@ -919,18 +940,23 @@ mod tests {
                 board.king_sq,
                 get_square_from_algebraic("e6") as OptionalSquare
             );
+
+            Ok(())
         }
 
         #[test]
-        fn another_move_should_not_trigger_shield_wall() {
+        fn another_move_should_not_trigger_shield_wall() -> Result<(), Box<dyn Error>> {
             let mut board = Board::new();
             // set fen
-            board.set_fen("3aaaa4/11/11/6a4/3aaaa3a/a2ad5a/3adka4/3adda4/4a1a4/5d1aa2/3a2adda1 a");
+            board
+                .set_fen("3aaaa4/11/11/6a4/3aaaa3a/a2ad5a/3adka4/3adda4/4a1a4/5d1aa2/3a2adda1 a")?;
             let mv = create_move_from_algebraic("d1e1").unwrap();
             let mut undo = UndoMove::new();
             board.make_move(mv, &mut undo).unwrap();
 
             assert_eq!(undo.captured_pieces_count, 0);
+
+            Ok(())
         }
     }
 }

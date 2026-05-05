@@ -137,6 +137,8 @@ impl MoveGen {
 }
 #[cfg(test)]
 mod tests {
+    use std::error::Error;
+
     use super::*;
     use crate::board::board::Board;
     use crate::board::types::{Piece, Side};
@@ -183,10 +185,10 @@ mod tests {
     }
 
     #[test]
-    fn one_piece_on_b1() {
+    fn one_piece_on_b1() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
         board.side_to_move = Side::ATTACKERS;
-        board.set_piece(get_square_from_algebraic("b1"), Piece::ATTACKER);
+        board.set_piece(get_square_from_algebraic("b1"), Piece::ATTACKER)?;
 
         let mut movegen = MoveGen::new();
         movegen.generate_moves(&board);
@@ -202,14 +204,16 @@ mod tests {
         );
 
         expect_moves_not_exists(&movegen, vec!["b1a1", "b1a10"]);
+
+        Ok(())
     }
 
     #[test]
-    fn one_piece_on_b1_and_enemy_piece_on_c1() {
+    fn one_piece_on_b1_and_enemy_piece_on_c1() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
         board.side_to_move = Side::ATTACKERS;
-        board.set_piece(get_square_from_algebraic("b1"), Piece::ATTACKER);
-        board.set_piece(get_square_from_algebraic("c1"), Piece::DEFENDER);
+        board.set_piece(get_square_from_algebraic("b1"), Piece::ATTACKER)?;
+        board.set_piece(get_square_from_algebraic("c1"), Piece::DEFENDER)?;
 
         let mut movegen = MoveGen::new();
         movegen.generate_moves(&board);
@@ -222,14 +226,16 @@ mod tests {
                 "b1b2", "b1b3", "b1b4", "b1b5", "b1b6", "b1b7", "b1b8", "b1b9", "b1b10", "b1b11",
             ],
         );
+
+        Ok(())
     }
 
     #[test]
-    fn one_piece_on_a2_and_enemy_piece_on_a3() {
+    fn one_piece_on_a2_and_enemy_piece_on_a3() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
         board.side_to_move = Side::ATTACKERS;
-        board.set_piece(get_square_from_algebraic("a2"), Piece::ATTACKER);
-        board.set_piece(get_square_from_algebraic("a3"), Piece::DEFENDER);
+        board.set_piece(get_square_from_algebraic("a2"), Piece::ATTACKER)?;
+        board.set_piece(get_square_from_algebraic("a3"), Piece::DEFENDER)?;
 
         let mut movegen = MoveGen::new();
         movegen.generate_moves(&board);
@@ -242,59 +248,69 @@ mod tests {
                 "a2b2", "a2c2", "a2d2", "a2e2", "a2f2", "a2g2", "a2h2", "a2i2", "a2j2", "a2k2",
             ],
         );
+
+        Ok(())
     }
 
     #[test]
-    fn piece_should_not_move_onto_throne_f6() {
+    fn piece_should_not_move_onto_throne_f6() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
         board.side_to_move = Side::DEFENDERS;
-        board.set_piece(get_square_from_algebraic("f5"), Piece::DEFENDER);
+        board.set_piece(get_square_from_algebraic("f5"), Piece::DEFENDER)?;
 
         let mut movegen = MoveGen::new();
         movegen.generate_moves(&board);
 
         expect_moves_not_exists(&movegen, vec!["f5f6"]);
+
+        Ok(())
     }
 
     #[test]
-    fn king_could_move_onto_throne_f6() {
+    fn king_could_move_onto_throne_f6() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
         board.side_to_move = Side::DEFENDERS;
-        board.set_piece(get_square_from_algebraic("f5"), Piece::KING);
+        board.set_piece(get_square_from_algebraic("f5"), Piece::KING)?;
 
         let mut movegen = MoveGen::new();
         movegen.generate_moves(&board);
 
         expect_moves_exists(&movegen, vec!["f5f6"]);
+
+        Ok(())
     }
 
     #[test]
-    fn king_could_move_onto_corner_a1() {
+    fn king_could_move_onto_corner_a1() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
         board.side_to_move = Side::DEFENDERS;
-        board.set_piece(get_square_from_algebraic("a2"), Piece::KING);
+        board.set_piece(get_square_from_algebraic("a2"), Piece::KING)?;
 
         let mut movegen = MoveGen::new();
         movegen.generate_moves(&board);
 
         expect_moves_count(&movegen, 20);
         expect_moves_exists(&movegen, vec!["a2a1"]);
+
+        Ok(())
     }
 
     #[test]
-    fn king_have_zero_moves_in_blockade() {
+    fn king_have_zero_moves_in_blockade() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
         board.side_to_move = Side::DEFENDERS;
 
-        board.set_piece(get_square_from_algebraic("e5"), Piece::KING);
-        board.set_piece(get_square_from_algebraic("e4"), Piece::ATTACKER);
-        board.set_piece(get_square_from_algebraic("e6"), Piece::ATTACKER);
-        board.set_piece(get_square_from_algebraic("d5"), Piece::ATTACKER);
-        board.set_piece(get_square_from_algebraic("f5"), Piece::ATTACKER);
+        board.set_piece(get_square_from_algebraic("e5"), Piece::KING)?;
+        board.set_piece(get_square_from_algebraic("e4"), Piece::ATTACKER)?;
+        board.set_piece(get_square_from_algebraic("e6"), Piece::ATTACKER)?;
+        board.set_piece(get_square_from_algebraic("d5"), Piece::ATTACKER)?;
+        board.set_piece(get_square_from_algebraic("f5"), Piece::ATTACKER)?;
 
         let mut movegen = MoveGen::new();
         movegen.generate_moves(&board);
 
         expect_moves_count(&movegen, 0);
+
+        Ok(())
     }
 }

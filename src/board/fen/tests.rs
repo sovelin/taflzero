@@ -60,23 +60,27 @@ mod tests {
     }
 
     mod get_fen {
+        use std::error::Error;
+
         use super::*;
 
         #[test]
-        fn one_king_two_attackers_two_defenders_attackers_to_move() {
+        fn one_king_two_attackers_two_defenders_attackers_to_move() -> Result<(), Box<dyn Error>> {
             let mut b = Board::new();
 
-            b.set_piece(get_square_from_algebraic("i3"), Piece::ATTACKER);
-            b.set_piece(get_square_from_algebraic("f6"), Piece::KING);
-            b.set_piece(get_square_from_algebraic("b4"), Piece::DEFENDER);
-            b.set_piece(get_square_from_algebraic("h7"), Piece::DEFENDER);
-            b.set_piece(get_square_from_algebraic("e10"), Piece::ATTACKER);
-            b.set_piece(get_square_from_algebraic("k1"), Piece::ATTACKER);
+            b.set_piece(get_square_from_algebraic("i3"), Piece::ATTACKER)?;
+            b.set_piece(get_square_from_algebraic("f6"), Piece::KING)?;
+            b.set_piece(get_square_from_algebraic("b4"), Piece::DEFENDER)?;
+            b.set_piece(get_square_from_algebraic("h7"), Piece::DEFENDER)?;
+            b.set_piece(get_square_from_algebraic("e10"), Piece::ATTACKER)?;
+            b.set_piece(get_square_from_algebraic("k1"), Piece::ATTACKER)?;
 
             b.side_to_move = Side::ATTACKERS;
 
             let fen = b.get_fen();
             assert_eq!(fen, "11/4a6/11/11/7d3/5k5/11/1d9/8a2/11/10a a");
+
+            Ok(())
         }
     }
 

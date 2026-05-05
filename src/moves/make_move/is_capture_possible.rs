@@ -45,17 +45,19 @@ pub fn is_capture_possible(
 
 #[cfg(test)]
 mod tests {
+    use std::error::Error;
+
     use super::*;
     use crate::board::board::Board;
-    use crate::board::types::{Piece, Side, Square};
+    use crate::board::types::Piece;
     use crate::board::utils::get_square_from_algebraic;
 
     #[test]
-    fn attacker_capture_defender_simple() {
+    fn attacker_capture_defender_simple() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
-        board.set_piece(get_square_from_algebraic("c2"), Piece::ATTACKER);
-        board.set_piece(get_square_from_algebraic("c4"), Piece::ATTACKER);
-        board.set_piece(get_square_from_algebraic("c3"), Piece::DEFENDER);
+        board.set_piece(get_square_from_algebraic("c2"), Piece::ATTACKER)?;
+        board.set_piece(get_square_from_algebraic("c4"), Piece::ATTACKER)?;
+        board.set_piece(get_square_from_algebraic("c3"), Piece::DEFENDER)?;
 
         assert!(is_capture_possible(
             &board,
@@ -63,14 +65,16 @@ mod tests {
             get_square_from_algebraic("c2"),
             get_square_from_algebraic("c4"),
         ));
+
+        Ok(())
     }
 
     #[test]
-    fn defender_capture_attacker_simple() {
+    fn defender_capture_attacker_simple() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
-        board.set_piece(get_square_from_algebraic("c2"), Piece::DEFENDER);
-        board.set_piece(get_square_from_algebraic("c4"), Piece::DEFENDER);
-        board.set_piece(get_square_from_algebraic("c3"), Piece::ATTACKER);
+        board.set_piece(get_square_from_algebraic("c2"), Piece::DEFENDER)?;
+        board.set_piece(get_square_from_algebraic("c4"), Piece::DEFENDER)?;
+        board.set_piece(get_square_from_algebraic("c3"), Piece::ATTACKER)?;
 
         assert!(is_capture_possible(
             &board,
@@ -78,14 +82,16 @@ mod tests {
             get_square_from_algebraic("c2"),
             get_square_from_algebraic("c4"),
         ));
+
+        Ok(())
     }
 
     #[test]
-    fn king_can_capture_attacker_simple() {
+    fn king_can_capture_attacker_simple() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
-        board.set_piece(get_square_from_algebraic("c2"), Piece::DEFENDER);
-        board.set_piece(get_square_from_algebraic("c4"), Piece::KING);
-        board.set_piece(get_square_from_algebraic("c3"), Piece::ATTACKER);
+        board.set_piece(get_square_from_algebraic("c2"), Piece::DEFENDER)?;
+        board.set_piece(get_square_from_algebraic("c4"), Piece::KING)?;
+        board.set_piece(get_square_from_algebraic("c3"), Piece::ATTACKER)?;
 
         assert!(is_capture_possible(
             &board,
@@ -93,14 +99,16 @@ mod tests {
             get_square_from_algebraic("c2"),
             get_square_from_algebraic("c4"),
         ));
+
+        Ok(())
     }
 
     #[test]
-    fn attacker_cannot_capture_king_simple() {
+    fn attacker_cannot_capture_king_simple() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
-        board.set_piece(get_square_from_algebraic("c2"), Piece::ATTACKER);
-        board.set_piece(get_square_from_algebraic("c4"), Piece::ATTACKER);
-        board.set_piece(get_square_from_algebraic("c3"), Piece::KING);
+        board.set_piece(get_square_from_algebraic("c2"), Piece::ATTACKER)?;
+        board.set_piece(get_square_from_algebraic("c4"), Piece::ATTACKER)?;
+        board.set_piece(get_square_from_algebraic("c3"), Piece::KING)?;
 
         assert!(!is_capture_possible(
             &board,
@@ -108,15 +116,17 @@ mod tests {
             get_square_from_algebraic("c2"),
             get_square_from_algebraic("c4"),
         ));
+
+        Ok(())
     }
 
     // --- Corners ---
 
     #[test]
-    fn king_can_capture_on_corners() {
+    fn king_can_capture_on_corners() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
-        board.set_piece(get_square_from_algebraic("a2"), Piece::ATTACKER);
-        board.set_piece(get_square_from_algebraic("a3"), Piece::KING);
+        board.set_piece(get_square_from_algebraic("a2"), Piece::ATTACKER)?;
+        board.set_piece(get_square_from_algebraic("a3"), Piece::KING)?;
 
         assert!(is_capture_possible(
             &board,
@@ -124,13 +134,15 @@ mod tests {
             get_square_from_algebraic("a1"),
             get_square_from_algebraic("a3"),
         ));
+
+        Ok(())
     }
 
     #[test]
-    fn king_can_capture_on_corners_swapped_params() {
+    fn king_can_capture_on_corners_swapped_params() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
-        board.set_piece(get_square_from_algebraic("a2"), Piece::ATTACKER);
-        board.set_piece(get_square_from_algebraic("a3"), Piece::KING);
+        board.set_piece(get_square_from_algebraic("a2"), Piece::ATTACKER)?;
+        board.set_piece(get_square_from_algebraic("a3"), Piece::KING)?;
 
         assert!(is_capture_possible(
             &board,
@@ -138,13 +150,15 @@ mod tests {
             get_square_from_algebraic("a3"),
             get_square_from_algebraic("a1"),
         ));
+
+        Ok(())
     }
 
     #[test]
-    fn defender_can_capture_on_corners() {
+    fn defender_can_capture_on_corners() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
-        board.set_piece(get_square_from_algebraic("a2"), Piece::ATTACKER);
-        board.set_piece(get_square_from_algebraic("a3"), Piece::DEFENDER);
+        board.set_piece(get_square_from_algebraic("a2"), Piece::ATTACKER)?;
+        board.set_piece(get_square_from_algebraic("a3"), Piece::DEFENDER)?;
 
         assert!(is_capture_possible(
             &board,
@@ -152,13 +166,15 @@ mod tests {
             get_square_from_algebraic("a1"),
             get_square_from_algebraic("a3"),
         ));
+
+        Ok(())
     }
 
     #[test]
-    fn attacker_can_capture_defender_on_corners() {
+    fn attacker_can_capture_defender_on_corners() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
-        board.set_piece(get_square_from_algebraic("a2"), Piece::DEFENDER);
-        board.set_piece(get_square_from_algebraic("a3"), Piece::ATTACKER);
+        board.set_piece(get_square_from_algebraic("a2"), Piece::DEFENDER)?;
+        board.set_piece(get_square_from_algebraic("a3"), Piece::ATTACKER)?;
 
         assert!(is_capture_possible(
             &board,
@@ -166,13 +182,15 @@ mod tests {
             get_square_from_algebraic("a1"),
             get_square_from_algebraic("a3"),
         ));
+
+        Ok(())
     }
 
     #[test]
-    fn attacker_can_capture_defender_on_other_corner() {
+    fn attacker_can_capture_defender_on_other_corner() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
-        board.set_piece(get_square_from_algebraic("k10"), Piece::DEFENDER);
-        board.set_piece(get_square_from_algebraic("k9"), Piece::ATTACKER);
+        board.set_piece(get_square_from_algebraic("k10"), Piece::DEFENDER)?;
+        board.set_piece(get_square_from_algebraic("k9"), Piece::ATTACKER)?;
 
         assert!(is_capture_possible(
             &board,
@@ -180,15 +198,17 @@ mod tests {
             get_square_from_algebraic("k11"),
             get_square_from_algebraic("k9"),
         ));
+
+        Ok(())
     }
 
     // --- Near throne ---
 
     #[test]
-    fn king_can_capture_near_throne() {
+    fn king_can_capture_near_throne() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
-        board.set_piece(get_square_from_algebraic("f5"), Piece::ATTACKER);
-        board.set_piece(get_square_from_algebraic("f4"), Piece::KING);
+        board.set_piece(get_square_from_algebraic("f5"), Piece::ATTACKER)?;
+        board.set_piece(get_square_from_algebraic("f4"), Piece::KING)?;
 
         assert!(is_capture_possible(
             &board,
@@ -196,13 +216,15 @@ mod tests {
             get_square_from_algebraic("f6"),
             get_square_from_algebraic("f4"),
         ));
+
+        Ok(())
     }
 
     #[test]
-    fn attacker_can_capture_defender_near_throne() {
+    fn attacker_can_capture_defender_near_throne() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
-        board.set_piece(get_square_from_algebraic("f5"), Piece::DEFENDER);
-        board.set_piece(get_square_from_algebraic("f4"), Piece::ATTACKER);
+        board.set_piece(get_square_from_algebraic("f5"), Piece::DEFENDER)?;
+        board.set_piece(get_square_from_algebraic("f4"), Piece::ATTACKER)?;
 
         assert!(is_capture_possible(
             &board,
@@ -210,13 +232,15 @@ mod tests {
             get_square_from_algebraic("f6"),
             get_square_from_algebraic("f4"),
         ));
+
+        Ok(())
     }
 
     #[test]
-    fn defender_can_capture_attacker_near_throne() {
+    fn defender_can_capture_attacker_near_throne() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
-        board.set_piece(get_square_from_algebraic("f5"), Piece::ATTACKER);
-        board.set_piece(get_square_from_algebraic("f4"), Piece::DEFENDER);
+        board.set_piece(get_square_from_algebraic("f5"), Piece::ATTACKER)?;
+        board.set_piece(get_square_from_algebraic("f4"), Piece::DEFENDER)?;
 
         assert!(is_capture_possible(
             &board,
@@ -224,15 +248,18 @@ mod tests {
             get_square_from_algebraic("f6"),
             get_square_from_algebraic("f4"),
         ));
+
+        Ok(())
     }
 
     // --- Negative cases / special rules ---
 
     #[test]
-    fn king_cannot_capture_defender_on_corner_because_same_side_rule() {
+    fn king_cannot_capture_defender_on_corner_because_same_side_rule() -> Result<(), Box<dyn Error>>
+    {
         let mut board = Board::new();
-        board.set_piece(get_square_from_algebraic("a2"), Piece::DEFENDER);
-        board.set_piece(get_square_from_algebraic("a3"), Piece::KING);
+        board.set_piece(get_square_from_algebraic("a2"), Piece::DEFENDER)?;
+        board.set_piece(get_square_from_algebraic("a3"), Piece::KING)?;
 
         assert!(!is_capture_possible(
             &board,
@@ -240,14 +267,16 @@ mod tests {
             get_square_from_algebraic("a1"),
             get_square_from_algebraic("a3"),
         ));
+
+        Ok(())
     }
 
     #[test]
-    fn no_capture_when_both_sides_not_same() {
+    fn no_capture_when_both_sides_not_same() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
-        board.set_piece(get_square_from_algebraic("c2"), Piece::ATTACKER);
-        board.set_piece(get_square_from_algebraic("c4"), Piece::DEFENDER);
-        board.set_piece(get_square_from_algebraic("c3"), Piece::DEFENDER);
+        board.set_piece(get_square_from_algebraic("c2"), Piece::ATTACKER)?;
+        board.set_piece(get_square_from_algebraic("c4"), Piece::DEFENDER)?;
+        board.set_piece(get_square_from_algebraic("c3"), Piece::DEFENDER)?;
 
         assert!(!is_capture_possible(
             &board,
@@ -255,14 +284,16 @@ mod tests {
             get_square_from_algebraic("c2"),
             get_square_from_algebraic("c4"),
         ));
+
+        Ok(())
     }
 
     #[test]
-    fn no_capture_if_all_pieces_same() {
+    fn no_capture_if_all_pieces_same() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
-        board.set_piece(get_square_from_algebraic("c2"), Piece::ATTACKER);
-        board.set_piece(get_square_from_algebraic("c4"), Piece::ATTACKER);
-        board.set_piece(get_square_from_algebraic("c3"), Piece::ATTACKER);
+        board.set_piece(get_square_from_algebraic("c2"), Piece::ATTACKER)?;
+        board.set_piece(get_square_from_algebraic("c4"), Piece::ATTACKER)?;
+        board.set_piece(get_square_from_algebraic("c3"), Piece::ATTACKER)?;
 
         assert!(!is_capture_possible(
             &board,
@@ -270,13 +301,15 @@ mod tests {
             get_square_from_algebraic("c2"),
             get_square_from_algebraic("c4"),
         ));
+
+        Ok(())
     }
 
     #[test]
-    fn no_capture_when_between_is_empty() {
+    fn no_capture_when_between_is_empty() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
-        board.set_piece(get_square_from_algebraic("c2"), Piece::ATTACKER);
-        board.set_piece(get_square_from_algebraic("c4"), Piece::ATTACKER);
+        board.set_piece(get_square_from_algebraic("c2"), Piece::ATTACKER)?;
+        board.set_piece(get_square_from_algebraic("c4"), Piece::ATTACKER)?;
 
         assert!(!is_capture_possible(
             &board,
@@ -284,14 +317,17 @@ mod tests {
             get_square_from_algebraic("c2"),
             get_square_from_algebraic("c4"),
         ));
+
+        Ok(())
     }
 
     #[test]
-    fn no_capture_when_king_on_throne_and_trying_to_capture_defender() {
+    fn no_capture_when_king_on_throne_and_trying_to_capture_defender() -> Result<(), Box<dyn Error>>
+    {
         let mut board = Board::new();
-        board.set_piece(get_square_from_algebraic("f6"), Piece::KING); // throne
-        board.set_piece(get_square_from_algebraic("f5"), Piece::DEFENDER); // target
-        board.set_piece(get_square_from_algebraic("f4"), Piece::ATTACKER); // second side
+        board.set_piece(get_square_from_algebraic("f6"), Piece::KING)?; // throne
+        board.set_piece(get_square_from_algebraic("f5"), Piece::DEFENDER)?; // target
+        board.set_piece(get_square_from_algebraic("f4"), Piece::ATTACKER)?; // second side
 
         assert!(!is_capture_possible(
             &board,
@@ -299,14 +335,17 @@ mod tests {
             get_square_from_algebraic("f6"),
             get_square_from_algebraic("f4"),
         ));
+
+        Ok(())
     }
 
     #[test]
-    fn capture_when_king_on_throne_captures_attacker_with_help_of_defender() {
+    fn capture_when_king_on_throne_captures_attacker_with_help_of_defender()
+    -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
-        board.set_piece(get_square_from_algebraic("f6"), Piece::KING); // throne
-        board.set_piece(get_square_from_algebraic("f5"), Piece::ATTACKER); // target
-        board.set_piece(get_square_from_algebraic("f4"), Piece::DEFENDER); // second side
+        board.set_piece(get_square_from_algebraic("f6"), Piece::KING)?; // throne
+        board.set_piece(get_square_from_algebraic("f5"), Piece::ATTACKER)?; // target
+        board.set_piece(get_square_from_algebraic("f4"), Piece::DEFENDER)?; // second side
 
         assert!(is_capture_possible(
             &board,
@@ -314,13 +353,15 @@ mod tests {
             get_square_from_algebraic("f6"),
             get_square_from_algebraic("f4"),
         ));
+
+        Ok(())
     }
 
     #[test]
-    fn no_capture_when_king_on_throne_but_no_second_defender() {
+    fn no_capture_when_king_on_throne_but_no_second_defender() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
-        board.set_piece(get_square_from_algebraic("f6"), Piece::KING); // throne
-        board.set_piece(get_square_from_algebraic("f5"), Piece::ATTACKER); // target
+        board.set_piece(get_square_from_algebraic("f6"), Piece::KING)?; // throne
+        board.set_piece(get_square_from_algebraic("f5"), Piece::ATTACKER)?; // target
 
         assert!(!is_capture_possible(
             &board,
@@ -328,5 +369,7 @@ mod tests {
             get_square_from_algebraic("f6"),
             get_square_from_algebraic("f4"), // empty square, no defender
         ));
+
+        Ok(())
     }
 }
