@@ -33,7 +33,8 @@ impl AreaList {
     }
 
     pub fn is_square_in_move_possible_area(&self, sq: Square) -> bool {
-        let area_index = self.board_map[sq].unwrap_or_else(|| panic!("Square {} is not in any area", sq));
+        let area_index =
+            self.board_map[sq].unwrap_or_else(|| panic!("Square {} is not in any area", sq));
 
         self.areas[area_index].is_move_possible
     }
@@ -191,9 +192,11 @@ fn is_theoretically_possible_to_capture(
         let index_b = area_list.get_area_index(b);
 
         if let (Some(index_a), Some(index_b)) = (index_a, index_b)
-            && index_a == index_b && area_list.get_area_attackers_count(index_a) < 2 {
-                return false;
-            }
+            && index_a == index_b
+            && area_list.get_area_attackers_count(index_a) < 2
+        {
+            return false;
+        }
 
         area_list.is_square_in_move_possible_area(a) || area_list.is_square_in_move_possible_area(b)
     } else {

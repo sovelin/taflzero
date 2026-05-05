@@ -205,13 +205,14 @@ pub fn gen_train_data(
 
     loop {
         if let Some(limit) = game_limit
-            && positions_generated >= limit {
-                println!(
-                    "Datagen finished: generated {} positions",
-                    positions_generated
-                );
-                break;
-            }
+            && positions_generated >= limit
+        {
+            println!(
+                "Datagen finished: generated {} positions",
+                positions_generated
+            );
+            break;
+        }
 
         let (res, game_result, terminal_str) = play_game(nn, &mut search_data);
         if game_result.is_none() {

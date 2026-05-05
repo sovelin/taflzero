@@ -255,9 +255,10 @@ impl MCTSTree {
             let new_node = &mut new_nodes[new_id];
 
             if let Some(old_parent) = old_node.parent
-                && let Some(&mapped_parent) = mapping.get(&old_parent) {
-                    new_node.parent = Some(mapped_parent);
-                }
+                && let Some(&mapped_parent) = mapping.get(&old_parent)
+            {
+                new_node.parent = Some(mapped_parent);
+            }
 
             for &old_child in &old_node.children {
                 if let Some(&mapped_child) = mapping.get(&old_child) {
@@ -682,9 +683,10 @@ pub fn mcts_search(
 
         // Check iteration limit
         if let Some(max) = iter_max
-            && iteration >= max {
-                break;
-            }
+            && iteration >= max
+        {
+            break;
+        }
 
         // --- Collect batch of leaves ---
         let mut pending_leaves: Vec<PendingLeaf> = Vec::with_capacity(batch_size);
@@ -769,60 +771,59 @@ pub fn mcts_search(
             last_report_ms = elapsed;
 
             if let Some(callback) = on_iteration
-                && let Some(best_id) = get_best_child(tree, 0.0) {
-                    fn response_from_move(
-                        node_id: NodeId,
-                        tree: &MCTSTree,
-                        elapsed: u64,
-                        callback: &dyn Fn(SearchIterationResponse),
-                        iteration: u64,
-                        multi_pv: Option<usize>,
-                    ) {
-                        let node = tree.get_node(node_id);
+                && let Some(best_id) = get_best_child(tree, 0.0)
+            {
+                fn response_from_move(
+                    node_id: NodeId,
+                    tree: &MCTSTree,
+                    elapsed: u64,
+                    callback: &dyn Fn(SearchIterationResponse),
+                    iteration: u64,
+                    multi_pv: Option<usize>,
+                ) {
+                    let node = tree.get_node(node_id);
 
-                        let (score, winrate) = if node.visits > 0.0 {
-                            let v = (node.wins / node.visits).clamp(-0.9999, 0.9999);
-                            let winrate = (v + 1.0) / 2.0;
-                            ((111.714_64 * (1.562_068_8 * v).tan()) as i32, winrate)
-                        } else {
-                            (0, 0.5)
-                        };
-                        let speed = if elapsed > 0 {
-                            iteration * 1000 / elapsed
-                        } else {
-                            0
-                        };
-
-                        callback(SearchIterationResponse {
-                            score,
-                            nodes: iteration,
-                            time: elapsed,
-                            speed,
-                            pv: tree.get_pv_from(node_id),
-                            winrate,
-                            multi_pv,
-                        });
-                    }
-
-                    if multi_pv.is_some() {
-                        for rank in 1..=multi_pv.unwrap() {
-                            if let Some(multi_id) =
-                                get_multi_pv_child(tree, tree.get_root_id(), rank)
-                            {
-                                response_from_move(
-                                    multi_id,
-                                    tree,
-                                    elapsed,
-                                    callback,
-                                    iteration,
-                                    Some(rank),
-                                );
-                            }
-                        }
+                    let (score, winrate) = if node.visits > 0.0 {
+                        let v = (node.wins / node.visits).clamp(-0.9999, 0.9999);
+                        let winrate = (v + 1.0) / 2.0;
+                        ((111.714_64 * (1.562_068_8 * v).tan()) as i32, winrate)
                     } else {
-                        response_from_move(best_id, tree, elapsed, callback, iteration, None);
-                    }
+                        (0, 0.5)
+                    };
+                    let speed = if elapsed > 0 {
+                        iteration * 1000 / elapsed
+                    } else {
+                        0
+                    };
+
+                    callback(SearchIterationResponse {
+                        score,
+                        nodes: iteration,
+                        time: elapsed,
+                        speed,
+                        pv: tree.get_pv_from(node_id),
+                        winrate,
+                        multi_pv,
+                    });
                 }
+
+                if multi_pv.is_some() {
+                    for rank in 1..=multi_pv.unwrap() {
+                        if let Some(multi_id) = get_multi_pv_child(tree, tree.get_root_id(), rank) {
+                            response_from_move(
+                                multi_id,
+                                tree,
+                                elapsed,
+                                callback,
+                                iteration,
+                                Some(rank),
+                            );
+                        }
+                    }
+                } else {
+                    response_from_move(best_id, tree, elapsed, callback, iteration, None);
+                }
+            }
         }
     }
 

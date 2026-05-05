@@ -1,8 +1,8 @@
+use crate::Engine;
 use crate::movegen::MoveGen;
 use crate::mv::{Move, create_move_from_algebraic};
 use crate::terminal::check_terminal;
 use crate::types::{Piece, Side, Square};
-use crate::Engine;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen]
@@ -25,10 +25,7 @@ impl EngineClient {
 
     #[wasm_bindgen]
     pub fn set_position_and_moves(&mut self, fen: &str, moves: Vec<u32>) {
-        let moves = moves
-            .into_iter()
-            .map(Move::from_u32)
-            .collect();
+        let moves = moves.into_iter().map(Move::from_u32).collect();
         self.engine.set_position_and_moves(fen, moves);
     }
 
