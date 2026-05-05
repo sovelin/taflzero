@@ -263,7 +263,7 @@ impl<O: UciOutput> UciController<O> {
                 let fen = format!("{} {}", args[1], args[2]);
 
                 if args.len() < 4 {
-                    self.set_moves(&fen, &vec![]);
+                    self.set_moves(&fen, &[]);
                     return;
                 }
 

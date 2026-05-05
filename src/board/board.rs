@@ -26,6 +26,12 @@ pub struct Board {
     pub was_capture: bool,
 }
 
+impl Default for Board {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Board {
     pub fn new() -> Self {
         let (w1, w2) = load_default_weights();
@@ -281,7 +287,7 @@ pub fn set_board_from_str(board: &mut Board, position: &str) {
 
     for (r, line) in position.lines().enumerate() {
         let mut index = 0;
-        for (c, ch) in line.chars().enumerate() {
+        for (_c, ch) in line.chars().enumerate() {
             let sq = get_square(BOARD_SIZE - 1 - r, index);
             let piece = match ch {
                 'A' => Some(Piece::ATTACKER),

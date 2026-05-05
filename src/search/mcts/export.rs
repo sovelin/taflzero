@@ -6,12 +6,18 @@ use crate::types::Side;
 use std::io::{Result, Write};
 
 pub const ACTIONS: usize = 121 * 4 * 10; // 4840
-pub const LEGAL_MASK_BYTES: usize = (ACTIONS + 7) / 8; // 605
+pub const LEGAL_MASK_BYTES: usize = ACTIONS.div_ceil(8); // 605
 
 #[repr(C)]
 #[derive(Clone)]
 pub struct LegalMask {
     data: [u8; LEGAL_MASK_BYTES],
+}
+
+impl Default for LegalMask {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl LegalMask {
@@ -159,7 +165,7 @@ impl MCTSTree {
         let root = self.get_root();
         let mut policy: Vec<PolicyTarget> = vec![];
 
-        for &child_id in *&root.children() {
+        for &child_id in root.children() {
             let node = self.get_node(child_id);
             let visits_f = node.visits();
             let visits_u16 = visits_f.round().min(u16::MAX as f32) as u16;

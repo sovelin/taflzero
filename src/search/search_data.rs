@@ -59,6 +59,12 @@ pub struct SearchData {
     stop_flag: Option<Arc<AtomicBool>>,
 }
 
+impl Default for SearchData {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SearchData {
     pub fn new() -> Self {
         let mut move_gens = Vec::with_capacity(MAX_PLY);
@@ -117,7 +123,7 @@ impl SearchData {
         return self
             .stop_flag
             .as_ref()
-            .map_or(false, |f| f.load(Ordering::Relaxed));
+            .is_some_and(|f| f.load(Ordering::Relaxed));
     }
 
     pub fn time_exceeded(&mut self) -> bool {

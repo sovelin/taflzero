@@ -1,10 +1,8 @@
 use crate::movegen::MoveGen;
 use crate::mv::{Move, create_move_from_algebraic};
-use crate::nnue::load_default_weights;
-use crate::search::nn::NeuralNet;
 use crate::terminal::check_terminal;
 use crate::types::{Piece, Side, Square};
-use crate::{Board, Engine, EngineConfig};
+use crate::Engine;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen]
@@ -29,7 +27,7 @@ impl EngineClient {
     pub fn set_position_and_moves(&mut self, fen: &str, moves: Vec<u32>) {
         let moves = moves
             .into_iter()
-            .map(|mv_u32| Move::from_u32(mv_u32))
+            .map(Move::from_u32)
             .collect();
         self.engine.set_position_and_moves(fen, moves);
     }
@@ -74,7 +72,7 @@ impl EngineClient {
 
     #[wasm_bindgen]
     pub fn get_board_state(&self) -> Vec<Piece> {
-        self.engine.board().board.iter().cloned().collect()
+        self.engine.board().board.to_vec()
     }
 
     #[wasm_bindgen]

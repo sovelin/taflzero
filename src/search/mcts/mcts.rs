@@ -7,7 +7,7 @@ use crate::search::nn::NeuralNet;
 use crate::search_data::SearchData;
 use crate::search_root::SearchIterationResponse;
 use crate::terminal::check_terminal;
-use crate::types::{Side, ZobristHash};
+use crate::types::ZobristHash;
 use crate::undo::UndoMove;
 use rand::SeedableRng;
 use rand::distr::Distribution;
@@ -116,6 +116,12 @@ const ROOT_ID: NodeId = 0;
 pub struct MCTSTree {
     nodes: Vec<MCTSNode>,
     pub move_gen: MoveGen,
+}
+
+impl Default for MCTSTree {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MCTSTree {
@@ -248,11 +254,10 @@ impl MCTSTree {
             let old_node = &self.nodes[*old_id];
             let new_node = &mut new_nodes[new_id];
 
-            if let Some(old_parent) = old_node.parent {
-                if let Some(&mapped_parent) = mapping.get(&old_parent) {
+            if let Some(old_parent) = old_node.parent
+                && let Some(&mapped_parent) = mapping.get(&old_parent) {
                     new_node.parent = Some(mapped_parent);
                 }
-            }
 
             for &old_child in &old_node.children {
                 if let Some(&mapped_child) = mapping.get(&old_child) {
@@ -340,7 +345,7 @@ impl MovesStack {
     }
 
     fn unmake_all(&mut self, board: &mut Board) {
-        while self.undo.len() > 0 {
+        while !self.undo.is_empty() {
             self.unmake_last(board);
         }
     }
@@ -676,11 +681,10 @@ pub fn mcts_search(
         }
 
         // Check iteration limit
-        if let Some(max) = iter_max {
-            if iteration >= max {
+        if let Some(max) = iter_max
+            && iteration >= max {
                 break;
             }
-        }
 
         // --- Collect batch of leaves ---
         let mut pending_leaves: Vec<PendingLeaf> = Vec::with_capacity(batch_size);
@@ -764,8 +768,8 @@ pub fn mcts_search(
         if elapsed >= last_report_ms + 100 {
             last_report_ms = elapsed;
 
-            if let Some(callback) = on_iteration {
-                if let Some(best_id) = get_best_child(tree, 0.0) {
+            if let Some(callback) = on_iteration
+                && let Some(best_id) = get_best_child(tree, 0.0) {
                     fn response_from_move(
                         node_id: NodeId,
                         tree: &MCTSTree,
@@ -779,7 +783,7 @@ pub fn mcts_search(
                         let (score, winrate) = if node.visits > 0.0 {
                             let v = (node.wins / node.visits).clamp(-0.9999, 0.9999);
                             let winrate = (v + 1.0) / 2.0;
-                            ((111.714640912 * (1.5620688421 * v).tan()) as i32, winrate)
+                            ((111.714_64 * (1.562_068_8 * v).tan()) as i32, winrate)
                         } else {
                             (0, 0.5)
                         };
@@ -819,7 +823,6 @@ pub fn mcts_search(
                         response_from_move(best_id, tree, elapsed, callback, iteration, None);
                     }
                 }
-            }
         }
     }
 

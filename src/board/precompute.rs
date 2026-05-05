@@ -106,6 +106,12 @@ pub fn precompute_sandwich_captures(vec: &mut Vec<SandwichCapture>, sq: Square) 
     }
 }
 
+impl Default for Precomputed {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Precomputed {
     pub fn new() -> Self {
         let mut col = [0; SQS];
@@ -143,16 +149,8 @@ impl Precomputed {
 
         for i in 0..SQS {
             for j in 0..SQS {
-                let row_diff = if row[i] > row[j] {
-                    row[i] - row[j]
-                } else {
-                    row[j] - row[i]
-                };
-                let col_diff = if col[i] > col[j] {
-                    col[i] - col[j]
-                } else {
-                    col[j] - col[i]
-                };
+                let row_diff = row[i].abs_diff(row[j]);
+                let col_diff = col[i].abs_diff(col[j]);
                 manhattan_distance[i][j] = row_diff + col_diff;
             }
         }

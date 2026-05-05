@@ -35,7 +35,7 @@ fn get_multi_pv(multi_pv: usize) -> Option<usize> {
 
 impl Engine {
     pub fn new(net_path: String) -> Self {
-        let net_path = String::from(net_path);
+        let net_path = net_path;
 
         let config = EngineConfig {
             net_path: net_path.clone(),
@@ -59,7 +59,7 @@ impl Engine {
     }
 
     pub fn set_nn(&mut self, path: String) {
-        self.config.net_path = String::from(path);
+        self.config.net_path = path;
 
         // try catching error here and returning it instead of panicking
 

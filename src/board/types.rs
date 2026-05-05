@@ -1,5 +1,4 @@
 use std::fmt::Display;
-use wasm_bindgen::describe::WasmDescribe;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]

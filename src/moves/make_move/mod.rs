@@ -29,16 +29,16 @@ impl Board {
 
         let from = mv.from();
         let to = mv.to();
-        let piece = self.board[from as usize];
+        let piece = self.board[from];
 
         self.clear_piece(from);
         self.set_piece(to, piece)?;
 
-        for sandwich in PRECOMPUTED.sandwich_captures[to as usize].iter() {
-            if is_capture_possible(&self, sandwich.between_sq, to, sandwich.captor_sq) {
+        for sandwich in PRECOMPUTED.sandwich_captures[to].iter() {
+            if is_capture_possible(self, sandwich.between_sq, to, sandwich.captor_sq) {
                 undo.add_captured_piece(CapturedPiece {
                     square: sandwich.between_sq,
-                    piece: self.board[sandwich.between_sq as usize],
+                    piece: self.board[sandwich.between_sq],
                 });
                 self.clear_piece(sandwich.between_sq);
             }

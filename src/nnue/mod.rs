@@ -141,7 +141,7 @@ pub fn calculate_nnue_index(piece: Piece, square: Square) -> usize {
 
 fn parse_csv_floats(text: &str, expected: usize) -> Vec<f32> {
     let floats: Vec<f32> = text
-        .split(|c| c == ',' || c == '\n' || c == '\r')
+        .split([',', '\n', '\r'])
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
         .map(|s| s.parse::<f32>().expect("Bad float"))

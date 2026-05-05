@@ -1,6 +1,6 @@
 use crate::Board;
 use crate::board::utils::get_square;
-use crate::types::{Piece, Side};
+use crate::types::Piece;
 
 #[repr(C)]
 #[derive(Clone, Copy)]

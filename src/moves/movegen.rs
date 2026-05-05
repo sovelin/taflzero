@@ -16,6 +16,12 @@ pub struct MoveGen {
     pub count: usize,
 }
 
+impl Default for MoveGen {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MoveGen {
     pub fn new() -> Self {
         MoveGen {

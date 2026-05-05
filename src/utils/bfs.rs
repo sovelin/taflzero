@@ -13,7 +13,7 @@ pub fn bfs(
         queue.push_back(sq);
     }
 
-    let mut visited = vec![false; SQS];
+    let mut visited = [false; SQS];
     let mut result: [bool; SQS] = [false; SQS];
 
     while let Some(current_sq) = queue.pop_front() {

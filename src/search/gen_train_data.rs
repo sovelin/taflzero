@@ -204,15 +204,14 @@ pub fn gen_train_data(
     const DEFENDER_WIN_KEEP_EVERY: usize = 1; // 1 = keep all, N>1 = keep 1 out of every N defender wins
 
     loop {
-        if let Some(limit) = game_limit {
-            if positions_generated >= limit {
+        if let Some(limit) = game_limit
+            && positions_generated >= limit {
                 println!(
                     "Datagen finished: generated {} positions",
                     positions_generated
                 );
                 break;
             }
-        }
 
         let (res, game_result, terminal_str) = play_game(nn, &mut search_data);
         if game_result.is_none() {
@@ -223,7 +222,7 @@ pub fn gen_train_data(
 
         if is_defender_win {
             defender_wins_skipped += 1;
-            if defender_wins_skipped % DEFENDER_WIN_KEEP_EVERY != 0 {
+            if !defender_wins_skipped.is_multiple_of(DEFENDER_WIN_KEEP_EVERY) {
                 continue;
             }
         }

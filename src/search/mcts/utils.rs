@@ -14,8 +14,8 @@ enum Direction {
 }
 
 fn get_move_direction(mv: Move) -> Direction {
-    let from = mv.from() as usize;
-    let to = mv.to() as usize;
+    let from = mv.from();
+    let to = mv.to();
 
     let from_row = get_row(from);
     let to_row = get_row(to);
@@ -38,8 +38,8 @@ fn get_move_direction(mv: Move) -> Direction {
 }
 
 fn get_distance(mv: Move) -> usize {
-    let from = mv.from() as usize;
-    let to = mv.to() as usize;
+    let from = mv.from();
+    let to = mv.to();
 
     let from_row = get_row(from);
     let to_row = get_row(to);
@@ -57,7 +57,7 @@ pub fn move_to_policy_index(mv: Move) -> u16 {
     // distance ∈ [1..MAX_DISTANCE]
     let distance = get_distance(mv) as u16;
 
-    debug_assert!(distance >= 1 && distance <= MAX_DISTANCE);
+    debug_assert!((1..=MAX_DISTANCE).contains(&distance));
 
     from * (DIRECTIONS * MAX_DISTANCE) + direction * MAX_DISTANCE + (distance - 1)
 }

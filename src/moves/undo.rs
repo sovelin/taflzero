@@ -30,6 +30,12 @@ pub struct UndoMove {
     pub was_capture: bool,
 }
 
+impl Default for UndoMove {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl UndoMove {
     pub fn new() -> Self {
         Self {

@@ -33,7 +33,7 @@ impl AreaList {
     }
 
     pub fn is_square_in_move_possible_area(&self, sq: Square) -> bool {
-        let area_index = self.board_map[sq].expect(&format!("Square {} is not in any area", sq));
+        let area_index = self.board_map[sq].unwrap_or_else(|| panic!("Square {} is not in any area", sq));
 
         self.areas[area_index].is_move_possible
     }
@@ -72,7 +72,7 @@ pub fn check_fort(board: &mut Board) -> bool {
         return false;
     }
 
-    if king_contacts_attackers(&board) {
+    if king_contacts_attackers(board) {
         return false;
     }
 
@@ -88,7 +88,7 @@ pub fn check_fort(board: &mut Board) -> bool {
 
         cleared_defenders.push(broken);
 
-        if king_contacts_attackers(&board) {
+        if king_contacts_attackers(board) {
             revert_cleared_defenders(board, &cleared_defenders);
             return false;
         }
@@ -190,11 +190,10 @@ fn is_theoretically_possible_to_capture(
         let index_a = area_list.get_area_index(a);
         let index_b = area_list.get_area_index(b);
 
-        if let (Some(index_a), Some(index_b)) = (index_a, index_b) {
-            if index_a == index_b && area_list.get_area_attackers_count(index_a) < 2 {
+        if let (Some(index_a), Some(index_b)) = (index_a, index_b)
+            && index_a == index_b && area_list.get_area_attackers_count(index_a) < 2 {
                 return false;
             }
-        }
 
         area_list.is_square_in_move_possible_area(a) || area_list.is_square_in_move_possible_area(b)
     } else {

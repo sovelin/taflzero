@@ -82,7 +82,7 @@ impl Board {
             if let Some(piece) = char_to_piece(ch) {
                 if col as usize >= BOARD_SIZE {
                     return Err(FenError::RowTooWide {
-                        row: row_idx as usize,
+                        row: row_idx,
                         got: col as usize + 1,
                     });
                 }
@@ -105,7 +105,7 @@ impl Board {
 
         if (col as usize) > BOARD_SIZE {
             return Err(FenError::RowTooWide {
-                row: row_idx as usize,
+                row: row_idx,
                 got: col as usize,
             });
         }
