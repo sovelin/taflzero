@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use crate::board::board::Board;
 use crate::board::types::{Piece, Side, Square};
 use crate::board::utils::{get_col, get_row, get_square_from_algebraic};
