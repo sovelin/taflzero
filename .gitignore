@@ -1,2 +1,10 @@
 target
 node_modules
+
+# Models
+zero-trainer/weights
+*.onnx
+*.onxx
+
+*.tmp
+.idea
