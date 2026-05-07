@@ -38,15 +38,19 @@ pub fn king_is_surrounded(board: &Board) -> bool {
 
     if let Some(top) = top_neighbor
         && let Some(bottom) = bottom_neighbor
-            && board.board[top] == Piece::ATTACKER && board.board[bottom] == Piece::ATTACKER {
-                return true;
-            }
+        && board.board[top] == Piece::ATTACKER
+        && board.board[bottom] == Piece::ATTACKER
+    {
+        return true;
+    }
 
     if let Some(left) = left_neighbor
         && let Some(right) = right_neighbor
-            && board.board[left] == Piece::ATTACKER && board.board[right] == Piece::ATTACKER {
-                return true;
-            }
+        && board.board[left] == Piece::ATTACKER
+        && board.board[right] == Piece::ATTACKER
+    {
+        return true;
+    }
 
     false
 }
