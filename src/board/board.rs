@@ -1,4 +1,4 @@
-use super::constants::{ATTACKERS_MAX, BOARD_SIZE, DEFENDERS_MAX, HOLE, INITIAL_FEN, SQS};
+use super::constants::{ATTACKERS_MAX, BOARD_SIZE, DEFENDERS_MAX, HOLE, SQS};
 use super::types::{OptionalSquare, Piece, Side, Square, ZobristHash};
 use super::zobrist::ZOBRIST_DATA;
 use crate::board::PRECOMPUTED;
@@ -299,7 +299,7 @@ pub fn set_board_from_str(board: &mut Board, position: &str) {
 
     for (r, line) in position.lines().enumerate() {
         let mut index = 0;
-        for (_c, ch) in line.chars().enumerate() {
+        for ch in line.chars() {
             let sq = get_square(BOARD_SIZE - 1 - r, index);
             let piece = match ch {
                 'A' => Some(Piece::ATTACKER),

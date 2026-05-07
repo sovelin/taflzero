@@ -494,8 +494,7 @@ impl ConsoleClient {
     }
 }
 
-use crate::board::constants::INITIAL_FEN;
-use crate::rules::{RulesEnum, get_rules_enum_from_str};
+use crate::rules::get_rules_enum_from_str;
 use crate::search::constants::MAX_PLY;
 #[cfg(target_arch = "wasm32")]
 use js_sys::global;

@@ -1,9 +1,7 @@
 use crate::Engine;
 use crate::movegen::MoveGen;
 use crate::mv::{Move, create_move_from_algebraic};
-use crate::nnue::load_default_weights;
 use crate::rules::get_rules_enum_from_str;
-use crate::search::nn::NeuralNet;
 use crate::terminal::check_terminal;
 use crate::types::{Piece, Side, Square};
 use wasm_bindgen::prelude::wasm_bindgen;

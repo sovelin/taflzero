@@ -28,12 +28,10 @@ fn get_move_direction(mv: Move) -> Direction {
         } else {
             Direction::Left
         }
+    } else if to_row > from_row {
+        Direction::Down
     } else {
-        if to_row > from_row {
-            Direction::Down
-        } else {
-            Direction::Up
-        }
+        Direction::Up
     }
 }
 

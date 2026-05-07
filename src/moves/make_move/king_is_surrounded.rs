@@ -36,21 +36,17 @@ pub fn king_is_surrounded(board: &Board) -> bool {
     let left_neighbor = PRECOMPUTED.left_neighbor[king_sq as usize];
     let right_neighbor = PRECOMPUTED.right_neighbor[king_sq as usize];
 
-    if let Some(top) = top_neighbor {
-        if let Some(bottom) = bottom_neighbor {
-            if board.board[top] == Piece::ATTACKER && board.board[bottom] == Piece::ATTACKER {
+    if let Some(top) = top_neighbor
+        && let Some(bottom) = bottom_neighbor
+            && board.board[top] == Piece::ATTACKER && board.board[bottom] == Piece::ATTACKER {
                 return true;
             }
-        }
-    }
 
-    if let Some(left) = left_neighbor {
-        if let Some(right) = right_neighbor {
-            if board.board[left] == Piece::ATTACKER && board.board[right] == Piece::ATTACKER {
+    if let Some(left) = left_neighbor
+        && let Some(right) = right_neighbor
+            && board.board[left] == Piece::ATTACKER && board.board[right] == Piece::ATTACKER {
                 return true;
             }
-        }
-    }
 
     false
 }

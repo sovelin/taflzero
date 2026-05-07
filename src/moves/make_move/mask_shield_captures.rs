@@ -121,19 +121,17 @@ fn captures_on_side(board: &mut Board, side: Side, which: ShieldSide, undo: &mut
             }
             seq_started = true;
             start_sq = next_sq;
-        } else {
-            if !seq_started {
-            } else if let Some(roof_sq) = roof(next_sq) {
-                if is_friend(board, side, roof_sq) {
-                    seq.push(next_sq);
-                } else {
-                    seq.clear();
-                    seq_started = false;
-                }
+        } else if !seq_started {
+        } else if let Some(roof_sq) = roof(next_sq) {
+            if is_friend(board, side, roof_sq) {
+                seq.push(next_sq);
             } else {
                 seq.clear();
                 seq_started = false;
             }
+        } else {
+            seq.clear();
+            seq_started = false;
         }
 
         it = Some(next_sq);

@@ -1,5 +1,5 @@
 use crate::board::types::{Side, Square};
-use crate::board::utils::{get_row, is_edge_square};
+use crate::board::utils::is_edge_square;
 use crate::board::{Board, PRECOMPUTED};
 use crate::evaluation::check_fort::check_fort;
 use crate::evaluation::defenders_is_surrounded::defenders_is_surrounded;
