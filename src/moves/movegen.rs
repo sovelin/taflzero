@@ -40,12 +40,20 @@ impl MoveGen {
         }
     }
 
-    fn disable_blocked_squares(&mut self, beam: u16, piece: Piece, row_or_col_index: usize) -> u16 {
+    fn disable_blocked_squares(
+        &mut self,
+        board: &Board,
+        beam: u16,
+        piece: Piece,
+        row_or_col_index: usize,
+    ) -> u16 {
         let mut beam = beam;
         if piece == Piece::ATTACKER || piece == Piece::DEFENDER {
             if row_or_col_index == 5 {
                 beam &= !THRONE_MASK;
-            } else if row_or_col_index == 0 || row_or_col_index == 10 {
+            } else if board.get_rules().is_corners_hostile
+                && (row_or_col_index == 0 || row_or_col_index == 10)
+            {
                 beam &= !BOUNDARY_MASK;
             }
         }
@@ -59,7 +67,8 @@ impl MoveGen {
         let row_occ = board.row_occ[row];
 
         let horizontal = LINE_MOVES[col][row_occ as usize] & !(1 << col);
-        let mut horizontal_moves = self.disable_blocked_squares(horizontal, board.board[from], row);
+        let mut horizontal_moves =
+            self.disable_blocked_squares(board, horizontal, board.board[from], row);
 
         let mut cur = 1;
 
@@ -80,7 +89,8 @@ impl MoveGen {
         let col_occ = board.col_occ[col];
 
         let vertical = LINE_MOVES[row][col_occ as usize] & !(1 << row);
-        let mut vertical_moves = self.disable_blocked_squares(vertical, board.board[from], col);
+        let mut vertical_moves =
+            self.disable_blocked_squares(board, vertical, board.board[from], col);
 
         let mut cur = 1;
 
@@ -312,5 +322,36 @@ mod tests {
         expect_moves_count(&movegen, 0);
 
         Ok(())
+    }
+
+    mod historical {
+        use crate::Board;
+        use crate::board::utils::get_square_from_algebraic;
+        use crate::movegen::MoveGen;
+        use crate::movegen::tests::{expect_moves_count, expect_moves_exists};
+        use crate::rules::RulesEnum;
+        use crate::types::{Piece, Side};
+        use std::error::Error;
+
+        #[test]
+        fn expect_possible_move_to_corner() -> Result<(), Box<dyn Error>> {
+            let mut board = Board::new();
+            board.set_rules(RulesEnum::Historical11x11);
+            board.side_to_move = Side::DEFENDERS;
+            board
+                .set_piece(get_square_from_algebraic("a1"), Piece::DEFENDER)
+                .unwrap();
+
+            let mut movegen = MoveGen::new();
+            movegen.generate_moves(&board);
+
+            println!("{:?}", board);
+
+            expect_moves_count(&movegen, 20);
+            expect_moves_exists(&movegen, vec!["a1k1"]);
+            expect_moves_exists(&movegen, vec!["a1a11"]);
+
+            Ok(())
+        }
     }
 }

@@ -9,6 +9,7 @@
 
 
 **TaflZero** is an AlphaZero-based engine for 11×11 Hnefatafl (Viking chess) and currently the strongest known engine for this variant. Play it live at **[playtafl.org](https://playtafl.org/)**. It combines Monte Carlo Tree Search (MCTS) with a deep residual neural network, trained entirely through self-play — no human games or handcrafted heuristics.
+This supports 2 variants: Copenhagen and Historical. The variant can be switched at runtime via UCI options.
 
 ## How it works
 
@@ -102,19 +103,21 @@ taflzero.exe [--net <model.onnx>] [--datagen <output.bin>] [--datagen-count <N>]
 
 **Commands:**
 
-| Command | Response | Description |
-|---|---|---|
-| `uci` | `id name ...`, `uciok`, `option ...` | Identify engine |
-| `isready` | `readyok` | Check engine is ready |
-| `setoption name NNFile value <path>` | — | Load a different ONNX network at runtime |
-| `position startpos` | — | Set starting position |
-| `position startpos moves e1e2 ...` | — | Set position with move sequence |
-| `position fen <fen> moves ...` | — | Set position from FEN |
-| `go nodes <N>` | `info ...`, `bestmove <move>` | Search for N MCTS nodes |
-| `go movetime <ms>` | `info ...`, `bestmove <move>` | Search for given time in ms |
-| `go infinite` | `info ...`, `bestmove <move>` | Search until `stop` |
-| `stop` | `bestmove <move>` | Stop current search and return best move |
-| `quit` | `bye` | Exit |
+| Command                                  | Response | Description                               |
+|------------------------------------------|---|-------------------------------------------|
+| `uci`                                    | `id name ...`, `uciok`, `option ...` | Identify engine                           |
+| `isready`                                | `readyok` | Check engine is ready                     |
+| `setoption name NNFile value <path>`     | — | Load a different ONNX network at runtime  |
+| `setoption name Variant value <variant>` | — | Set variant to play from                  |
+| `setoption name MultiPV value <number>`  | — | Set multi-pv option to display several candidate moves |
+| `position startpos`                      | — | Set starting position                     |
+| `position startpos moves e1e2 ...`       | — | Set position with move sequence           |
+| `position fen <fen> moves ...`           | — | Set position from FEN                     |
+| `go nodes <N>`                           | `info ...`, `bestmove <move>` | Search for N MCTS nodes                   |
+| `go movetime <ms>`                       | `info ...`, `bestmove <move>` | Search for given time in ms               |
+| `go infinite`                            | `info ...`, `bestmove <move>` | Search until `stop`                       |
+| `stop`                                   | `bestmove <move>` | Stop current search and return best move  |
+| `quit`                                   | `bye` | Exit                                      |
 
 **FEN format:** `3aaaaa3/5a5/11/a4d4a/a3ddd3a/aa1ddkdd1aa/a3ddd3a/a4d4a/11/5a5/3aaaaa3 a`
 - `a` — attacker, `d` — defender, `k` — king; side to move: `a` or `d`
