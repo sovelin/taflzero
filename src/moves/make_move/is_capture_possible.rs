@@ -2,7 +2,7 @@ use crate::board::types::{Piece, Square};
 use crate::board::{Board, PRECOMPUTED, get_side_by_piece};
 use std::sync::LazyLock;
 
-pub static ENEMY_SQUARES: LazyLock<[usize; 5]> = LazyLock::new(|| {
+pub static HOSTILE_CORNERS_SQS: LazyLock<[usize; 5]> = LazyLock::new(|| {
     [
         PRECOMPUTED.corners_sq[0],
         PRECOMPUTED.corners_sq[1],
@@ -12,8 +12,15 @@ pub static ENEMY_SQUARES: LazyLock<[usize; 5]> = LazyLock::new(|| {
     ]
 });
 
+pub static NOT_HOSTILE_SQS: LazyLock<[usize; 1]> = LazyLock::new(|| [PRECOMPUTED.throne_sq]);
+
 pub fn is_potential_thread(board: &Board, target_sq: Square, enemy_sq: Square) -> bool {
-    if board.board[enemy_sq] == Piece::EMPTY && ENEMY_SQUARES.contains(&enemy_sq) {
+    let is_hostile_corners = board.get_rules().is_corners_hostile;
+
+    if board.board[enemy_sq] == Piece::EMPTY
+        && ((is_hostile_corners && HOSTILE_CORNERS_SQS.contains(&enemy_sq))
+            || (!is_hostile_corners && NOT_HOSTILE_SQS.contains(&enemy_sq)))
+    {
         return true;
     }
 
@@ -51,6 +58,7 @@ mod tests {
     use crate::board::board::Board;
     use crate::board::types::Piece;
     use crate::board::utils::get_square_from_algebraic;
+    use crate::rules::RulesEnum;
 
     #[test]
     fn attacker_capture_defender_simple() -> Result<(), Box<dyn Error>> {
@@ -371,5 +379,112 @@ mod tests {
         ));
 
         Ok(())
+    }
+
+    mod historical_variant {
+        use super::*;
+        use crate::rules::RulesEnum;
+
+        #[test]
+        fn no_capture_on_first_corner() -> Result<(), Box<dyn Error>> {
+            let mut board = Board::new();
+            board.set_rules(RulesEnum::Historical11x11);
+            board.set_piece(get_square_from_algebraic("a2"), Piece::ATTACKER)?;
+            board.set_piece(get_square_from_algebraic("a3"), Piece::DEFENDER)?;
+
+            assert!(!is_capture_possible(
+                &board,
+                get_square_from_algebraic("a2"),
+                get_square_from_algebraic("a1"),
+                get_square_from_algebraic("a3"),
+            ));
+
+            Ok(())
+        }
+
+        #[test]
+        fn no_capture_on_second_corner() -> Result<(), Box<dyn Error>> {
+            let mut board = Board::new();
+            board.set_rules(RulesEnum::Historical11x11);
+            board.set_piece(get_square_from_algebraic("k10"), Piece::ATTACKER)?;
+            board.set_piece(get_square_from_algebraic("k9"), Piece::DEFENDER)?;
+
+            assert!(!is_capture_possible(
+                &board,
+                get_square_from_algebraic("k10"),
+                get_square_from_algebraic("k11"),
+                get_square_from_algebraic("k9"),
+            ));
+
+            Ok(())
+        }
+
+        #[test]
+        fn no_capture_on_third_corner() -> Result<(), Box<dyn Error>> {
+            let mut board = Board::new();
+            board.set_rules(RulesEnum::Historical11x11);
+            board.set_piece(get_square_from_algebraic("a10"), Piece::DEFENDER)?;
+            board.set_piece(get_square_from_algebraic("a9"), Piece::ATTACKER)?;
+
+            assert!(!is_capture_possible(
+                &board,
+                get_square_from_algebraic("a10"),
+                get_square_from_algebraic("a11"),
+                get_square_from_algebraic("a9"),
+            ));
+
+            Ok(())
+        }
+
+        #[test]
+        fn no_capture_on_fourth_corner() -> Result<(), Box<dyn Error>> {
+            let mut board = Board::new();
+            board.set_rules(RulesEnum::Historical11x11);
+            board.set_piece(get_square_from_algebraic("k2"), Piece::DEFENDER)?;
+            board.set_piece(get_square_from_algebraic("k3"), Piece::ATTACKER)?;
+
+            assert!(!is_capture_possible(
+                &board,
+                get_square_from_algebraic("k2"),
+                get_square_from_algebraic("k1"),
+                get_square_from_algebraic("k3"),
+            ));
+
+            Ok(())
+        }
+
+        #[test]
+        fn no_capture_king_on_corner() -> Result<(), Box<dyn Error>> {
+            let mut board = Board::new();
+            board.set_rules(RulesEnum::Historical11x11);
+            board.set_piece(get_square_from_algebraic("k2"), Piece::KING)?;
+            board.set_piece(get_square_from_algebraic("k3"), Piece::ATTACKER)?;
+
+            assert!(!is_capture_possible(
+                &board,
+                get_square_from_algebraic("k2"),
+                get_square_from_algebraic("k1"),
+                get_square_from_algebraic("k3"),
+            ));
+
+            Ok(())
+        }
+
+        #[test]
+        fn capture_where_throne() -> Result<(), Box<dyn Error>> {
+            let mut board = Board::new();
+            board.set_rules(RulesEnum::Historical11x11);
+            board.set_piece(get_square_from_algebraic("f5"), Piece::ATTACKER)?;
+            board.set_piece(get_square_from_algebraic("f4"), Piece::DEFENDER)?;
+
+            assert!(is_capture_possible(
+                &board,
+                get_square_from_algebraic("f5"),
+                get_square_from_algebraic("f6"), // throne, but can be used for capture in this variant
+                get_square_from_algebraic("f4"),
+            ));
+
+            Ok(())
+        }
     }
 }
