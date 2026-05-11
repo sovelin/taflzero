@@ -1,4 +1,3 @@
-pub mod constants;
 pub mod gen_train_data;
 pub mod mcts;
 pub mod nn;
