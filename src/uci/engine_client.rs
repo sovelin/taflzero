@@ -48,8 +48,8 @@ impl EngineClient {
     }
 
     #[wasm_bindgen]
-    pub fn make_search(&mut self, time: u32, depth: u32) -> u32 {
-        let res = self.engine.make_search(time as u64, depth, None);
+    pub fn make_search(&mut self, time: u32) -> u32 {
+        let res = self.engine.make_search(time as u64, None);
         res.best_move.raw()
     }
 
@@ -61,11 +61,6 @@ impl EngineClient {
     #[wasm_bindgen]
     pub fn get_board_str(&self) -> String {
         format!("{}", self.engine.board())
-    }
-
-    #[wasm_bindgen]
-    pub fn get_w2_first(&self) -> f32 {
-        self.engine.board().nnue.w2[0] as f32
     }
 
     #[wasm_bindgen]

@@ -412,7 +412,6 @@ impl<O: UciOutput> UciController<O> {
             self.spawn_search(move |engine| {
                 engine.make_search(
                     movetime,
-                    MAX_PLY as u32,
                     Some(&|iteration: SearchIterationResponse| {
                         output.send(&format_info_message(iteration));
                     }),
@@ -425,7 +424,6 @@ impl<O: UciOutput> UciController<O> {
             let output = self.output.clone();
             self.engine_mut().make_search(
                 movetime,
-                MAX_PLY as u32,
                 Some(&|iteration: SearchIterationResponse| {
                     output.send(&format_info_message(iteration));
                 }),

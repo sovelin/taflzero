@@ -6,7 +6,6 @@ use crate::board::Board;
 use crate::mcts::mcts::MCTSTree;
 use crate::mv::Move;
 use crate::rules::RulesEnum;
-use crate::search::constants::MAX_PLY;
 use crate::search::nn::NeuralNet;
 use crate::search::search_data::SearchData;
 use crate::search::search_root::{
@@ -104,10 +103,9 @@ impl Engine {
     pub fn make_search(
         &mut self,
         time: u64,
-        depth: u32,
         on_iteration: Option<&dyn Fn(SearchIterationResponse)>,
     ) -> SearchResponse {
-        self.search_data.start_timer(time, depth);
+        self.search_data.start_timer(time);
         let res = search_root(
             &mut self.board,
             &mut self.search_data,
@@ -124,7 +122,7 @@ impl Engine {
         &mut self,
         on_iteration: Option<&dyn Fn(SearchIterationResponse)>,
     ) -> SearchResponse {
-        self.search_data.start_timer(u64::MAX, MAX_PLY as u32);
+        self.search_data.start_timer(u64::MAX);
         let res = search_root(
             &mut self.board,
             &mut self.search_data,

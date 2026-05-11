@@ -5,7 +5,6 @@ use crate::board::PRECOMPUTED;
 use crate::board::fen::FenError;
 use crate::board::rules::{Rules, RulesEnum};
 use crate::board::utils::get_square;
-use crate::nnue::{NNUE, STM_BIT, Weights1, Weights2, calculate_nnue_index, load_default_weights};
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 
@@ -23,7 +22,6 @@ pub struct Board {
     pub zobrist: ZobristHash,
     pub rep_table: HashMap<ZobristHash, u8>,
     pub last_move_to: OptionalSquare,
-    pub nnue: NNUE,
     pub was_capture: bool,
     pub rules: RulesEnum,
 }
@@ -36,7 +34,6 @@ impl Default for Board {
 
 impl Board {
     pub fn new() -> Self {
-        let (w1, w2) = load_default_weights();
         Self {
             board: [Piece::EMPTY; SQS],
             attackers: [0; ATTACKERS_MAX],
@@ -51,20 +48,9 @@ impl Board {
             zobrist: 0,
             rep_table: HashMap::new(),
             last_move_to: HOLE,
-            nnue: NNUE::new(w1, w2),
             was_capture: false,
             rules: RulesEnum::Copenhagen11x11,
         }
-    }
-
-    pub fn new_with_nnue(w1: Weights1, w2: Weights2) -> Self {
-        let mut board = Self::new();
-        board.set_nnue(w1, w2);
-        board
-    }
-
-    pub fn set_nnue(&mut self, w1: Weights1, w2: Weights2) {
-        self.nnue = NNUE::new(w1, w2);
     }
 
     pub fn get_rules(&self) -> Rules {
@@ -89,19 +75,11 @@ impl Board {
         self.zobrist = 0;
         self.rep_table.clear();
         self.last_move_to = HOLE;
-        self.nnue.clear();
         self.set_side_to_move(Side::ATTACKERS);
     }
 
     fn set_side_to_move(&mut self, side: Side) {
         self.side_to_move = side;
-        let bit = if side == Side::DEFENDERS { 1 } else { 0 };
-
-        if bit == 1 {
-            self.nnue.set_input(STM_BIT);
-        } else {
-            self.nnue.reset_input(STM_BIT);
-        }
     }
 
     fn set_attacker(&mut self, sq: Square) -> Result<(), &'static str> {
@@ -166,8 +144,6 @@ impl Board {
         self.row_occ[row] |= 1 << col;
         self.col_occ[col] |= 1 << row;
 
-        self.nnue.set_input(calculate_nnue_index(piece, sq));
-
         if piece == Piece::ATTACKER {
             self.set_attacker(sq)
         } else if piece == Piece::DEFENDER {
@@ -181,7 +157,6 @@ impl Board {
     }
     pub fn clear_piece(&mut self, sq: Square) {
         let piece = self.board[sq];
-        self.nnue.reset_input(calculate_nnue_index(piece, sq));
 
         self.zobrist ^= ZOBRIST_DATA.table[piece as usize][sq];
         self.board[sq] = Piece::EMPTY;
@@ -215,15 +190,6 @@ impl Board {
         if self.side_to_move != side {
             self.flip_side();
         }
-    }
-
-    pub fn get_eval(&self) -> i32 {
-        self.nnue.evaluate()
-    }
-
-    pub fn print_eval_side(&self) {
-        let nnue_input = self.nnue.inputs[STM_BIT];
-        println!("{}", nnue_input);
     }
 
     pub fn board(&self) -> &[Piece; SQS] {

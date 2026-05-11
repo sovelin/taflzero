@@ -14,7 +14,7 @@ use rand::prelude::StdRng;
 use std::fs::OpenOptions;
 use std::io::{BufWriter, Write};
 
-const NODES_PER_MOVE: u64 = 100;
+const NODES_PER_MOVE: u64 = 400;
 
 fn set_piece_to_random_square(
     board: &mut Board,

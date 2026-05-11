@@ -2,7 +2,6 @@ use crate::movegen::MAX_MOVES;
 use crate::moves::movegen::MoveGen;
 use crate::moves::mv::Move;
 use crate::moves::undo::UndoMove;
-use crate::search::constants::MAX_PLY;
 use crate::timer::Timer;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -42,19 +41,8 @@ pub fn clear_wasm_stop_buffer() {
 }
 
 pub struct SearchData {
-    pub nodes_searched: u64,
-    pub best_move: Option<Move>,
-    pub move_gens: Vec<MoveGen>,
-    pub undos: Vec<UndoMove>,
     pub timer: Timer,
     pub time_limit: u64,
-    pub depth_limit: u32,
-    cached_exceed: bool,
-    time_exceeded_checks: u32,
-    pub temperatures: Vec<Vec<i32>>,
-    pub temperature: usize,
-    pub random_generator: StdRng,
-    pub tt_age: u8,
     #[cfg(not(target_arch = "wasm32"))]
     stop_flag: Option<Arc<AtomicBool>>,
 }
@@ -67,33 +55,9 @@ impl Default for SearchData {
 
 impl SearchData {
     pub fn new() -> Self {
-        let mut move_gens = Vec::with_capacity(MAX_PLY);
-        let mut undos = Vec::with_capacity(MAX_PLY);
-
-        for _ in 0..MAX_PLY {
-            move_gens.push(MoveGen::new());
-            undos.push(UndoMove::new());
-        }
-
-        let mut temperatures = Vec::with_capacity(MAX_PLY);
-        for _ in 0..MAX_PLY {
-            temperatures.push(vec![0; MAX_MOVES]);
-        }
-
         Self {
-            nodes_searched: 0,
-            best_move: None,
-            move_gens,
-            undos,
             timer: Timer::new(),
             time_limit: 0,
-            cached_exceed: false,
-            time_exceeded_checks: 0,
-            temperatures,
-            temperature: 0,
-            random_generator: StdRng::seed_from_u64(123456),
-            depth_limit: MAX_PLY as u32,
-            tt_age: 0,
             #[cfg(not(target_arch = "wasm32"))]
             stop_flag: None,
         }
@@ -130,22 +94,8 @@ impl SearchData {
         self.timer.elapsed_ms() >= self.time_limit
     }
 
-    pub fn time_exceeded_quick(&mut self) -> bool {
-        self.time_exceeded_checks += 1;
-        if self.time_exceeded_checks < 10000 {
-            return self.cached_exceed;
-        }
-
-        self.time_exceeded_checks = 0;
-        self.cached_exceed = self.timer.elapsed_ms() >= self.time_limit;
-        self.cached_exceed
-    }
-
-    pub fn start_timer(&mut self, time_limit_ms: u64, depth: u32) {
+    pub fn start_timer(&mut self, time_limit_ms: u64) {
         self.timer.start();
         self.time_limit = time_limit_ms;
-        self.time_exceeded_checks = 0;
-        self.cached_exceed = false;
-        self.depth_limit = depth;
     }
 }
