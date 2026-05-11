@@ -807,8 +807,8 @@ pub fn mcts_search(
                     });
                 }
 
-                if multi_pv.is_some() {
-                    for rank in 1..=multi_pv.unwrap() {
+                if let Some(multi_pv) = multi_pv {
+                    for rank in 1..=multi_pv {
                         if let Some(multi_id) = get_multi_pv_child(tree, tree.get_root_id(), rank) {
                             response_from_move(
                                 multi_id,

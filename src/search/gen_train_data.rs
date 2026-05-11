@@ -95,19 +95,13 @@ fn play_game(
     loop {
         config.temperature = if move_number < 60 { 1.0 } else { 0.0 };
 
-        let iterations = if board.side_to_move == Side::ATTACKERS {
-            NODES_PER_MOVE
-        } else {
-            NODES_PER_MOVE
-        };
-
         let mv = mcts_search(
             &mut board,
             &mut mcts_tree,
             nn,
             search_data,
             None,
-            Some(iterations),
+            Some(NODES_PER_MOVE),
             &config,
             None,
         );

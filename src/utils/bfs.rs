@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 pub fn bfs(
     is_archivable: impl Fn(Square) -> bool,
     neighbors: &[Vec<Square>; SQS],
-    start_sq: &Vec<Square>,
+    start_sq: &[Square],
 ) -> [bool; SQS] {
     let mut queue: VecDeque<Square> = VecDeque::new();
 
