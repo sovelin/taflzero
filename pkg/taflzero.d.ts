@@ -18,11 +18,10 @@ export class EngineClient {
     get_board_state(): any[];
     get_board_str(): string;
     get_fen(): string;
-    get_w2_first(): number;
     get_zobrist_hash(): bigint;
     is_move_available(from: number, to: number): boolean;
     make_move(mv: Move): void;
-    make_search(time: number, depth: number): number;
+    make_search(time: number): number;
     move_num_to_str(mv_num: number): string;
     move_str_to_num(mv_str: string): number;
     constructor();
@@ -160,11 +159,10 @@ export interface InitOutput {
     readonly engineclient_get_board_state: (a: number, b: number) => void;
     readonly engineclient_get_board_str: (a: number, b: number) => void;
     readonly engineclient_get_fen: (a: number, b: number) => void;
-    readonly engineclient_get_w2_first: (a: number) => number;
     readonly engineclient_get_zobrist_hash: (a: number) => bigint;
     readonly engineclient_is_move_available: (a: number, b: number, c: number) => number;
     readonly engineclient_make_move: (a: number, b: number) => void;
-    readonly engineclient_make_search: (a: number, b: number, c: number) => number;
+    readonly engineclient_make_search: (a: number, b: number) => number;
     readonly engineclient_move_num_to_str: (a: number, b: number, c: number) => void;
     readonly engineclient_move_str_to_num: (a: number, b: number, c: number, d: number) => void;
     readonly engineclient_new: () => number;

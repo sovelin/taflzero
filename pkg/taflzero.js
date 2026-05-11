@@ -140,13 +140,6 @@ export class EngineClient {
         }
     }
     /**
-     * @returns {number}
-     */
-    get_w2_first() {
-        const ret = wasm.engineclient_get_w2_first(this.__wbg_ptr);
-        return ret;
-    }
-    /**
      * @returns {bigint}
      */
     get_zobrist_hash() {
@@ -172,11 +165,10 @@ export class EngineClient {
     }
     /**
      * @param {number} time
-     * @param {number} depth
      * @returns {number}
      */
-    make_search(time, depth) {
-        const ret = wasm.engineclient_make_search(this.__wbg_ptr, time, depth);
+    make_search(time) {
+        const ret = wasm.engineclient_make_search(this.__wbg_ptr, time);
         return ret >>> 0;
     }
     /**
