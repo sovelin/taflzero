@@ -7,53 +7,12 @@ use crate::rules::RulesEnum;
 use crate::search::nn::NeuralNet;
 use crate::search_data::SearchData;
 use crate::terminal::{TerminalType, check_terminal, get_terminal, is_threefold_repetition};
-use crate::types::{Piece, Side};
-use crate::{Board, PRECOMPUTED};
-use rand::Rng;
-use rand::prelude::StdRng;
+use crate::types::{Side};
+use crate::{Board};
 use std::fs::OpenOptions;
 use std::io::{BufWriter, Write};
 
 const NODES_PER_MOVE: u64 = 400;
-
-fn set_piece_to_random_square(
-    board: &mut Board,
-    empty_squares: &mut Vec<usize>,
-    rnd: &mut StdRng,
-    piece: Piece,
-) {
-    if empty_squares.is_empty() {
-        return;
-    }
-
-    let idx = rnd.gen_range(0..empty_squares.len());
-    let sq = empty_squares.swap_remove(idx);
-
-    board.set_piece(sq, piece).expect("set_piece");
-}
-
-fn set_random_position(rnd: &mut StdRng) -> Board {
-    let mut board = Board::new();
-    let mut empty_squares: Vec<usize> = (0..board.board.len())
-        .filter(|&sq| board.board[sq] == Piece::EMPTY)
-        .filter(|&sq| !PRECOMPUTED.corners_sq.contains(&sq))
-        .collect();
-
-    let attacker_pieces_count = rnd.gen_range(24..=50);
-    let defender_pieces_count = rnd.gen_range(0..=12);
-
-    set_piece_to_random_square(&mut board, &mut empty_squares, rnd, Piece::KING);
-
-    for _ in 0..attacker_pieces_count {
-        set_piece_to_random_square(&mut board, &mut empty_squares, rnd, Piece::ATTACKER);
-    }
-
-    for _ in 0..defender_pieces_count {
-        set_piece_to_random_square(&mut board, &mut empty_squares, rnd, Piece::DEFENDER);
-    }
-
-    board
-}
 
 fn terminal_type_str(t: &TerminalType) -> &'static str {
     match t {
@@ -132,10 +91,10 @@ fn play_game(
             }
 
             // Treat threefold repetition as draw for training
-            // if is_threefold_repetition(&board) {
-            //     game_result = None;
-            //     break;
-            // }
+            if is_threefold_repetition(&board) {
+                game_result = None;
+                break;
+            }
 
             if let Some(terminal) = get_terminal(&mut board) {
                 let result = check_terminal(&mut board).unwrap();

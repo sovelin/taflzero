@@ -3,3 +3,4 @@ pub mod mcts;
 pub mod nn;
 pub mod search_data;
 pub mod search_root;
+mod train_terminal;
