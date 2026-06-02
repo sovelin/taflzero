@@ -120,20 +120,10 @@ fn play_game(
                 no_capture_counter += 1;
             }
 
-            if no_capture_counter >= 500 || move_number >= 700 {
+            if no_capture_counter >= 100 {
                 // end the game as a draw
                 game_result = None;
-                terminal_str = Some(if no_capture_counter >= 500 {
-                    "draw_nocapture"
-                } else {
-                    "draw_limit"
-                });
-                break;
-            }
-
-            // Treat threefold repetition as draw for training
-            if is_threefold_repetition(&board) {
-                game_result = None;
+                terminal_str = Some("draw_nocapture");
                 break;
             }
 
@@ -209,6 +199,7 @@ pub fn gen_train_data(
 
         let (res, game_result, terminal_str) = play_game(nn, &mut search_data, variant);
 
+        positions_generated += res.len();
         games_saved += 1;
         match game_result {
             Some(Side::ATTACKERS) => attacker_wins_saved += 1,
@@ -251,11 +242,8 @@ pub fn gen_train_data(
             log_writer.flush().expect("Cannot flush gamelog");
         }
 
-        if game_result.is_some() {
-            positions_generated += res.len();
-            for sample in res {
-                sample.write_to(&mut writer).expect("Cannot write sample");
-            }
+        for sample in res {
+            sample.write_to(&mut writer).expect("Cannot write sample");
         }
     }
 }

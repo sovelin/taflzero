@@ -2,35 +2,24 @@ use crate::board::types::Piece;
 use crate::board::{Board, PRECOMPUTED};
 
 pub fn king_is_surrounded(board: &Board) -> bool {
-    let king_sq = board.king_sq as usize;
-    let rules = board.get_rules();
+    if !board.get_rules().is_king_strong {
+        return false;
+    }
 
-    if rules.is_king_strong {
-        // Copenhagen: king captured when all 4 neighbors are hostile (attacker or throne)
-        let surround_count = PRECOMPUTED.vertical_horizontal_neighbors[king_sq]
-            .iter()
-            .filter(|&&sq| sq == PRECOMPUTED.throne_sq || board.board[sq] == Piece::ATTACKER)
-            .count();
-        surround_count >= 4
-    } else {
-        // Historical: weak king
-        // On throne: all 4 neighbors must be attackers
-        // Off throne: 2 attackers on the same axis (left+right or top+bottom)
-        let is_attacker =
-            |sq_opt: Option<usize>| sq_opt.is_some_and(|sq| board.board[sq] == Piece::ATTACKER);
+    let king_sq = board.king_sq;
 
-        if king_sq == PRECOMPUTED.throne_sq {
-            PRECOMPUTED.vertical_horizontal_neighbors[king_sq]
-                .iter()
-                .all(|&sq| board.board[sq] == Piece::ATTACKER)
-        } else {
-            let left_right = is_attacker(PRECOMPUTED.left_neighbor[king_sq])
-                && is_attacker(PRECOMPUTED.right_neighbor[king_sq]);
-            let top_bottom = is_attacker(PRECOMPUTED.top_neighbor[king_sq])
-                && is_attacker(PRECOMPUTED.bottom_neighbor[king_sq]);
-            left_right || top_bottom
+    if board.get_rules().is_king_strong && PRECOMPUTED.vertical_horizontal_neighbors.len() < 4 {
+        return false;
+    }
+
+    let mut surround_count = 0;
+    for sq in PRECOMPUTED.vertical_horizontal_neighbors[king_sq as usize].iter() {
+        if *sq == PRECOMPUTED.throne_sq || board.board[*sq] == Piece::ATTACKER {
+            surround_count += 1;
         }
     }
+
+    surround_count >= 4
 }
 
 #[cfg(test)]
