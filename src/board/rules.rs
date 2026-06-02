@@ -8,7 +8,7 @@ pub struct Rules {
     pub is_corners_hostile: bool,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum RulesEnum {
     Copenhagen11x11,
     Historical11x11,

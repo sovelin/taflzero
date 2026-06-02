@@ -1,9 +1,14 @@
 use crate::{Board, PRECOMPUTED};
 use crate::board::constants::{BOARD_SIZE, HOLE, SQS};
+use crate::rules::RulesEnum;
 use crate::types::{Piece, Side, Square};
 use crate::utils::bfs::bfs;
 
-pub fn check_copenhagen_train_terminal(board: Board) -> Option<Side> {
+pub fn check_copenhagen_train_terminal(board: &Board) -> Option<Side> {
+    if board.rules != RulesEnum::Copenhagen11x11 {
+        return None;
+    }
+
     let mut start_sqs = vec![];
 
     if board.king_sq != HOLE {
@@ -89,6 +94,7 @@ pub fn check_copenhagen_train_terminal(board: Board) -> Option<Side> {
 #[cfg(test)]
 mod tests {
     use crate::board::Board;
+    use crate::rules::RulesEnum;
     use crate::search::train_terminal::check_copenhagen_train_terminal;
     use crate::set_board_from_str;
     use crate::types::Side;
@@ -111,7 +117,7 @@ mod tests {
                     ..A...D.A..",
         );
 
-        let res = check_copenhagen_train_terminal(board);
+        let res = check_copenhagen_train_terminal(&board);
 
         assert_eq!(res, Some(Side::ATTACKERS));
     }
@@ -134,7 +140,7 @@ mod tests {
                     ..A...D.A..",
         );
 
-        let res = check_copenhagen_train_terminal(board);
+        let res = check_copenhagen_train_terminal(&board);
 
         assert_eq!(res, None);
     }
@@ -157,7 +163,7 @@ mod tests {
                     ..A...D.A..",
         );
 
-        let res = check_copenhagen_train_terminal(board);
+        let res = check_copenhagen_train_terminal(&board);
 
         assert_eq!(res, None);
     }
@@ -180,7 +186,7 @@ mod tests {
                     .....ADAA..",
         );
 
-        let res = check_copenhagen_train_terminal(board);
+        let res = check_copenhagen_train_terminal(&board);
 
         assert_eq!(res, Some(Side::ATTACKERS));
     }
@@ -203,7 +209,7 @@ mod tests {
                     .....ADAA..",
         );
 
-        let res = check_copenhagen_train_terminal(board);
+        let res = check_copenhagen_train_terminal(&board);
 
         assert_eq!(res, None);
     }
@@ -226,7 +232,7 @@ mod tests {
                     .....ADAA..",
         );
 
-        let res = check_copenhagen_train_terminal(board);
+        let res = check_copenhagen_train_terminal(&board);
 
         assert_eq!(res, None);
     }
@@ -249,7 +255,7 @@ mod tests {
                     ....A..A...",
         );
 
-        let res = check_copenhagen_train_terminal(board);
+        let res = check_copenhagen_train_terminal(&board);
 
         assert_eq!(res, Some(Side::ATTACKERS));
     }
@@ -272,7 +278,31 @@ mod tests {
                     .....ADAA..",
         );
 
-        let res = check_copenhagen_train_terminal(board);
+        let res = check_copenhagen_train_terminal(&board);
+
+        assert_eq!(res, None);
+    }
+
+    #[test]
+    fn not_test_other_variants() {
+        let mut board = Board::new();
+        board.set_rules(RulesEnum::Historical11x11);
+        set_board_from_str(
+            &mut board,
+            "...A....A..
+                    ..A......A.
+                    AA........A
+                    ...........
+                    A..........
+                    .........K.
+                    .......D...
+                    .....A....A
+                    A........A.
+                    .A.......A.
+                    ..A...D.A..",
+        );
+
+        let res = check_copenhagen_train_terminal(&board);
 
         assert_eq!(res, None);
     }

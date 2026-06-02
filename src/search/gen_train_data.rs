@@ -11,6 +11,7 @@ use crate::types::{Side};
 use crate::{Board};
 use std::fs::OpenOptions;
 use std::io::{BufWriter, Write};
+use crate::search::train_terminal::check_copenhagen_train_terminal;
 
 const NODES_PER_MOVE: u64 = 400;
 
@@ -21,7 +22,16 @@ fn terminal_type_str(t: &TerminalType) -> &'static str {
         TerminalType::KingOnCorner => "def_corner",
         TerminalType::DefendersSurrounded => "atk_surrounded",
         TerminalType::FortCheck => "def_fort",
+        TerminalType::EarlyCopenhagenTrainTerminal => "early_copenhagen_train_terminal",
     }
+}
+
+fn check_terminal_with_extra_check(board: &mut Board) -> Option<Side> {
+    if let Some(result) = check_copenhagen_train_terminal(&board) {
+        return Some(result);
+    }
+
+    check_terminal(board)
 }
 
 fn play_game(
@@ -97,7 +107,8 @@ fn play_game(
             }
 
             if let Some(terminal) = get_terminal(&mut board) {
-                let result = check_terminal(&mut board).unwrap();
+                let mut result = check_terminal_with_extra_check(&mut board).unwrap();
+
                 // threefold repetition can also cause terminal, but we want to treat it as draw for training
                 if result == Side::ATTACKERS && is_threefold_repetition(&board) {
                     game_result = None;

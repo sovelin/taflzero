@@ -3,6 +3,7 @@ use crate::board::utils::is_edge_square;
 use crate::board::{Board, PRECOMPUTED};
 use crate::evaluation::check_fort::check_fort;
 use crate::evaluation::defenders_is_surrounded::defenders_is_surrounded;
+use crate::train_terminal::check_copenhagen_train_terminal;
 
 pub fn is_threefold_repetition(board: &Board) -> bool {
     if let Some(value) = board.rep_table.get(&board.zobrist) {
@@ -54,6 +55,7 @@ pub enum TerminalType {
     KingOnCorner = 3,
     DefendersSurrounded = 4,
     FortCheck = 5,
+    EarlyCopenhagenTrainTerminal = 6,
 }
 
 pub fn get_terminal(board: &mut Board) -> Option<TerminalType> {
@@ -75,6 +77,10 @@ pub fn get_terminal(board: &mut Board) -> Option<TerminalType> {
 
     if check_fort(board) {
         return Some(TerminalType::FortCheck);
+    }
+
+    if let Some(x) = check_copenhagen_train_terminal(board) {
+        return Some(TerminalType::EarlyCopenhagenTrainTerminal);
     }
 
     None
