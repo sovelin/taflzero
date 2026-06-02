@@ -54,7 +54,7 @@ impl Board {
         if self.king_sq != -1
             && self.side_to_move == Side::ATTACKERS
             && PRECOMPUTED.vertical_horizontal_neighbors[self.king_sq as usize].contains(&to)
-            && king_is_surrounded(self)
+            && king_is_surroulnded(self)
         {
             // Capture the king
             undo.add_captured_piece(CapturedPiece {
@@ -206,6 +206,7 @@ mod tests {
     mod shieldwall_rule {
         use super::*;
         use crate::board::rules::RulesEnum;
+        use crate::set_board_from_str;
 
         #[test]
         fn capture_2_surrounded_pieces() {
@@ -275,6 +276,39 @@ mod tests {
                 board.board[get_square_from_algebraic("f1") as usize],
                 Piece::DEFENDER
             );
+        }
+
+        #[test]
+        fn should_not_capture_king_historical_variant() {
+            let mut board = Board::new();
+
+            set_board_from_str(
+                &mut board,
+                "...........
+                    ...........
+                    ...........
+                    ...........
+                    ...AA......
+                    ..DK.......
+                    ...A.......
+                    ...........
+                    ...........
+                    ...........
+                    ...........",
+            );
+
+            board.set_rules(RulesEnum::Historical11x11);
+            board.set_side(Side::ATTACKERS);
+
+            let mv = create_move_from_algebraic("e7e6").unwrap();
+
+            let mut undo = UndoMove::new();
+            board.make_move(mv, &mut undo).expect("make move failed");
+
+            assert_eq!(undo.captured_pieces_count, 0);
+
+            // print the board to visually confirm the king is not captured
+            println!("{:?}", board);
         }
 
         #[test]

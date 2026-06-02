@@ -120,34 +120,19 @@ fn play_game(
                 no_capture_counter += 1;
             }
 
-            if no_capture_counter >= 500 || move_number >= 700 {
+            if no_capture_counter >= 100 {
                 // end the game as a draw
                 game_result = None;
-                terminal_str = Some(if no_capture_counter >= 500 {
-                    "draw_nocapture"
-                } else {
-                    "draw_limit"
-                });
+                terminal_str = Some("draw_nocapture");
                 break;
             }
-
-            // Treat threefold repetition as draw for training
-            // if is_threefold_repetition(&board) {
-            //     game_result = None;
-            //     break;
-            // }
 
             if let Some(terminal) = get_terminal(&mut board) {
                 let result = check_terminal(&mut board).unwrap();
                 // threefold repetition can also cause terminal, but we want to treat it as draw for training
-                if result == Side::ATTACKERS && is_threefold_repetition(&board) {
-                    game_result = None;
-                    terminal_str = Some("draw_threefold");
-                } else {
-                    println!("{}", board);
-                    terminal_str = Some(terminal_type_str(&terminal));
-                    game_result = Some(result);
-                }
+                println!("{}", board);
+                terminal_str = Some(terminal_type_str(&terminal));
+                game_result = Some(result);
 
                 break;
             }
@@ -200,8 +185,6 @@ pub fn gen_train_data(
     let mut attacker_wins_saved = 0usize;
     let mut defender_wins_saved = 0usize;
     let mut draws_saved = 0usize;
-    let mut defender_wins_skipped = 0usize;
-    const DEFENDER_WIN_KEEP_EVERY: usize = 1; // 1 = keep all, N>1 = keep 1 out of every N defender wins
 
     loop {
         if let Some(limit) = game_limit
@@ -215,18 +198,6 @@ pub fn gen_train_data(
         }
 
         let (res, game_result, terminal_str) = play_game(nn, &mut search_data, variant);
-        if game_result.is_none() {
-            continue;
-        }
-
-        let is_defender_win = game_result == Some(Side::DEFENDERS);
-
-        if is_defender_win {
-            defender_wins_skipped += 1;
-            if !defender_wins_skipped.is_multiple_of(DEFENDER_WIN_KEEP_EVERY) {
-                continue;
-            }
-        }
 
         positions_generated += res.len();
         games_saved += 1;
