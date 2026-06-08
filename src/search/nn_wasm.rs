@@ -1,19 +1,19 @@
 use super::nn_common::{NUM_PLANES, NnOutput, POLICY_SIZE, build_input_data};
+use crate::board::position_export::BitPosition;
 use crate::masks::BOARD_SIZE;
-use crate::position_export::BitPosition;
 use std::io::Cursor;
+use std::sync::Arc;
 use tract_onnx::prelude::*;
 
-const EMBEDDED_MODEL: &[u8] =
-    include_bytes!("../../zero-trainer/weights/modern-6x64/gen0146.candidate.fp32.onnx");
+const EMBEDDED_MODEL: &[u8] = include_bytes!("../../default_nn.fp32.onnx");
 
 pub struct NeuralNet {
-    plan: TypedRunnableModel<TypedModel>,
+    plan: Arc<TypedRunnableModel>,
 }
 
 impl NeuralNet {
     pub fn new(_path: &str) -> Self {
-        println!("[NN] wasm build: using embedded ONNX model (gen0323.onnx)");
+        println!("[NN] wasm build: using embedded ONNX model");
         Self::from_bytes(EMBEDDED_MODEL)
     }
 
@@ -47,8 +47,8 @@ impl NeuralNet {
         let input_tensor: Tensor = input_array.into();
         let outputs = self.plan.run(tvec!(input_tensor.into())).unwrap();
 
-        let policy_view = outputs[0].to_array_view::<f32>().unwrap();
-        let value_view = outputs[1].to_array_view::<f32>().unwrap();
+        let policy_view = outputs[0].to_plain_array_view::<f32>().unwrap();
+        let value_view = outputs[1].to_plain_array_view::<f32>().unwrap();
 
         let policy_data = policy_view.as_slice().unwrap();
         let value_data = value_view.as_slice().unwrap();

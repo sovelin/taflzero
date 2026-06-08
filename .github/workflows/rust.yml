@@ -2,30 +2,73 @@ on: [push, pull_request]
 name: All of the Rust Commit Checks
 
 permissions:
-  actions: read # An explanation.
+  actions: read
 
 jobs:
-  rust_checks:
-    name: Rust Checks
+  fmt:
+    name: Format
     runs-on: ubuntu-latest
-
     concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}
-
+      group: ${{ github.workflow }}-fmt-${{ github.ref }}
+      cancel-in-progress: true
     permissions:
-      security-events: write # An explanation.
-      actions: read # An explanation.
-
+      actions: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
+      - name: Check formatting
+        run: cargo fmt --all --check
 
-      - name: Run Rust Checks
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-test-${{ github.ref }}
+      cancel-in-progress: true
+    permissions:
+      actions: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Set up git-lfs
         run: |
           sudo apt update
           sudo apt install git-lfs
           git-lfs fetch
           git-lfs pull
-          cargo fmt --all --check
-          cargo test --no-default-features
+      - name: Run tests
+        run: cargo test --no-default-features
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-build-${{ github.ref }}
+      cancel-in-progress: true
+    permissions:
+      actions: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Build
+        run: cargo build --no-default-features
+
+  wasm:
+    name: WASM Build
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-wasm-${{ github.ref }}
+      cancel-in-progress: true
+    permissions:
+      actions: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: Build WASM
+        run: wasm-pack build --target web --dev
