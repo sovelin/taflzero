@@ -41,6 +41,9 @@ function parseArgs(argv) {
         earlyStoppingPatience: 0,
         noRestoreBest: false,
         variant: "copenhagen11x11",
+        curriculumFraction: 0.0,
+        curriculumPath: null,
+        curriculumMaxSize: 50000,
     };
 
     for (let i = 0; i < argv.length; i += 1) {
@@ -80,6 +83,9 @@ function parseArgs(argv) {
         else if (a === "--early-stopping-patience") args.earlyStoppingPatience = intArg(next(), a, 0);
         else if (a === "--no-restore-best") args.noRestoreBest = true;
         else if (a === "--variant") args.variant = required(next(), a);
+        else if (a === "--curriculum-fraction") args.curriculumFraction = floatArg(next(), a, 0);
+        else if (a === "--curriculum-path") args.curriculumPath = required(next(), a);
+        else if (a === "--curriculum-max-size") args.curriculumMaxSize = intArg(next(), a, 1);
         else if (a === "--help" || a === "-h") {
             printHelp();
             process.exit(0);
@@ -294,6 +300,13 @@ async function main() {
         }
         if (args.debugEngine) {
             genDatasetArgs.push("--debug");
+        }
+        if (args.curriculumFraction > 0) {
+            genDatasetArgs.push("--curriculum-fraction", String(args.curriculumFraction));
+            genDatasetArgs.push("--curriculum-max-size", String(args.curriculumMaxSize));
+            if (args.curriculumPath) {
+                genDatasetArgs.push("--curriculum-path", path.normalize(args.curriculumPath));
+            }
         }
         await run("node", genDatasetArgs);
 

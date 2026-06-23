@@ -11,6 +11,9 @@ function parseArgs(argv) {
         release: true,
         workers: 1,
         variant: "copenhagen11x11",
+        curriculumFraction: 0.0,
+        curriculumPath: null,
+        curriculumMaxSize: 50000,
     };
 
     for (let i = 0; i < argv.length; i += 1) {
@@ -37,6 +40,12 @@ function parseArgs(argv) {
             args.workers = v;
         } else if (a === "--variant") {
             args.variant = argv[++i] ?? args.variant;
+        } else if (a === "--curriculum-fraction") {
+            args.curriculumFraction = Number(argv[++i] ?? 0);
+        } else if (a === "--curriculum-path") {
+            args.curriculumPath = argv[++i] ?? null;
+        } else if (a === "--curriculum-max-size") {
+            args.curriculumMaxSize = Number(argv[++i] ?? 50000);
         } else if (a === "--debug") {
             args.release = false;
         } else if (a === "--help" || a === "-h") {
@@ -79,7 +88,7 @@ function run(cmd, cmdArgs, cwd = process.cwd()) {
     });
 }
 
-function buildEngineArgs(netPath, outPath, count, gamelogPath, variant) {
+function buildEngineArgs(netPath, outPath, count, gamelogPath, variant, args) {
     const engineArgs = [
         "--net",
         path.normalize(netPath),
@@ -92,6 +101,13 @@ function buildEngineArgs(netPath, outPath, count, gamelogPath, variant) {
     ];
     if (count != null) {
         engineArgs.push("--datagen-count", String(count));
+    }
+    if (args.curriculumFraction > 0) {
+        engineArgs.push("--curriculum-fraction", String(args.curriculumFraction));
+        if (args.curriculumPath) {
+            engineArgs.push("--curriculum-path", path.normalize(args.curriculumPath));
+        }
+        engineArgs.push("--curriculum-max-size", String(args.curriculumMaxSize));
     }
     return engineArgs;
 }
@@ -124,7 +140,7 @@ async function main() {
     const gamelogPath = `${args.out}.gamelog`;
 
     if (workers === 1 || totalGames == null) {
-        const engineArgs = buildEngineArgs(args.net, args.out, totalGames, gamelogPath, args.variant);
+        const engineArgs = buildEngineArgs(args.net, args.out, totalGames, gamelogPath, args.variant, args);
         await runEngine(args, engineArgs);
         return;
     }
@@ -147,7 +163,7 @@ async function main() {
             const idx = batchIndex++;
             const tmpFile = `${args.out}.worker${workerId}.${idx}.tmp`;
             tmpFiles.push(tmpFile);
-            const engineArgs = buildEngineArgs(args.net, tmpFile, batch, gamelogPath, args.variant);
+            const engineArgs = buildEngineArgs(args.net, tmpFile, batch, gamelogPath, args.variant, args);
 
             for (let attempt = 1; attempt <= MAX_BATCH_RETRIES; attempt++) {
                 try { fs.unlinkSync(tmpFile); } catch {}

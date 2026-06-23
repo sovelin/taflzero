@@ -1,16 +1,18 @@
-use crate::board::Board;
-use crate::board::types::Piece;
+use crate::board::rules::RulesEnum;
+use crate::board::types::{Piece, Side};
 use crate::board::utils::get_square;
+use crate::board::Board;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct BitPosition {
     pub planes: [u8; 16 * 3], // [attackers | defenders | king]
-    pub stm: u8,              // 1 for attackers, 0 for defenders
+    pub stm: u8,              // 1 for defenders, 0 for attackers
+    pub rep: u8,              // repetition count for this position in the current game
 }
 
 impl BitPosition {
-    pub fn from_board(board: &Board) -> Self {
+    pub fn from_board(board: &Board, rep: u8) -> Self {
         let mut planes = [0u8; 16 * 3];
 
         for row in 0..11 {
@@ -37,7 +39,30 @@ impl BitPosition {
         Self {
             planes,
             stm: board.side_to_move as u8,
+            rep,
         }
+    }
+
+    pub fn to_board(&self, variant: RulesEnum) -> Board {
+        let mut board = Board::new();
+        board.set_rules(variant);
+
+        for idx in 0..121usize {
+            let byte = idx / 8;
+            let bit = idx % 8;
+
+            if (self.planes[byte] >> bit) & 1 == 1 {
+                board.set_piece(idx, Piece::ATTACKER).ok();
+            } else if (self.planes[16 + byte] >> bit) & 1 == 1 {
+                board.set_piece(idx, Piece::DEFENDER).ok();
+            } else if (self.planes[32 + byte] >> bit) & 1 == 1 {
+                board.set_piece(idx, Piece::KING).ok();
+            }
+        }
+
+        let side = if self.stm == 0 { Side::ATTACKERS } else { Side::DEFENDERS };
+        board.set_side(side);
+        board
     }
 
     pub fn as_bytes(&self) -> &[u8] {
@@ -100,7 +125,7 @@ mod tests {
              ...........",
         );
 
-        let bit_position = BitPosition::from_board(&board);
+        let bit_position = BitPosition::from_board(&board, 1);
 
         // Check the first plane (attackers)
         let attackers_plane = defenders_plane(&bit_position, 0);
@@ -161,9 +186,9 @@ mod tests {
     #[test]
     fn test_side_to_move() {
         let mut board = Board::new();
-        assert_eq!(BitPosition::from_board(&board).stm, 0); // Attackers to move
+        assert_eq!(BitPosition::from_board(&board, 1).stm, 0); // Attackers to move
 
         board.side_to_move = Side::DEFENDERS;
-        assert_eq!(BitPosition::from_board(&board).stm, 1); // Defenders to move
+        assert_eq!(BitPosition::from_board(&board, 1).stm, 1); // Defenders to move
     }
 }

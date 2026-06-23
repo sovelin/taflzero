@@ -136,6 +136,10 @@ impl PendingSample {
         };
         self.value = compute_value(stm_side, result);
     }
+
+    pub fn bit_position(&self) -> &BitPosition {
+        &self.bit_position
+    }
 }
 
 impl MCTSTree {
@@ -172,7 +176,7 @@ impl MCTSTree {
 
             if let Some(mv) = node.mv() {
                 if visits_u16 == 0 {
-                    continue; // skip moves that were not visited
+                    continue;
                 }
 
                 let move_index = move_to_policy_index(mv);
@@ -184,11 +188,13 @@ impl MCTSTree {
             }
         }
 
+        let rep = board.rep_table.get(&board.zobrist).copied().unwrap_or(1);
+
         PendingSample {
-            bit_position: BitPosition::from_board(board),
+            bit_position: BitPosition::from_board(board, rep),
             legal_mask: self.build_legal_mask_from_board(board),
             policy,
-            value: 0, // to be set later
+            value: 0,
         }
     }
 }

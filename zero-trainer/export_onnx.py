@@ -14,7 +14,7 @@ def export_model_to_onnx(model: nn.Module, onnx_path: Path) -> None:
     model.eval()
     onnx_path.parent.mkdir(parents=True, exist_ok=True)
 
-    dummy = torch.randn(1, 6, 11, 11)
+    dummy = torch.randn(1, 11, 11, 11)
 
     # Export FP32 to a temp file, then convert to FP16 in-place
     with tempfile.NamedTemporaryFile(suffix=".onnx", delete=False) as tmp:

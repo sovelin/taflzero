@@ -358,7 +358,8 @@ fn expand_node(
     nn: &mut NeuralNet,
     move_gen: &mut MoveGen,
 ) -> f32 {
-    let position = BitPosition::from_board(board);
+    let rep = board.rep_table.get(&board.zobrist).copied().unwrap_or(1);
+    let position = BitPosition::from_board(board, rep);
     let nn_out = nn.evaluate_position(&position);
 
     let moves = get_left_moves(board, move_gen);
@@ -575,7 +576,8 @@ fn select_leaf(
         }
     } else {
         // Need NN evaluation — collect position and legal moves
-        let position = BitPosition::from_board(board);
+        let rep = board.rep_table.get(&board.zobrist).copied().unwrap_or(1);
+        let position = BitPosition::from_board(board, rep);
         let moves = get_left_moves(board, move_gen);
 
         let mut child_zobrists = Vec::with_capacity(moves.len());

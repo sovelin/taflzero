@@ -1,10 +1,4 @@
-use crate::movegen::MAX_MOVES;
-use crate::moves::movegen::MoveGen;
-use crate::moves::mv::Move;
-use crate::moves::undo::UndoMove;
 use crate::timer::Timer;
-use rand::SeedableRng;
-use rand::rngs::StdRng;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::{
