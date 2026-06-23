@@ -54,7 +54,7 @@ impl Board {
         if self.king_sq != -1
             && self.side_to_move == Side::ATTACKERS
             && PRECOMPUTED.vertical_horizontal_neighbors[self.king_sq as usize].contains(&to)
-            && king_is_surroulnded(self)
+            && king_is_surrounded(self)
         {
             // Capture the king
             undo.add_captured_piece(CapturedPiece {
