@@ -14,6 +14,8 @@ pub struct SearchIterationResponse {
     pub(crate) pv: Vec<Move>,
     pub winrate: f32,
     pub multi_pv: Option<usize>,
+    /// Plies to a proven mate (>0 = we mate, <0 = we get mated), else None.
+    pub mate: Option<i32>,
 }
 
 impl SearchIterationResponse {

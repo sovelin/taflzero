@@ -20,7 +20,7 @@ function parseArgs(argv) {
         batch: 256,
         lr: 1e-3,
         weightDecay: 1e-4,
-        defenderWeight: 0.25,
+        defenderWeight: 1.0,
         engineBin: null,
         debugEngine: false,
         workers: 1,
@@ -39,8 +39,22 @@ function parseArgs(argv) {
         anchorNet: null,
         anchorPairs: 100,
         earlyStoppingPatience: 0,
+        warmupSteps: 0,
+        fullNodes: null,
+        cheapNodes: null,
+        fullProb: null,
+        valueChannels: null,
+        se: false,
+        gpoolChannels: null,
+        auxHeads: false,
+        auxPolicyWeight: null,
+        cornerWeight: null,
+        decidedPolicyK: null,
         noRestoreBest: false,
         variant: "copenhagen11x11",
+        curriculumFraction: 0.0,
+        curriculumPath: null,
+        curriculumMaxSize: 50000,
     };
 
     for (let i = 0; i < argv.length; i += 1) {
@@ -59,6 +73,17 @@ function parseArgs(argv) {
         else if (a === "--steps") args.steps = intArg(next(), a, 0);
         else if (a === "--batch") args.batch = intArg(next(), a, 1);
         else if (a === "--lr") args.lr = floatArg(next(), a, 0);
+        else if (a === "--warmup-steps") args.warmupSteps = intArg(next(), a, 0);
+        else if (a === "--full-nodes") args.fullNodes = intArg(next(), a, 1);
+        else if (a === "--cheap-nodes") args.cheapNodes = intArg(next(), a, 1);
+        else if (a === "--full-prob") args.fullProb = floatArg(next(), a, 0);
+        else if (a === "--value-channels") args.valueChannels = intArg(next(), a, 1);
+        else if (a === "--se") args.se = true;
+        else if (a === "--gpool-channels") args.gpoolChannels = intArg(next(), a, 0);
+        else if (a === "--aux-heads") args.auxHeads = true;
+        else if (a === "--aux-policy-weight") args.auxPolicyWeight = floatArg(next(), a, 0);
+        else if (a === "--corner-weight") args.cornerWeight = floatArg(next(), a, 0);
+        else if (a === "--decided-policy-k") args.decidedPolicyK = floatArg(next(), a, 0);
         else if (a === "--weight-decay") args.weightDecay = floatArg(next(), a, 0);
         else if (a === "--defender-weight") args.defenderWeight = floatArg(next(), a, 0);
         else if (a === "--workers") args.workers = intArg(next(), a, 1);
@@ -80,6 +105,9 @@ function parseArgs(argv) {
         else if (a === "--early-stopping-patience") args.earlyStoppingPatience = intArg(next(), a, 0);
         else if (a === "--no-restore-best") args.noRestoreBest = true;
         else if (a === "--variant") args.variant = required(next(), a);
+        else if (a === "--curriculum-fraction") args.curriculumFraction = floatArg(next(), a, 0);
+        else if (a === "--curriculum-path") args.curriculumPath = required(next(), a);
+        else if (a === "--curriculum-max-size") args.curriculumMaxSize = intArg(next(), a, 1);
         else if (a === "--help" || a === "-h") {
             printHelp();
             process.exit(0);
@@ -129,7 +157,12 @@ function printHelp() {
             "  --weights-dir <dir>       Where genN.onnx/genN.onxx are saved (default: zero-trainer/weights)",
             "",
             "Train args forwarded to train.py:",
-            "  --window <N> --steps <N> --batch <N> --lr <F> --weight-decay <F> --defender-weight <F>",
+            "  --window <N> --steps <N> --batch <N> --lr <F> --warmup-steps <N> --weight-decay <F> --defender-weight <F>",
+            "  --value-channels <N> --se --gpool-channels <N> --aux-heads   (fresh model architecture, T2)",
+            "  --aux-policy-weight <F> --corner-weight <F>                  (aux loss weights)",
+            "",
+            "Datagen search budget (playout cap randomization, T2):",
+            "  --full-nodes <N> --cheap-nodes <N> --full-prob <F>",
             "  --no-restore-best             Don't restore best val_loss checkpoint, use final model weights",
             "",
             "SPRT validation (after each training):",
@@ -295,6 +328,22 @@ async function main() {
         if (args.debugEngine) {
             genDatasetArgs.push("--debug");
         }
+        if (args.curriculumFraction > 0) {
+            genDatasetArgs.push("--curriculum-fraction", String(args.curriculumFraction));
+            genDatasetArgs.push("--curriculum-max-size", String(args.curriculumMaxSize));
+            if (args.curriculumPath) {
+                genDatasetArgs.push("--curriculum-path", path.normalize(args.curriculumPath));
+            }
+        }
+        if (args.fullNodes != null) {
+            genDatasetArgs.push("--full-nodes", String(args.fullNodes));
+        }
+        if (args.cheapNodes != null) {
+            genDatasetArgs.push("--cheap-nodes", String(args.cheapNodes));
+        }
+        if (args.fullProb != null) {
+            genDatasetArgs.push("--full-prob", String(args.fullProb));
+        }
         await run("node", genDatasetArgs);
 
         // ── Step 2: Training ─────────────────────────────────────────
@@ -322,11 +371,37 @@ async function main() {
             "--early-stopping-patience",
             String(args.earlyStoppingPatience),
         ];
+        if (args.warmupSteps > 0) {
+            trainArgs.push("--warmup-steps", String(args.warmupSteps));
+        }
         if (args.noRestoreBest) {
             trainArgs.push("--no-restore-best");
         }
         if (currentCheckpoint) {
             trainArgs.push("--checkpoint", currentCheckpoint);
+        }
+        // Architecture flags apply only when train.py creates a fresh model
+        // (no --checkpoint); harmless otherwise.
+        if (args.valueChannels != null) {
+            trainArgs.push("--value-channels", String(args.valueChannels));
+        }
+        if (args.se) {
+            trainArgs.push("--se");
+        }
+        if (args.gpoolChannels != null) {
+            trainArgs.push("--gpool-channels", String(args.gpoolChannels));
+        }
+        if (args.auxHeads) {
+            trainArgs.push("--aux-heads");
+        }
+        if (args.auxPolicyWeight != null) {
+            trainArgs.push("--aux-policy-weight", String(args.auxPolicyWeight));
+        }
+        if (args.cornerWeight != null) {
+            trainArgs.push("--corner-weight", String(args.cornerWeight));
+        }
+        if (args.decidedPolicyK != null) {
+            trainArgs.push("--decided-policy-k", String(args.decidedPolicyK));
         }
         await run(python, trainArgs);
 

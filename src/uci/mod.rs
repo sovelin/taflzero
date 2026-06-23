@@ -49,10 +49,15 @@ fn format_info_message(iteration: SearchIterationResponse) -> String {
         String::new()
     };
 
+    let score_str = match iteration.mate {
+        Some(m) => format!("mate {}", m),
+        None => format!("cp {}", iteration.score),
+    };
+
     format!(
-        "info{} score cp {} winrate {:.1}% nodes {} time {} speed {} pv {}",
+        "info{} score {} winrate {:.1}% nodes {} time {} speed {} pv {}",
         multipv_str,
-        iteration.score,
+        score_str,
         iteration.winrate * 100.0,
         iteration.nodes,
         iteration.time,
@@ -595,5 +600,20 @@ impl WasmClient {
     /// Reset before each new search with `Atomics.store(buffer, 0, 0)`.
     pub fn set_stop_buffer(&mut self, buffer: js_sys::Int32Array) {
         crate::search::search_data::set_wasm_stop_buffer(buffer);
+    }
+
+    /// Register the SharedArrayBuffer-backed views used for NN inference done
+    /// by the onnxruntime-web worker.  Call once after construction, before any
+    /// search.  See `nn_wasm::set_nn_buffers` for the buffer layout.
+    ///   control: Int32Array [REQ, RESP, BATCH]
+    ///   input:   Float32Array  max_batch * 1331   (SAMPLE_SIZE)
+    ///   output:  Float32Array  max_batch * 4841   (POLICY_SIZE then value)
+    pub fn set_nn_buffers(
+        &mut self,
+        control: js_sys::Int32Array,
+        input: js_sys::Float32Array,
+        output: js_sys::Float32Array,
+    ) {
+        crate::search::nn::set_nn_buffers(control, input, output);
     }
 }

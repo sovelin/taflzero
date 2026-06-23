@@ -44,6 +44,7 @@ def iter_samples(fh):
         stm = fh.read(1)
         if len(stm) < 1:
             return
+        fh.read(1)  # rep byte
         legal = fh.read(LEGAL_MASK_BYTES)
         if len(legal) < LEGAL_MASK_BYTES:
             return
@@ -54,8 +55,8 @@ def iter_samples(fh):
         policy_raw = fh.read(policy_len * 4)
         if len(policy_raw) < policy_len * 4:
             return
-        val = fh.read(1)
-        if len(val) < 1:
+        val = fh.read(2)  # value + root_q
+        if len(val) < 2:
             return
         yield stm[0], legal, policy_raw, policy_len
 

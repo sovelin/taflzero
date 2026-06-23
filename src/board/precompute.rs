@@ -2,9 +2,10 @@ use crate::board::constants::{BOARD_SIZE, SQS};
 use crate::board::types::{Col, Row, Square};
 use crate::board::utils::{
     get_all_neighbors, get_bottom_left_neighbor, get_bottom_left_sq, get_bottom_neighbor,
-    get_bottom_right_neighbor, get_bottom_right_sq, get_col, get_corners_sq, get_left_neighbor,
-    get_right_neighbor, get_row, get_throne_sq, get_top_left_neighbor, get_top_left_sq,
-    get_top_neighbor, get_top_right_neighbor, get_top_right_sq, get_vertical_horizontal_neighbors,
+    get_bottom_right_neighbor, get_bottom_right_sq, get_col, get_corners_sq, get_edges_sq,
+    get_left_neighbor, get_right_neighbor, get_row, get_throne_sq, get_top_left_neighbor,
+    get_top_left_sq, get_top_neighbor, get_top_right_neighbor, get_top_right_sq,
+    get_vertical_horizontal_neighbors,
 };
 use std::sync::LazyLock;
 
@@ -20,6 +21,7 @@ pub struct Precomputed {
     pub col: [Col; SQS],
     pub throne_sq: usize,
     pub corners_sq: Vec<Square>,
+    pub edges_sq: Vec<Square>,
     pub top_left_sq: usize,
     pub top_right_sq: usize,
     pub bottom_right_sq: usize,
@@ -171,6 +173,7 @@ impl Precomputed {
             manhattan_distance,
             throne_sq: get_throne_sq(),
             corners_sq: get_corners_sq(),
+            edges_sq: get_edges_sq(),
             top_left_sq: get_top_left_sq(),
             top_right_sq: get_top_right_sq(),
             bottom_right_sq: get_bottom_right_sq(),

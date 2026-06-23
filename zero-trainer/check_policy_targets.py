@@ -29,7 +29,17 @@ def popcount_bytes(b: bytes) -> int:
     return sum(int(x).bit_count() for x in b)
 
 
-def iter_samples(fh):
+FLAG_POLICY_VALID = 1 << 0
+
+# Sample tail bytes per format version:
+#   v0 (--legacy): value only
+#   v1 (T1 runs):  value + root_q
+#   v2 (T2 runs):  value + root_q + flags + king_corner
+_TAIL_BYTES = {"v0": 1, "v1": 2, "v2": 4}
+
+
+def iter_samples(fh, fmt: str = "v2"):
+    tail_bytes = _TAIL_BYTES[fmt]
     while True:
         planes = fh.read(48)
         if len(planes) < 48:
@@ -37,6 +47,7 @@ def iter_samples(fh):
         stm = fh.read(1)
         if len(stm) < 1:
             return
+        fh.read(1)  # rep byte
         legal = fh.read(LEGAL_MASK_BYTES)
         if len(legal) < LEGAL_MASK_BYTES:
             return
@@ -47,9 +58,12 @@ def iter_samples(fh):
         policy_raw = fh.read(policy_len * 4)
         if len(policy_raw) < policy_len * 4:
             return
-        val = fh.read(1)
-        if len(val) < 1:
+        tail = fh.read(tail_bytes)
+        if len(tail) < tail_bytes:
             return
+        # v2: skip cheap-search samples — their policy is not a training target
+        if fmt == "v2" and not (tail[2] & FLAG_POLICY_VALID):
+            continue
         yield stm[0], legal, policy_raw, policy_len
 
 
@@ -60,7 +74,12 @@ def main() -> None:
     ap.add_argument("--max-samples", type=int, default=0, help="0 = no limit")
     ap.add_argument("--every", type=int, default=1, help="Only analyze every Nth sample")
     ap.add_argument("--tail", type=int, default=0, help="Only analyze the last N samples (0 = all)")
+    ap.add_argument("--format", choices=["v0", "v1", "v2"], default="v2",
+                    help="Sample format: v2 = T2 (flags+corner, cheap samples skipped), v1 = T1 (root_q), v0 = pre-root_q")
+    ap.add_argument("--legacy", action="store_true", help="Alias for --format v0")
     args = ap.parse_args()
+    if args.legacy:
+        args.format = "v0"
 
     if args.policy_temp <= 0:
         raise SystemExit("policy-temp must be > 0")
@@ -106,7 +125,7 @@ def main() -> None:
         if args.tail and args.tail > 0:
             # Count total samples to compute tail window.
             total = 0
-            for _ in iter_samples(f):
+            for _ in iter_samples(f, args.format):
                 total += 1
             start_at = max(0, total - args.tail)
             f.seek(0)
@@ -114,7 +133,7 @@ def main() -> None:
             total = None
             start_at = 0
 
-        for stm, legal, policy_raw, policy_len in iter_samples(f):
+        for stm, legal, policy_raw, policy_len in iter_samples(f, args.format):
             samples += 1
             if samples <= start_at:
                 continue

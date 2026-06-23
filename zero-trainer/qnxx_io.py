@@ -13,20 +13,21 @@ QNXX_VERSION = 1
 
 
 def _make_payload(model: TaflAlphaZeroNet, seed: int | None = None) -> dict[str, Any]:
-    # Infer architecture params from the model itself
-    in_channels = model.stem[0].in_channels
-    trunk_channels = model.stem[0].out_channels
-    num_blocks = len(model.trunk)
+    # The model records its own constructor kwargs; fall back to inferring the
+    # legacy trio for models created before that attribute existed.
+    model_kwargs = getattr(model, "model_kwargs", None)
+    if model_kwargs is None:
+        model_kwargs = {
+            "in_channels": model.stem[0].in_channels,
+            "trunk_channels": model.stem[0].out_channels,
+            "num_blocks": len(model.trunk),
+        }
 
     payload: dict[str, Any] = {
         "format": QNXX_FORMAT,
         "version": QNXX_VERSION,
         "model_class": "TaflAlphaZeroNet",
-        "model_kwargs": {
-            "in_channels": in_channels,
-            "trunk_channels": trunk_channels,
-            "num_blocks": num_blocks,
-        },
+        "model_kwargs": dict(model_kwargs),
         "state_dict": model.state_dict(),
     }
     if seed is not None:

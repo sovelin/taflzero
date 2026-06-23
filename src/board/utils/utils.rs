@@ -172,6 +172,12 @@ pub fn get_all_neighbors(sq: Square) -> Vec<Square> {
     neighbors
 }
 
+pub fn get_edges_sq() -> Vec<Square> {
+    (0..BOARD_SIZE * BOARD_SIZE)
+        .filter(|&sq| is_edge_square(sq))
+        .collect()
+}
+
 pub fn is_edge_square(sq: Square) -> bool {
     let row = get_row(sq);
     let col = get_col(sq);

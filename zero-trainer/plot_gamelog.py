@@ -80,6 +80,159 @@ def print_chunk(chunk_idx: int, start: int, end: int, games: list):
         print(f"    {ANSI[color]}{t:<20}{r} {c:4d}  ({pct:5.1f}%)")
 
 
+def print_forts(all_chunks, step):
+    g, y, r = ANSI["green"], ANSI["yellow"], ANSI["reset"]
+    rows = []
+    mx = 0.0
+    for i, games in enumerate(all_chunks):
+        n = len(games)
+        c = sum(1 for t, _ in games if t == "def_fort")
+        pct = c / n * 100 if n else 0.0
+        rows.append((i, i * step, c, pct))
+        mx = max(mx, pct)
+    scale = 50 / mx if mx else 1.0
+    print(f"\n{ANSI['bold']}def_fort %% per chunk (step={step}, max={mx:.2f}%){r}\n")
+    for i, start, c, pct in rows:
+        col = g if pct >= mx * 0.66 else (y if pct >= mx * 0.33 else ANSI["gray"])
+        bar = "█" * int(round(pct * scale))
+        print(f"  #{i:3d} [{start:>7}] {c:4d}  {pct:5.2f}%  {col}{bar}{r}")
+
+
+def _roll(v, w=5):
+    return [sum(v[max(0, i - w + 1):i + 1]) / (i - max(0, i - w + 1) + 1) for i in range(len(v))]
+
+
+_SIDE = lambda side: [k for k, v in TERMINAL_COLORS.items() if v[0] == side]
+
+# key -> (label, color, is_percent, fn(counts, n, avg_len) -> value)
+METRICS = {
+    "fort":      ("def_fort %  (defense builds)", "#2980b9", True,
+                  lambda c, n, l: c["def_fort"] / n * 100 if n else 0),
+    "threefold": ("atk_threefold %  (cheap repetition)", "#c0392b", True,
+                  lambda c, n, l: c["atk_threefold"] / n * 100 if n else 0),
+    "surround":  ("atk_surrounded %  (full encirclement)", "#e67e22", True,
+                  lambda c, n, l: c["atk_surrounded"] / n * 100 if n else 0),
+    "capture":   ("atk_capture %  (king taken)", "#e74c3c", True,
+                  lambda c, n, l: c["atk_capture"] / n * 100 if n else 0),
+    "corner":    ("def_corner %  (king escapes)", "#16a085", True,
+                  lambda c, n, l: c["def_corner"] / n * 100 if n else 0),
+    "atk":       ("ATK win %", "#c0392b", True,
+                  lambda c, n, l: sum(c[k] for k in _SIDE("ATK")) / n * 100 if n else 0),
+    "def":       ("DEF win %", "#27ae60", True,
+                  lambda c, n, l: sum(c[k] for k in _SIDE("DEF")) / n * 100 if n else 0),
+    "draw":      ("draw %", "#7f8c8d", True,
+                  lambda c, n, l: sum(c[k] for k in _SIDE("DRAW")) / n * 100 if n else 0),
+    "len":       ("avg game length", "#8e44ad", False,
+                  lambda c, n, l: l),
+}
+
+
+def _chunk_stats(games):
+    counts = defaultdict(int)
+    tl = 0
+    for t, ln in games:
+        counts[t] += 1
+        tl += ln
+    n = len(games)
+    return counts, n, (tl / n if n else 0)
+
+
+def plot_metrics_mpl(all_chunks, step, keys, out="forts.png"):
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError:
+        print("pip install matplotlib")
+        return
+    keys = [k for k in keys if k in METRICS]
+    if not keys:
+        print("no valid metrics. available:", ", ".join(METRICS))
+        return
+    stats = [_chunk_stats(g) for g in all_chunks]
+    xs = [i * step for i in range(len(all_chunks))]
+
+    fig, axes = plt.subplots(len(keys), 1, sharex=True,
+                             figsize=(13, 2.4 * len(keys) + 1), squeeze=False)
+    axes = axes[:, 0]
+    fig.suptitle("Self-play metrics over training", fontsize=13, fontweight="bold")
+    for ax, key in zip(axes, keys):
+        label, color, is_pct, fn = METRICS[key]
+        vals = [fn(c, n, l) for (c, n, l) in stats]
+        ax.plot(xs, vals, color=color, lw=1, marker="o", ms=2.5, alpha=0.35)
+        ax.plot(xs, _roll(vals), color=color, lw=2.6, label="5-chunk mean")
+        suffix = "%" if is_pct else ""
+        ax.annotate(f"{vals[-1]:.2f}{suffix}", (xs[-1], vals[-1]),
+                    textcoords="offset points", xytext=(-6, 9), ha="right",
+                    fontsize=10, fontweight="bold", color=color)
+        ax.set_ylabel(label, fontsize=9)
+        if is_pct:
+            ax.set_ylim(bottom=0)
+        ax.grid(True, alpha=0.25)
+        ax.legend(loc="upper left", fontsize=8)
+    axes[-1].set_xlabel(f"games (step={step})")
+    fig.tight_layout()
+    fig.savefig(out, dpi=120)
+    print(f"saved {out}  ({', '.join(keys)})")
+    plt.show()
+
+
+def plot_metrics_interactive(all_chunks, step, initial):
+    try:
+        import matplotlib.pyplot as plt
+        from matplotlib.widgets import CheckButtons
+    except ImportError:
+        print("pip install matplotlib")
+        return
+    keys = list(METRICS)
+    stats = [_chunk_stats(g) for g in all_chunks]
+    xs = [i * step for i in range(len(all_chunks))]
+    series = {k: [METRICS[k][3](c, n, l) for (c, n, l) in stats] for k in keys}
+
+    fig = plt.figure(figsize=(14, 8))
+    fig.suptitle("Self-play metrics over training", fontsize=13, fontweight="bold")
+    ax_check = fig.add_axes([0.005, 0.30, 0.12, 0.45])
+    ax_check.set_title("metrics", fontsize=9)
+    check = CheckButtons(ax_check, keys, [k in initial for k in keys])
+
+    data_axes = []
+
+    def positions(n):
+        x0, x1, y0, y1, gap = 0.22, 0.97, 0.07, 0.92, 0.03
+        h = (y1 - y0 - gap * (n - 1)) / n
+        return [[x0, y1 - h - i * (h + gap), x1 - x0, h] for i in range(n)]
+
+    def redraw(_=None):
+        for ax in data_axes:
+            ax.remove()
+        data_axes.clear()
+        checked = [k for k, st in zip(keys, check.get_status()) if st]
+        if checked:
+            pos = positions(len(checked))
+            for i, (p, key) in enumerate(zip(pos, checked)):
+                label, color, is_pct, _ = METRICS[key]
+                vals = series[key]
+                ax = fig.add_axes(p)
+                ax.plot(xs, vals, color=color, lw=1, marker="o", ms=2, alpha=0.3)
+                ax.plot(xs, _roll(vals), color=color, lw=2.4)
+                ax.annotate(f"{vals[-1]:.2f}{'%' if is_pct else ''}", (xs[-1], vals[-1]),
+                            textcoords="offset points", xytext=(-6, 8), ha="right",
+                            fontsize=9, fontweight="bold", color=color)
+                ax.set_ylabel(label, fontsize=8)
+                if is_pct:
+                    ax.set_ylim(bottom=0)
+                ax.grid(True, alpha=0.25)
+                if i < len(checked) - 1:
+                    ax.set_xticklabels([])
+                else:
+                    ax.set_xlabel(f"games (step={step})")
+                data_axes.append(ax)
+        fig.canvas.draw_idle()
+
+    check.on_clicked(redraw)
+    redraw()
+    fig.savefig("forts.png", dpi=110)   # snapshot of initial state
+    plt.show()
+
+
 def plot_chunks(all_chunks, step):
     try:
         import matplotlib.pyplot as plt
@@ -125,6 +278,12 @@ def main():
     ap.add_argument("--step", type=int, default=10, help="Games per chunk")
     ap.add_argument("--tail", type=int, default=0, help="Show only last N chunks (0=all)")
     ap.add_argument("--plot", action="store_true", help="Show matplotlib plot")
+    ap.add_argument("--print-forts", action="store_true", help="Terminal ASCII graph of def_fort %% per chunk only")
+    ap.add_argument("--plot-forts", action="store_true", help="matplotlib graph, one panel per metric (saves forts.png + shows window)")
+    ap.add_argument("--metrics", default="fort,threefold",
+                    help="comma list; available: fort,threefold,surround,capture,corner,atk,def,draw,len")
+    ap.add_argument("--interactive", "-i", action="store_true",
+                    help="live window with checkboxes to toggle metrics (needs a GUI backend)")
     args = ap.parse_args()
 
     path = Path(args.path)
@@ -139,6 +298,18 @@ def main():
     all_chunks = []
     for i in range(0, len(games), args.step):
         all_chunks.append(games[i:i + args.step])
+
+    if args.print_forts:
+        print_forts(all_chunks, args.step)
+        return
+
+    initial = [m.strip() for m in args.metrics.split(",")]
+    if args.interactive:
+        plot_metrics_interactive(all_chunks, args.step, initial)
+        return
+    if args.plot_forts:
+        plot_metrics_mpl(all_chunks, args.step, initial)
+        return
 
     chunks_to_show = all_chunks
     offset = 0
