@@ -79,10 +79,6 @@ pub fn get_terminal(board: &mut Board) -> Option<TerminalType> {
         return Some(TerminalType::FortCheck);
     }
 
-    if let Some(x) = check_copenhagen_train_terminal(board) {
-        return Some(TerminalType::EarlyCopenhagenTrainTerminal);
-    }
-
     None
 }
 
