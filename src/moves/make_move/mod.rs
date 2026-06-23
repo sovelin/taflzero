@@ -51,18 +51,34 @@ impl Board {
         }
 
         // Capture king special handling
-        if self.king_sq != -1
-            && self.side_to_move == Side::ATTACKERS
-            && PRECOMPUTED.vertical_horizontal_neighbors[self.king_sq as usize].contains(&to)
-            && king_is_surrounded(self)
-        {
-            // Capture the king
-            undo.add_captured_piece(CapturedPiece {
-                square: self.king_sq as Square,
-                piece: Piece::KING,
-            });
+        if self.king_sq != -1 && self.side_to_move == Side::ATTACKERS {
+            let king_sq = self.king_sq as usize;
+            let should_capture = if self.get_rules().is_king_strong {
+                PRECOMPUTED.vertical_horizontal_neighbors[king_sq].contains(&to)
+                    && king_is_surrounded(self)
+            } else {
+                // Historical: weak king captured when the moving piece completes a sandwich
+                // on one axis (left+right or top+bottom). Pre-existing pairs don't trigger capture.
+                let is_attacker = |sq_opt: Option<Square>| {
+                    sq_opt.is_some_and(|sq| self.board[sq] == Piece::ATTACKER)
+                };
+                (PRECOMPUTED.left_neighbor[king_sq] == Some(to)
+                    && is_attacker(PRECOMPUTED.right_neighbor[king_sq]))
+                    || (PRECOMPUTED.right_neighbor[king_sq] == Some(to)
+                        && is_attacker(PRECOMPUTED.left_neighbor[king_sq]))
+                    || (PRECOMPUTED.top_neighbor[king_sq] == Some(to)
+                        && is_attacker(PRECOMPUTED.bottom_neighbor[king_sq]))
+                    || (PRECOMPUTED.bottom_neighbor[king_sq] == Some(to)
+                        && is_attacker(PRECOMPUTED.top_neighbor[king_sq]))
+            };
 
-            self.clear_piece(self.king_sq as Square);
+            if should_capture {
+                undo.add_captured_piece(CapturedPiece {
+                    square: king_sq,
+                    piece: Piece::KING,
+                });
+                self.clear_piece(king_sq);
+            }
         }
 
         self.flip_side();
