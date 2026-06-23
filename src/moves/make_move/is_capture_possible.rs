@@ -40,7 +40,6 @@ pub fn is_capture_possible(
     enemy_sq_1: Square,
     enemy_sq_2: Square,
 ) -> bool {
-    println!("Checking capture: target_sq={}, enemy_sq_1={}, enemy_sq_2={}", target_sq, enemy_sq_1, enemy_sq_2);
     if board.rules.rules().is_king_strong && board.board[target_sq] == Piece::KING || board.board[target_sq] == Piece::EMPTY {
         return false;
     }
