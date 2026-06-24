@@ -223,13 +223,10 @@ def _read_sample_at(f, offset: int) -> tuple[torch.Tensor, torch.Tensor, torch.T
     passable_group = ~atk_mask
     group_bfs = _bfs_reach(group_seeds, passable_group)
 
-    # King BFS: seeds = king, passable = empty (not atk, not def, not king)
+    # King BFS: seeds = king, passable = king's own square or empty (not atk, not def)
     king_seeds = list(np.where(king_mask)[0])
-    passable_king = ~atk_mask & ~def_mask & ~king_mask
+    passable_king = ~atk_mask & ~def_mask
     king_bfs = _bfs_reach(king_seeds, passable_king)
-    # Include king square itself
-    for ksq in king_seeds:
-        king_bfs[ksq] = 1.0
 
     # -- Repetition planes --
     rep1_plane = np.full(SQS, 1.0 if rep >= 2 else 0.0, dtype=np.float32)

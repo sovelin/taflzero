@@ -94,7 +94,7 @@ pub fn fill_input(input: &mut [f32], pos: &BitPosition) {
         }
     }
 
-    // Plane 8: king BFS — king only, passable = empty squares (not attacker, not defender, not king)
+    // Plane 8: king BFS — king only, passable = king's own square or empty (not attacker, not defender)
     let king_reach = if let Some(ksq) = king_sq {
         bfs(
             |sq| {
@@ -102,8 +102,7 @@ pub fn fill_input(input: &mut [f32], pos: &BitPosition) {
                 let bit = sq % 8;
                 let is_atk = (pos.planes[byte] >> bit) & 1 == 1;
                 let is_def = (pos.planes[16 + byte] >> bit) & 1 == 1;
-                let is_king = (pos.planes[32 + byte] >> bit) & 1 == 1;
-                !is_atk && !is_def && !is_king
+                !is_atk && !is_def
             },
             &PRECOMPUTED.vertical_horizontal_neighbors,
             &[ksq],
