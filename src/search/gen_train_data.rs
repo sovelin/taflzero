@@ -17,7 +17,7 @@ use std::collections::VecDeque;
 use std::fs::OpenOptions;
 use std::io::{BufWriter, Read, Write};
 
-const NODES_PER_MOVE: u64 = 100;
+const NODES_PER_MOVE: u64 = 400;
 const CURRICULUM_TAIL: usize = 25;
 const CURRICULUM_MIN_READY: usize = 100;
 

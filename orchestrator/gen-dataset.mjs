@@ -88,7 +88,7 @@ function run(cmd, cmdArgs, cwd = process.cwd()) {
     });
 }
 
-function buildEngineArgs(netPath, outPath, count, gamelogPath, variant, args) {
+function buildEngineArgs(netPath, outPath, count, gamelogPath, variant, args, workerId = null) {
     const engineArgs = [
         "--net",
         path.normalize(netPath),
@@ -104,8 +104,19 @@ function buildEngineArgs(netPath, outPath, count, gamelogPath, variant, args) {
     }
     if (args.curriculumFraction > 0) {
         engineArgs.push("--curriculum-fraction", String(args.curriculumFraction));
-        if (args.curriculumPath) {
-            engineArgs.push("--curriculum-path", path.normalize(args.curriculumPath));
+        // Each worker gets its own curriculum file to avoid concurrent write corruption
+        const baseCurriculumPath = args.curriculumPath || null;
+        if (workerId !== null && baseCurriculumPath) {
+            const ext = path.extname(baseCurriculumPath);
+            const base = baseCurriculumPath.slice(0, -ext.length || undefined);
+            engineArgs.push("--curriculum-path", path.normalize(`${base}.worker${workerId}${ext}`));
+        } else if (workerId !== null) {
+            // No explicit curriculum path — engine will default to next to outPath,
+            // but we need a stable per-worker path. Derive from the shared out base.
+            const base = path.normalize(args.out);
+            engineArgs.push("--curriculum-path", path.normalize(`${base}.curriculum.worker${workerId}.bin`));
+        } else if (baseCurriculumPath) {
+            engineArgs.push("--curriculum-path", path.normalize(baseCurriculumPath));
         }
         engineArgs.push("--curriculum-max-size", String(args.curriculumMaxSize));
     }
@@ -140,7 +151,7 @@ async function main() {
     const gamelogPath = `${args.out}.gamelog`;
 
     if (workers === 1 || totalGames == null) {
-        const engineArgs = buildEngineArgs(args.net, args.out, totalGames, gamelogPath, args.variant, args);
+        const engineArgs = buildEngineArgs(args.net, args.out, totalGames, gamelogPath, args.variant, args, 0);
         await runEngine(args, engineArgs);
         return;
     }
@@ -163,7 +174,7 @@ async function main() {
             const idx = batchIndex++;
             const tmpFile = `${args.out}.worker${workerId}.${idx}.tmp`;
             tmpFiles.push(tmpFile);
-            const engineArgs = buildEngineArgs(args.net, tmpFile, batch, gamelogPath, args.variant, args);
+            const engineArgs = buildEngineArgs(args.net, tmpFile, batch, gamelogPath, args.variant, args, workerId);
 
             for (let attempt = 1; attempt <= MAX_BATCH_RETRIES; attempt++) {
                 try { fs.unlinkSync(tmpFile); } catch {}
