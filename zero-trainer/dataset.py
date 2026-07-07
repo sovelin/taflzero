@@ -6,7 +6,10 @@ Sample binary format (variable-length):
     LegalMask       605 bytes  (4840 bits packed)
     policy_len      u16        (2 bytes)
     PolicyTarget×N  N×4 bytes  (move_index u16 + visits u16 each)
-    value           i8         (1 byte)
+    value           i8         (1 byte, final game result z from stm perspective)
+    root_q          i8         (1 byte, MCTS root Q × 127 from stm perspective)
+
+Value target = z_lambda * z + (1 - z_lambda) * root_q  (bootstrapped, lower variance)
 
 Network input planes (11 × 11 × 11):
     0: attackers       (from BitPosition planes[0..16])
@@ -181,12 +184,12 @@ def _build_offset_index(path: Path) -> np.ndarray:
             if len(raw) < 2:
                 break
             policy_len = struct.unpack("<H", raw)[0]
-            # Advance past policy entries + value byte
-            pos += FIXED_HEADER + policy_len * 4 + 1
+            # Advance past policy entries + value byte + root_q byte
+            pos += FIXED_HEADER + policy_len * 4 + 2
     return np.array(offsets, dtype=np.int64)
 
 
-def _read_sample_at(f, offset: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+def _read_sample_at(f, offset: int, z_lambda: float = 0.5) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Read and decode a single sample from an open file handle at the given offset."""
     f.seek(offset)
 
@@ -204,8 +207,9 @@ def _read_sample_at(f, offset: int) -> tuple[torch.Tensor, torch.Tensor, torch.T
     # PolicyTarget × N: each 4 bytes (move_index u16, visits u16)
     policy_raw = f.read(policy_len * 4)
 
-    # value: i8
+    # value: i8 (final result z), root_q: i8 (MCTS root Q × 127)
     value = struct.unpack("<b", f.read(1))[0]
+    root_q = struct.unpack("<b", f.read(1))[0] / 127.0
 
     # -- Decode piece planes --
     attackers = _unpack_bits(planes_bytes[0:16], SQS)
@@ -259,11 +263,14 @@ def _read_sample_at(f, offset: int) -> tuple[torch.Tensor, torch.Tensor, torch.T
     if visit_sum > 0:
         policy_visits /= visit_sum
 
+    # Bootstrapped value target: mix final result with search estimate
+    value_target = z_lambda * float(value) + (1.0 - z_lambda) * root_q
+
     return (
         torch.from_numpy(board_planes),
         torch.from_numpy(legal_mask).bool(),
         torch.from_numpy(policy_visits),
-        torch.tensor(np.float32(value)),
+        torch.tensor(np.float32(value_target)),
     )
 
 
@@ -282,9 +289,12 @@ class SelfPlayDataset(Dataset):
     Args:
         path: path to binary data file
         window_size: if > 0, only use the last `window_size` samples
+        z_lambda: weight of the final game result z in the value target;
+            (1 - z_lambda) goes to the MCTS root Q (bootstrapping).
     """
 
-    def __init__(self, path: Path | str, window_size: int = 0, augment: bool = True) -> None:
+    def __init__(self, path: Path | str, window_size: int = 0, augment: bool = True,
+                 z_lambda: float = 0.5) -> None:
         self._path = Path(path)
         offsets = _build_offset_index(self._path)
 
@@ -293,6 +303,7 @@ class SelfPlayDataset(Dataset):
 
         self._offsets = offsets
         self._augment = augment
+        self._z_lambda = z_lambda
         # File handle opened lazily per worker process
         self._fh = None
 
@@ -307,7 +318,7 @@ class SelfPlayDataset(Dataset):
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         fh = self._get_fh()
-        planes, legal_mask, policy, value = _read_sample_at(fh, int(self._offsets[idx]))
+        planes, legal_mask, policy, value = _read_sample_at(fh, int(self._offsets[idx]), self._z_lambda)
 
         if self._augment:
             sym = int(np.random.randint(8))

@@ -20,7 +20,7 @@ function parseArgs(argv) {
         batch: 256,
         lr: 1e-3,
         weightDecay: 1e-4,
-        defenderWeight: 0.25,
+        defenderWeight: 1.0,
         engineBin: null,
         debugEngine: false,
         workers: 1,

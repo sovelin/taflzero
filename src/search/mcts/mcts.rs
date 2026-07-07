@@ -40,7 +40,7 @@ impl MCTSConfig {
 
     pub fn default_train() -> Self {
         MCTSConfig {
-            dirichlet_alpha: 0.05,
+            dirichlet_alpha: 0.1,
             dirichlet_epsilon: 0.25,
             temperature: 1.0,
             batch_size: 8,
@@ -81,6 +81,10 @@ impl MCTSNode {
 
     pub fn visits(&self) -> f32 {
         self.visits
+    }
+
+    pub fn wins(&self) -> f32 {
+        self.wins
     }
 
     pub fn mv(&self) -> Option<Move> {
@@ -284,7 +288,7 @@ fn puct_select(tree: &MCTSTree, from_id: NodeId) -> NodeId {
 
     let parent_effective = from.visits + from.virtual_loss;
     let sqrt_parent = parent_effective.sqrt();
-    let c = 1.4f32;
+    let c = 3.0f32;
 
     // FPU reduction: unvisited children are assumed worse than parent average
     const FPU_REDUCTION: f32 = 0.0;

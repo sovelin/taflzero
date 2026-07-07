@@ -106,7 +106,7 @@ def train(
     model.to(device)
     model.train()
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
 
     loader = DataLoader(
         train_dataset,
@@ -239,7 +239,8 @@ def main() -> None:
     parser.add_argument("--batch", type=int, default=256, help="Batch size")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
     parser.add_argument("--weight-decay", type=float, default=1e-4, help="Weight decay (L2 regularization)")
-    parser.add_argument("--defender-weight", type=float, default=0.25, help="Loss weight for defender-win samples (1.0 = no reweighting)")
+    parser.add_argument("--defender-weight", type=float, default=1.0, help="Loss weight for defender-win samples (1.0 = no reweighting)")
+    parser.add_argument("--value-lambda", type=float, default=0.5, help="Weight of final result z in value target; (1-lambda) goes to MCTS root Q")
     parser.add_argument("--early-stopping-patience", type=int, default=0, help="Stop if val_loss doesn't improve for N checks (0 = disabled)")
     parser.add_argument("--no-restore-best", action="store_true", help="Always use final model weights, don't restore best val_loss checkpoint")
     args = parser.parse_args()
@@ -260,7 +261,7 @@ def main() -> None:
 
     # Load dataset
     print(f"Loading data: {args.data}")
-    dataset = SelfPlayDataset(args.data, window_size=args.window)
+    dataset = SelfPlayDataset(args.data, window_size=args.window, z_lambda=args.value_lambda)
     print(f"Loaded {len(dataset)} samples" + (f" (window={args.window})" if args.window > 0 else ""))
 
     if len(dataset) == 0:

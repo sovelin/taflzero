@@ -163,7 +163,16 @@ fn play_game(
     let mut no_capture_counter = 0;
 
     loop {
-        config.temperature = if move_number < 60 { 1.0 } else { 0.0 };
+        // Temperature schedule: 1.0 for the opening, then linear decay to a
+        // small floor so late-game move selection stays mostly greedy but can
+        // still deviate when candidates are nearly equal.
+        config.temperature = if move_number < 30 {
+            1.0
+        } else if move_number < 80 {
+            1.0 - 0.85 * ((move_number - 30) as f32 / 50.0)
+        } else {
+            0.15
+        };
 
         let mv = mcts_search(
             &mut board,
@@ -445,7 +454,7 @@ pub fn dump_single_sample(output_path: &str) {
 
     let policy = vec![(move_index, 7)];
     let sample =
-        PendingSample::from_manual(BitPosition::from_board(&board, 1), legal_mask, policy, 1);
+        PendingSample::from_manual(BitPosition::from_board(&board, 1), legal_mask, policy, 1, 0);
 
     let file = OpenOptions::new()
         .create(true)

@@ -82,6 +82,9 @@ pub struct PendingSample {
     legal_mask: LegalMask,
     policy: Vec<PolicyTarget>,
     value: i8,
+    /// MCTS root value estimate from the side-to-move perspective,
+    /// quantized to [-127, 127]. Used for value target bootstrapping.
+    root_q: i8,
 }
 
 impl PendingSample {
@@ -90,6 +93,7 @@ impl PendingSample {
         legal_mask: LegalMask,
         policy: Vec<(u16, u16)>,
         value: i8,
+        root_q: i8,
     ) -> Self {
         let policy = policy
             .into_iter()
@@ -101,6 +105,7 @@ impl PendingSample {
             legal_mask,
             policy,
             value,
+            root_q,
         }
     }
 
@@ -112,7 +117,7 @@ impl PendingSample {
             + self.legal_mask.as_bytes().len()
             + 2
             + (self.policy.len() * 4)
-            + 1;
+            + 2;
 
         let mut buf = Vec::with_capacity(total_len);
         buf.extend_from_slice(self.bit_position.as_bytes());
@@ -125,6 +130,7 @@ impl PendingSample {
         }
 
         buf.push(self.value as u8);
+        buf.push(self.root_q as u8);
         w.write_all(&buf)
     }
 
@@ -159,20 +165,29 @@ impl MCTSTree {
     /*
     Format:
 
-    [BitPosition]          49 bytes
+    [BitPosition]          50 bytes (48 planes + stm + rep)
     [LegalMask]            605 bytes
     [policy_len]           u16
     [PolicyTarget × N]     N * 4 bytes
     [value]                i8
+    [root_q]               i8  (MCTS root Q × 127, stm perspective)
      */
     pub fn make_pending_sample(&mut self, board: &Board) -> PendingSample {
         let root = self.get_root();
         let mut policy: Vec<PolicyTarget> = vec![];
 
+        // Child wins are stored from the root side-to-move perspective, so the
+        // visit-weighted average over children is the search value estimate.
+        let mut wins_sum = 0.0f32;
+        let mut visits_sum = 0.0f32;
+
         for &child_id in root.children() {
             let node = self.get_node(child_id);
             let visits_f = node.visits();
             let visits_u16 = visits_f.round().min(u16::MAX as f32) as u16;
+
+            wins_sum += node.wins();
+            visits_sum += visits_f;
 
             if let Some(mv) = node.mv() {
                 if visits_u16 == 0 {
@@ -188,6 +203,12 @@ impl MCTSTree {
             }
         }
 
+        let root_q = if visits_sum > 0.0 {
+            ((wins_sum / visits_sum) * 127.0).round().clamp(-127.0, 127.0) as i8
+        } else {
+            0
+        };
+
         let rep = board.rep_table.get(&board.zobrist).copied().unwrap_or(1);
 
         PendingSample {
@@ -195,6 +216,7 @@ impl MCTSTree {
             legal_mask: self.build_legal_mask_from_board(board),
             policy,
             value: 0,
+            root_q,
         }
     }
 }
