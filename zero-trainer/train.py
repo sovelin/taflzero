@@ -102,6 +102,7 @@ def train(
     early_stopping_patience: int,
     restore_best: bool,
     device: torch.device,
+    warmup_steps: int = 0,
 ) -> dict:
     model.to(device)
     model.train()
@@ -149,6 +150,10 @@ def train(
         legal_mask = legal_mask.to(device)
         pi_target = pi_target.to(device)
         value_target = value_target.to(device)
+
+        if warmup_steps > 0 and step <= warmup_steps:
+            for group in optimizer.param_groups:
+                group["lr"] = lr * step / warmup_steps
 
         policy_logits, value_pred = model(planes)
 
@@ -232,12 +237,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="AlphaZero training for Tafl")
     parser.add_argument("--data", type=Path, required=True, help="Path to binary self-play data")
     parser.add_argument("--checkpoint", type=Path, default=None, help="Resume from .qnxx checkpoint")
+    parser.add_argument("--channels", type=int, default=None, help="Trunk channels for a fresh model (default: az_micro_net.py default; ignored if --checkpoint given)")
+    parser.add_argument("--blocks", type=int, default=None, help="Residual blocks for a fresh model (default: az_micro_net.py default; ignored if --checkpoint given)")
     parser.add_argument("--out", type=Path, required=True, help="Output ONNX model path")
     parser.add_argument("--save-checkpoint", type=Path, default=None, help="Save .qnxx checkpoint after training")
     parser.add_argument("--window", type=int, default=0, help="Sliding window size (0 = use all data)")
     parser.add_argument("--steps", type=int, default=0, help="Training steps (0 = auto: dataset_size / batch)")
     parser.add_argument("--batch", type=int, default=256, help="Batch size")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
+    parser.add_argument("--warmup-steps", type=int, default=0, help="Linear LR warmup steps from 0 to --lr (0 = disabled, no warmup)")
     parser.add_argument("--weight-decay", type=float, default=1e-4, help="Weight decay (L2 regularization)")
     parser.add_argument("--defender-weight", type=float, default=1.0, help="Loss weight for defender-win samples (1.0 = no reweighting)")
     parser.add_argument("--value-lambda", type=float, default=0.5, help="Weight of final result z in value target; (1-lambda) goes to MCTS root Q")
@@ -256,8 +264,13 @@ def main() -> None:
         print(f"Loading checkpoint: {args.checkpoint}")
         model = load_qnxx(args.checkpoint, device=device)
     else:
-        print("Creating new model")
-        model = TaflAlphaZeroNet()
+        model_kwargs = {}
+        if args.channels is not None:
+            model_kwargs["trunk_channels"] = args.channels
+        if args.blocks is not None:
+            model_kwargs["num_blocks"] = args.blocks
+        model = TaflAlphaZeroNet(**model_kwargs)
+        print(f"Creating new model ({len(model.trunk)}x{model.stem[0].out_channels})")
 
     # Load dataset
     print(f"Loading data: {args.data}")
@@ -291,6 +304,7 @@ def main() -> None:
         early_stopping_patience=args.early_stopping_patience,
         restore_best=not args.no_restore_best,
         device=device,
+        warmup_steps=args.warmup_steps,
     )
 
     # Save outputs

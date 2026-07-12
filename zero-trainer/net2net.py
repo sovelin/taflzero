@@ -185,7 +185,7 @@ def verify(old_net: TaflAlphaZeroNet, new_net: TaflAlphaZeroNet, tol: float = 1e
     """Check that outputs are preserved after expansion."""
     old_net.eval()
     new_net.eval()
-    x = torch.randn(4, 6, 11, 11)
+    x = torch.randn(4, old_net.stem[0].in_channels, 11, 11)
     with torch.no_grad():
         p_old, v_old = old_net(x)
         p_new, v_new = new_net(x)

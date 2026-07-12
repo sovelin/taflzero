@@ -39,6 +39,7 @@ function parseArgs(argv) {
         anchorNet: null,
         anchorPairs: 100,
         earlyStoppingPatience: 0,
+        warmupSteps: 0,
         noRestoreBest: false,
         variant: "copenhagen11x11",
         curriculumFraction: 0.0,
@@ -62,6 +63,7 @@ function parseArgs(argv) {
         else if (a === "--steps") args.steps = intArg(next(), a, 0);
         else if (a === "--batch") args.batch = intArg(next(), a, 1);
         else if (a === "--lr") args.lr = floatArg(next(), a, 0);
+        else if (a === "--warmup-steps") args.warmupSteps = intArg(next(), a, 0);
         else if (a === "--weight-decay") args.weightDecay = floatArg(next(), a, 0);
         else if (a === "--defender-weight") args.defenderWeight = floatArg(next(), a, 0);
         else if (a === "--workers") args.workers = intArg(next(), a, 1);
@@ -135,7 +137,7 @@ function printHelp() {
             "  --weights-dir <dir>       Where genN.onnx/genN.onxx are saved (default: zero-trainer/weights)",
             "",
             "Train args forwarded to train.py:",
-            "  --window <N> --steps <N> --batch <N> --lr <F> --weight-decay <F> --defender-weight <F>",
+            "  --window <N> --steps <N> --batch <N> --lr <F> --warmup-steps <N> --weight-decay <F> --defender-weight <F>",
             "  --no-restore-best             Don't restore best val_loss checkpoint, use final model weights",
             "",
             "SPRT validation (after each training):",
@@ -335,6 +337,9 @@ async function main() {
             "--early-stopping-patience",
             String(args.earlyStoppingPatience),
         ];
+        if (args.warmupSteps > 0) {
+            trainArgs.push("--warmup-steps", String(args.warmupSteps));
+        }
         if (args.noRestoreBest) {
             trainArgs.push("--no-restore-best");
         }
