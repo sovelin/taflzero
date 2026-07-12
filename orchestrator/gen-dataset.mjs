@@ -14,6 +14,9 @@ function parseArgs(argv) {
         curriculumFraction: 0.0,
         curriculumPath: null,
         curriculumMaxSize: 50000,
+        fullNodes: null,
+        cheapNodes: null,
+        fullProb: null,
     };
 
     for (let i = 0; i < argv.length; i += 1) {
@@ -46,6 +49,12 @@ function parseArgs(argv) {
             args.curriculumPath = argv[++i] ?? null;
         } else if (a === "--curriculum-max-size") {
             args.curriculumMaxSize = Number(argv[++i] ?? 50000);
+        } else if (a === "--full-nodes") {
+            args.fullNodes = Number(argv[++i]);
+        } else if (a === "--cheap-nodes") {
+            args.cheapNodes = Number(argv[++i]);
+        } else if (a === "--full-prob") {
+            args.fullProb = Number(argv[++i]);
         } else if (a === "--debug") {
             args.release = false;
         } else if (a === "--help" || a === "-h") {
@@ -101,6 +110,15 @@ function buildEngineArgs(netPath, outPath, count, gamelogPath, variant, args, wo
     ];
     if (count != null) {
         engineArgs.push("--datagen-count", String(count));
+    }
+    if (args.fullNodes != null) {
+        engineArgs.push("--full-nodes", String(args.fullNodes));
+    }
+    if (args.cheapNodes != null) {
+        engineArgs.push("--cheap-nodes", String(args.cheapNodes));
+    }
+    if (args.fullProb != null) {
+        engineArgs.push("--full-prob", String(args.fullProb));
     }
     if (args.curriculumFraction > 0) {
         engineArgs.push("--curriculum-fraction", String(args.curriculumFraction));

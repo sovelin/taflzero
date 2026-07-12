@@ -97,6 +97,28 @@ def value_loss(
     return per_sample.mean()
 
 
+def policy_loss_masked(
+    policy_logits: Tensor,
+    pi_target: Tensor,
+    legal_mask: Tensor,
+    valid: Tensor,
+    sample_weights: Tensor | None = None,
+) -> Tensor:
+    """Policy cross-entropy over the subset of rows where valid > 0.5.
+
+    Rows with valid == 0 (cheap PCR searches, missing aux targets) are
+    excluded before the masked softmax, so their empty legal masks and zero
+    targets never produce NaNs.  Returns a connected zero if no row is valid.
+    """
+    valid_rows = valid > 0.5
+    if not bool(valid_rows.any()):
+        return policy_logits.sum() * 0.0
+    w = sample_weights[valid_rows] if sample_weights is not None else None
+    return policy_loss(
+        policy_logits[valid_rows], pi_target[valid_rows], legal_mask[valid_rows], w,
+    )
+
+
 def alpha_zero_loss(
     policy_logits: Tensor,
     value_pred: Tensor,
@@ -104,8 +126,14 @@ def alpha_zero_loss(
     value_target: Tensor,
     legal_mask: Tensor,
     sample_weights: Tensor | None = None,
+    policy_valid: Tensor | None = None,
 ) -> tuple[Tensor, Tensor, Tensor]:
-    p_loss = policy_loss(policy_logits, pi_target, legal_mask, sample_weights)
+    if policy_valid is not None:
+        p_loss = policy_loss_masked(
+            policy_logits, pi_target, legal_mask, policy_valid, sample_weights,
+        )
+    else:
+        p_loss = policy_loss(policy_logits, pi_target, legal_mask, sample_weights)
     v_loss = value_loss(value_pred, value_target, sample_weights)
     total = p_loss + v_loss
     return total, p_loss, v_loss

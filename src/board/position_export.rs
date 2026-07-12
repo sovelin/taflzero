@@ -1,7 +1,7 @@
+use crate::board::Board;
 use crate::board::rules::RulesEnum;
 use crate::board::types::{Piece, Side};
 use crate::board::utils::get_square;
-use crate::board::Board;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -60,7 +60,11 @@ impl BitPosition {
             }
         }
 
-        let side = if self.stm == 0 { Side::ATTACKERS } else { Side::DEFENDERS };
+        let side = if self.stm == 0 {
+            Side::ATTACKERS
+        } else {
+            Side::DEFENDERS
+        };
         board.set_side(side);
         board
     }

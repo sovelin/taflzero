@@ -17,6 +17,9 @@ use std::hash::{BuildHasher, Hasher};
 
 type NodeId = usize;
 
+/// PUCT exploration constant, shared by selection and policy target pruning.
+pub const C_PUCT: f32 = 3.0;
+
 pub struct MCTSConfig {
     /// Dirichlet noise alpha (0.0 = no noise). Typical: 0.03 for large boards, 0.3 for small.
     pub dirichlet_alpha: f32,
@@ -26,6 +29,9 @@ pub struct MCTSConfig {
     pub temperature: f32,
     /// Number of leaves to collect before batched NN evaluation.
     pub batch_size: usize,
+    /// Forced playouts at root (KataGo): every root child is guaranteed at least
+    /// n_forced = sqrt(k * prior * total_visits) visits. 0.0 = disabled.
+    pub forced_playouts_k: f32,
 }
 
 impl MCTSConfig {
@@ -35,6 +41,7 @@ impl MCTSConfig {
             dirichlet_epsilon: 0.0,
             temperature: 0.0,
             batch_size: 8,
+            forced_playouts_k: 0.0,
         }
     }
 
@@ -44,6 +51,7 @@ impl MCTSConfig {
             dirichlet_epsilon: 0.25,
             temperature: 1.0,
             batch_size: 8,
+            forced_playouts_k: 2.0,
         }
     }
 }
@@ -89,6 +97,10 @@ impl MCTSNode {
 
     pub fn mv(&self) -> Option<Move> {
         self.mv
+    }
+
+    pub fn prior(&self) -> f32 {
+        self.prior
     }
 
     fn new_child(mv: Move, parent: NodeId, prior: f32, zobrist_hash: ZobristHash) -> MCTSNode {
@@ -281,14 +293,39 @@ pub fn get_left_moves(board: &Board, move_gen: &mut MoveGen) -> Vec<Move> {
     move_gen.moves[0..move_gen.count].to_vec()
 }
 
-fn puct_select(tree: &MCTSTree, from_id: NodeId) -> NodeId {
+/// PUCT child selection. `forced_k` > 0 (root only, self-play) enables forced
+/// playouts: a child whose visits are below sqrt(k * prior * parent_visits) is
+/// selected unconditionally (largest deficit first), so root Dirichlet noise
+/// reliably translates into exploration.
+fn puct_select(tree: &MCTSTree, from_id: NodeId, forced_k: f32) -> NodeId {
     let from = tree.get_node(from_id);
     let mut best_score = f32::NEG_INFINITY;
     let mut best_child: Option<NodeId> = None;
 
     let parent_effective = from.visits + from.virtual_loss;
     let sqrt_parent = parent_effective.sqrt();
-    let c = 3.0f32;
+    let c = C_PUCT;
+
+    if forced_k > 0.0 && from.visits > 0.0 {
+        let mut best_deficit = 0.0f32;
+        let mut forced_child: Option<NodeId> = None;
+        for id in from.children.iter() {
+            let child = tree.get_node(*id);
+            let effective_visits = child.visits + child.virtual_loss;
+            if effective_visits <= 0.0 {
+                continue; // unvisited children are reached via normal PUCT
+            }
+            let n_forced = (forced_k * child.prior * from.visits).sqrt();
+            let deficit = n_forced - effective_visits;
+            if deficit > best_deficit {
+                best_deficit = deficit;
+                forced_child = Some(*id);
+            }
+        }
+        if let Some(id) = forced_child {
+            return id;
+        }
+    }
 
     // FPU reduction: unvisited children are assumed worse than parent average
     const FPU_REDUCTION: f32 = 0.0;
@@ -539,13 +576,20 @@ fn select_leaf(
     tree: &MCTSTree,
     move_stack: &mut MovesStack,
     move_gen: &mut MoveGen,
+    root_forced_k: f32,
 ) -> Option<PendingLeaf> {
     let mut cur = tree.get_root_id();
     let mut path = vec![cur];
 
     // Descend via PUCT until we hit a leaf or a newly-terminal node
     while !tree.get_node(cur).is_leaf() && !tree.get_node(cur).children.is_empty() {
-        cur = puct_select(tree, cur);
+        // Forced playouts apply at the root only
+        let forced_k = if cur == tree.get_root_id() {
+            root_forced_k
+        } else {
+            0.0
+        };
+        cur = puct_select(tree, cur, forced_k);
         path.push(cur);
         let node = tree.get_node(cur);
         move_stack.make_move(board, node.mv.expect("Move not found"));
@@ -660,9 +704,12 @@ pub fn mcts_search(
     let root_id = tree.get_root_id();
     let batch_size = config.batch_size.max(1);
 
-    // Expand root (single eval, not batched)
+    // Expand root (single eval, not batched). Backpropagate the root's own
+    // value so the first PUCT selection has sqrt(parent) > 0 and a correct
+    // FPU baseline — otherwise sim #1 always lands on children[0].
     if tree.get_root().is_leaf() {
-        expand_node(board, tree, root_id, nn, &mut mv_generator);
+        let root_value = expand_node(board, tree, root_id, nn, &mut mv_generator);
+        backpropagate(tree, &[root_id], root_value);
     }
 
     // Add Dirichlet noise to root priors
@@ -704,7 +751,13 @@ pub fn mcts_search(
         let mut selected_nodes: HashSet<NodeId> = HashSet::with_capacity(this_batch);
 
         for _ in 0..this_batch {
-            if let Some(leaf) = select_leaf(board, tree, &mut move_stack, &mut mv_generator) {
+            if let Some(leaf) = select_leaf(
+                board,
+                tree,
+                &mut move_stack,
+                &mut mv_generator,
+                config.forced_playouts_k,
+            ) {
                 if !selected_nodes.insert(leaf.node_id) {
                     // Strict dedup: do not add the same leaf twice in one micro-batch.
                     break;

@@ -58,13 +58,40 @@ def main() -> None:
         default=Path("weights/random_init.onnx"),
         help="Output ONNX model path.",
     )
+    parser.add_argument("--channels", type=int, default=None, help="Trunk channels")
+    parser.add_argument("--blocks", type=int, default=None, help="Residual blocks")
+    parser.add_argument("--value-channels", type=int, default=None, help="Value head channels")
+    parser.add_argument("--se", action="store_true", help="Squeeze-excitation blocks")
+    parser.add_argument("--gpool-channels", type=int, default=None, help="Global pooling channels (0 = off)")
+    parser.add_argument("--aux-heads", action="store_true", help="Build training-only aux heads")
+    parser.add_argument("--save-checkpoint", type=Path, default=None, help="Also save a .qnxx checkpoint")
     args = parser.parse_args()
 
     from az_micro_net import TaflAlphaZeroNet
 
-    model = TaflAlphaZeroNet()
+    kwargs = {}
+    if args.channels is not None:
+        kwargs["trunk_channels"] = args.channels
+    if args.blocks is not None:
+        kwargs["num_blocks"] = args.blocks
+    if args.value_channels is not None:
+        kwargs["value_channels"] = args.value_channels
+    if args.se:
+        kwargs["use_se"] = True
+    if args.gpool_channels is not None:
+        kwargs["gpool_channels"] = args.gpool_channels
+    if args.aux_heads:
+        kwargs["aux_heads"] = True
+
+    model = TaflAlphaZeroNet(**kwargs)
+    print(f"Model: {model.model_kwargs}")
     export_model_to_onnx(model, args.output)
     print(f"Exported ONNX model: {args.output}")
+
+    if args.save_checkpoint:
+        from qnxx_io import save_qnxx
+        save_qnxx(model, args.save_checkpoint)
+        print(f"Saved checkpoint: {args.save_checkpoint}")
 
 
 if __name__ == "__main__":

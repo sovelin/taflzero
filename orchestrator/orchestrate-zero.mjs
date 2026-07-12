@@ -40,6 +40,15 @@ function parseArgs(argv) {
         anchorPairs: 100,
         earlyStoppingPatience: 0,
         warmupSteps: 0,
+        fullNodes: null,
+        cheapNodes: null,
+        fullProb: null,
+        valueChannels: null,
+        se: false,
+        gpoolChannels: null,
+        auxHeads: false,
+        auxPolicyWeight: null,
+        cornerWeight: null,
         noRestoreBest: false,
         variant: "copenhagen11x11",
         curriculumFraction: 0.0,
@@ -64,6 +73,15 @@ function parseArgs(argv) {
         else if (a === "--batch") args.batch = intArg(next(), a, 1);
         else if (a === "--lr") args.lr = floatArg(next(), a, 0);
         else if (a === "--warmup-steps") args.warmupSteps = intArg(next(), a, 0);
+        else if (a === "--full-nodes") args.fullNodes = intArg(next(), a, 1);
+        else if (a === "--cheap-nodes") args.cheapNodes = intArg(next(), a, 1);
+        else if (a === "--full-prob") args.fullProb = floatArg(next(), a, 0);
+        else if (a === "--value-channels") args.valueChannels = intArg(next(), a, 1);
+        else if (a === "--se") args.se = true;
+        else if (a === "--gpool-channels") args.gpoolChannels = intArg(next(), a, 0);
+        else if (a === "--aux-heads") args.auxHeads = true;
+        else if (a === "--aux-policy-weight") args.auxPolicyWeight = floatArg(next(), a, 0);
+        else if (a === "--corner-weight") args.cornerWeight = floatArg(next(), a, 0);
         else if (a === "--weight-decay") args.weightDecay = floatArg(next(), a, 0);
         else if (a === "--defender-weight") args.defenderWeight = floatArg(next(), a, 0);
         else if (a === "--workers") args.workers = intArg(next(), a, 1);
@@ -138,6 +156,11 @@ function printHelp() {
             "",
             "Train args forwarded to train.py:",
             "  --window <N> --steps <N> --batch <N> --lr <F> --warmup-steps <N> --weight-decay <F> --defender-weight <F>",
+            "  --value-channels <N> --se --gpool-channels <N> --aux-heads   (fresh model architecture, T2)",
+            "  --aux-policy-weight <F> --corner-weight <F>                  (aux loss weights)",
+            "",
+            "Datagen search budget (playout cap randomization, T2):",
+            "  --full-nodes <N> --cheap-nodes <N> --full-prob <F>",
             "  --no-restore-best             Don't restore best val_loss checkpoint, use final model weights",
             "",
             "SPRT validation (after each training):",
@@ -310,6 +333,15 @@ async function main() {
                 genDatasetArgs.push("--curriculum-path", path.normalize(args.curriculumPath));
             }
         }
+        if (args.fullNodes != null) {
+            genDatasetArgs.push("--full-nodes", String(args.fullNodes));
+        }
+        if (args.cheapNodes != null) {
+            genDatasetArgs.push("--cheap-nodes", String(args.cheapNodes));
+        }
+        if (args.fullProb != null) {
+            genDatasetArgs.push("--full-prob", String(args.fullProb));
+        }
         await run("node", genDatasetArgs);
 
         // ── Step 2: Training ─────────────────────────────────────────
@@ -345,6 +377,26 @@ async function main() {
         }
         if (currentCheckpoint) {
             trainArgs.push("--checkpoint", currentCheckpoint);
+        }
+        // Architecture flags apply only when train.py creates a fresh model
+        // (no --checkpoint); harmless otherwise.
+        if (args.valueChannels != null) {
+            trainArgs.push("--value-channels", String(args.valueChannels));
+        }
+        if (args.se) {
+            trainArgs.push("--se");
+        }
+        if (args.gpoolChannels != null) {
+            trainArgs.push("--gpool-channels", String(args.gpoolChannels));
+        }
+        if (args.auxHeads) {
+            trainArgs.push("--aux-heads");
+        }
+        if (args.auxPolicyWeight != null) {
+            trainArgs.push("--aux-policy-weight", String(args.auxPolicyWeight));
+        }
+        if (args.cornerWeight != null) {
+            trainArgs.push("--corner-weight", String(args.cornerWeight));
         }
         await run(python, trainArgs);
 

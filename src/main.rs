@@ -1,5 +1,5 @@
 use taflzero::board::rules::{RulesEnum, get_rules_enum_from_str};
-use taflzero::gen_train_data::{DatagenConfig, gen_train_data};
+use taflzero::gen_train_data::{DatagenConfig, SearchConfig, gen_train_data};
 use taflzero::search::nn::NeuralNet;
 use taflzero::{ConsoleClient, UciRunState};
 
@@ -13,6 +13,9 @@ struct CliArgs {
     curriculum_fraction: f64,
     curriculum_path: Option<String>,
     curriculum_max_size: usize,
+    full_nodes: u64,
+    cheap_nodes: u64,
+    full_prob: f64,
 }
 
 fn parse_args() -> CliArgs {
@@ -25,6 +28,9 @@ fn parse_args() -> CliArgs {
     let mut curriculum_fraction = 0.0f64;
     let mut curriculum_path: Option<String> = None;
     let mut curriculum_max_size = 50_000usize;
+    let mut full_nodes = 400u64;
+    let mut cheap_nodes = 100u64;
+    let mut full_prob = 1.0f64;
     let mut args = std::env::args().skip(1);
 
     while let Some(arg) = args.next() {
@@ -129,6 +135,48 @@ fn parse_args() -> CliArgs {
                     std::process::exit(2);
                 }
             }
+            "--full-nodes" => {
+                if let Some(raw) = args.next() {
+                    match raw.parse::<u64>() {
+                        Ok(v) if v > 0 => full_nodes = v,
+                        _ => {
+                            eprintln!("Invalid value for --full-nodes: {raw}");
+                            std::process::exit(2);
+                        }
+                    }
+                } else {
+                    eprintln!("Missing value for --full-nodes");
+                    std::process::exit(2);
+                }
+            }
+            "--cheap-nodes" => {
+                if let Some(raw) = args.next() {
+                    match raw.parse::<u64>() {
+                        Ok(v) if v > 0 => cheap_nodes = v,
+                        _ => {
+                            eprintln!("Invalid value for --cheap-nodes: {raw}");
+                            std::process::exit(2);
+                        }
+                    }
+                } else {
+                    eprintln!("Missing value for --cheap-nodes");
+                    std::process::exit(2);
+                }
+            }
+            "--full-prob" => {
+                if let Some(raw) = args.next() {
+                    match raw.parse::<f64>() {
+                        Ok(v) if (0.0..=1.0).contains(&v) && v > 0.0 => full_prob = v,
+                        _ => {
+                            eprintln!("Invalid value for --full-prob: {raw}");
+                            std::process::exit(2);
+                        }
+                    }
+                } else {
+                    eprintln!("Missing value for --full-prob");
+                    std::process::exit(2);
+                }
+            }
             _ => {
                 eprintln!("Unknown arg: {arg}");
                 eprintln!(
@@ -149,6 +197,9 @@ fn parse_args() -> CliArgs {
         curriculum_fraction,
         curriculum_path,
         curriculum_max_size,
+        full_nodes,
+        cheap_nodes,
+        full_prob,
     }
 }
 
@@ -188,9 +239,21 @@ fn main() {
                 None
             },
             curriculum_max_size: cli.curriculum_max_size,
+            search: SearchConfig {
+                full_nodes: cli.full_nodes,
+                cheap_nodes: cli.cheap_nodes,
+                full_prob: cli.full_prob,
+            },
         };
 
-        gen_train_data(&path, &log_path, &mut nn, cli.datagen_count, cli.variant, datagen_cfg);
+        gen_train_data(
+            &path,
+            &log_path,
+            &mut nn,
+            cli.datagen_count,
+            cli.variant,
+            datagen_cfg,
+        );
         return;
     }
 

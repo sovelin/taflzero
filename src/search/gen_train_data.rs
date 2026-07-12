@@ -2,8 +2,8 @@ use crate::board::position_export::BitPosition;
 use crate::board::rules::RulesEnum;
 use crate::board::types::{Piece, Side};
 use crate::board::{Board, PRECOMPUTED};
-use crate::mcts::export::{LegalMask, PendingSample};
-use crate::mcts::mcts::{MCTSConfig, MCTSTree, mcts_search};
+use crate::mcts::export::{KING_CORNER_NONE, LegalMask, PendingSample, king_corner_index};
+use crate::mcts::mcts::{C_PUCT, MCTSConfig, MCTSTree, mcts_search};
 use crate::mcts::utils::move_to_policy_index;
 use crate::movegen::MoveGen;
 use crate::search::nn::NeuralNet;
@@ -12,12 +12,11 @@ use crate::terminal::{TerminalType, check_terminal, get_terminal};
 use rand::RngExt;
 use rand::SeedableRng;
 use rand::prelude::StdRng;
-use std::hash::{BuildHasher, Hasher};
 use std::collections::VecDeque;
 use std::fs::OpenOptions;
+use std::hash::{BuildHasher, Hasher};
 use std::io::{BufWriter, Read, Write};
 
-const NODES_PER_MOVE: u64 = 400;
 const CURRICULUM_TAIL: usize = 25;
 const CURRICULUM_MIN_READY: usize = 100;
 
@@ -59,7 +58,9 @@ impl CurriculumBuffer {
     }
 
     fn load_from_file(&mut self, path: &str) {
-        let Ok(mut f) = std::fs::File::open(path) else { return };
+        let Ok(mut f) = std::fs::File::open(path) else {
+            return;
+        };
         let bp_size = size_of::<BitPosition>();
         let mut buf = vec![0u8; bp_size];
         let mut loaded = 0usize;
@@ -84,8 +85,9 @@ impl CurriculumBuffer {
         };
         let bp_size = size_of::<BitPosition>();
         for bp in &self.positions {
-            let bytes =
-                unsafe { std::slice::from_raw_parts(bp as *const BitPosition as *const u8, bp_size) };
+            let bytes = unsafe {
+                std::slice::from_raw_parts(bp as *const BitPosition as *const u8, bp_size)
+            };
             let _ = f.write_all(bytes);
         }
     }
@@ -149,13 +151,28 @@ fn play_game(
     search_data: &mut SearchData,
     variant: RulesEnum,
     start_board: Board,
-) -> (Vec<PendingSample>, Vec<BitPosition>, Option<Side>, Option<&'static str>) {
+    search_cfg: &SearchConfig,
+    rng: &mut StdRng,
+) -> (
+    Vec<PendingSample>,
+    Vec<BitPosition>,
+    Option<Side>,
+    Option<&'static str>,
+) {
     let mut board = start_board;
 
     let mut res: Vec<PendingSample> = vec![];
     let mut board_history: Vec<BitPosition> = vec![];
 
-    let mut config = MCTSConfig::default_train();
+    // Full searches: Dirichlet noise + forced playouts, policy target written.
+    // Cheap searches (playout cap randomization): no noise, policy target
+    // flagged invalid — the position still contributes value/root_q data.
+    let mut full_config = MCTSConfig::default_train();
+    let mut cheap_config = MCTSConfig::default_train();
+    cheap_config.dirichlet_alpha = 0.0;
+    cheap_config.dirichlet_epsilon = 0.0;
+    cheap_config.forced_playouts_k = 0.0;
+
     let game_result;
     let mut terminal_str: Option<&'static str> = None;
     let mut move_number: usize = 0;
@@ -166,12 +183,21 @@ fn play_game(
         // Temperature schedule: 1.0 for the opening, then linear decay to a
         // small floor so late-game move selection stays mostly greedy but can
         // still deviate when candidates are nearly equal.
-        config.temperature = if move_number < 30 {
+        let temperature = if move_number < 30 {
             1.0
         } else if move_number < 80 {
             1.0 - 0.85 * ((move_number - 30) as f32 / 50.0)
         } else {
             0.15
+        };
+        full_config.temperature = temperature;
+        cheap_config.temperature = temperature;
+
+        let is_full = search_cfg.full_prob >= 1.0 || rng.random::<f64>() < search_cfg.full_prob;
+        let (config, nodes) = if is_full {
+            (&full_config, search_cfg.full_nodes)
+        } else {
+            (&cheap_config, search_cfg.cheap_nodes)
         };
 
         let mv = mcts_search(
@@ -180,14 +206,21 @@ fn play_game(
             nn,
             search_data,
             None,
-            Some(NODES_PER_MOVE),
-            &config,
+            Some(nodes),
+            config,
             None,
         );
         move_number += 1;
 
         if let Some(mv) = mv {
-            res.push(mcts_tree.make_pending_sample(&board));
+            let prune_k = if is_full {
+                config.forced_playouts_k
+            } else {
+                0.0
+            };
+            let mut sample = mcts_tree.make_pending_sample(&board, prune_k, C_PUCT);
+            sample.set_policy_valid(is_full);
+            res.push(sample);
 
             let rep = board.rep_table.get(&board.zobrist).copied().unwrap_or(1);
             board_history.push(BitPosition::from_board(&board, rep));
@@ -233,8 +266,18 @@ fn play_game(
         }
     }
 
+    // Backfill game-outcome targets: value, escape corner, last-move flag.
+    let king_corner = if terminal_str == Some("def_corner") {
+        king_corner_index(board.king_sq)
+    } else {
+        KING_CORNER_NONE
+    };
     for sample in res.iter_mut() {
         sample.set_value_from_result(game_result);
+        sample.set_king_corner(king_corner);
+    }
+    if let Some(last) = res.last_mut() {
+        last.set_last_of_game();
     }
 
     (res, board_history, game_result, terminal_str)
@@ -242,10 +285,31 @@ fn play_game(
 
 // ─── Main datagen loop ────────────────────────────────────────────────────────
 
+/// Per-move search budget (playout cap randomization).
+pub struct SearchConfig {
+    /// Nodes for full searches (policy target written).
+    pub full_nodes: u64,
+    /// Nodes for cheap searches (policy target flagged invalid).
+    pub cheap_nodes: u64,
+    /// Probability a move gets a full search. 1.0 = every move full (no PCR).
+    pub full_prob: f64,
+}
+
+impl Default for SearchConfig {
+    fn default() -> Self {
+        Self {
+            full_nodes: 400,
+            cheap_nodes: 100,
+            full_prob: 1.0,
+        }
+    }
+}
+
 pub struct DatagenConfig {
     pub curriculum_fraction: f64,
     pub curriculum_path: Option<String>,
     pub curriculum_max_size: usize,
+    pub search: SearchConfig,
 }
 
 impl Default for DatagenConfig {
@@ -254,6 +318,7 @@ impl Default for DatagenConfig {
             curriculum_fraction: 0.0,
             curriculum_path: None,
             curriculum_max_size: 50_000,
+            search: SearchConfig::default(),
         }
     }
 }
@@ -298,11 +363,7 @@ pub fn gen_train_data(
     let mut curriculum_file: Option<std::fs::File> = None;
     if use_curriculum {
         if let Some(ref path) = cfg.curriculum_path {
-            curriculum_file = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(path)
-                .ok();
+            curriculum_file = OpenOptions::new().create(true).append(true).open(path).ok();
         }
     }
 
@@ -338,12 +399,19 @@ pub fn gen_train_data(
         } else {
             let mut b = Board::new();
             b.set_rules(variant);
-            b.setup_initial_position().expect("Setup initial position failed");
+            b.setup_initial_position()
+                .expect("Setup initial position failed");
             b
         };
 
-        let (res, board_history, game_result, terminal_str) =
-            play_game(nn, &mut search_data, variant, start_board);
+        let (res, board_history, game_result, terminal_str) = play_game(
+            nn,
+            &mut search_data,
+            variant,
+            start_board,
+            &cfg.search,
+            &mut rng,
+        );
 
         games_played += 1;
         if is_curriculum_game {
@@ -389,7 +457,10 @@ pub fn gen_train_data(
             avg_game_len,
             positions_generated,
             if curriculum_games > 0 {
-                format!(" | cur_decisive={}/{}", curriculum_decisive, curriculum_games)
+                format!(
+                    " | cur_decisive={}/{}",
+                    curriculum_decisive, curriculum_games
+                )
             } else {
                 String::new()
             }

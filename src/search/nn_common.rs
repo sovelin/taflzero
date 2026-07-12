@@ -139,10 +139,10 @@ pub fn fill_input(input: &mut [f32], pos: &BitPosition) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::board::Board;
     use crate::board::position_export::BitPosition;
     use crate::board::types::{Piece, Side};
     use crate::board::utils::get_square_from_algebraic;
-    use crate::board::Board;
 
     fn sq(alg: &str) -> usize {
         get_square_from_algebraic(alg)
