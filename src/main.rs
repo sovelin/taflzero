@@ -1,6 +1,8 @@
+use taflzero::board::Board;
+use taflzero::board::position_export::BitPosition;
 use taflzero::board::rules::{RulesEnum, get_rules_enum_from_str};
 use taflzero::gen_train_data::{DatagenConfig, SearchConfig, gen_train_data};
-use taflzero::search::nn::NeuralNet;
+use taflzero::search::nn::{NeuralNet, POLICY_SIZE, SAMPLE_SIZE, fill_input};
 use taflzero::{ConsoleClient, UciRunState};
 
 struct CliArgs {
@@ -9,6 +11,7 @@ struct CliArgs {
     datagen_count: Option<usize>,
     gamelog_path: Option<String>,
     dump_sample_path: Option<String>,
+    nn_eval_fen: Option<String>,
     variant: RulesEnum,
     curriculum_fraction: f64,
     curriculum_path: Option<String>,
@@ -24,6 +27,7 @@ fn parse_args() -> CliArgs {
     let mut datagen_count: Option<usize> = None;
     let mut gamelog_path: Option<String> = None;
     let mut dump_sample_path: Option<String> = None;
+    let mut nn_eval_fen: Option<String> = None;
     let mut variant = RulesEnum::Copenhagen11x11;
     let mut curriculum_fraction = 0.0f64;
     let mut curriculum_path: Option<String> = None;
@@ -82,6 +86,14 @@ fn parse_args() -> CliArgs {
                     dump_sample_path = Some(path);
                 } else {
                     eprintln!("Missing value for --dump-sample");
+                    std::process::exit(2);
+                }
+            }
+            "--nn-eval" => {
+                if let Some(fen) = args.next() {
+                    nn_eval_fen = Some(fen);
+                } else {
+                    eprintln!("Missing value for --nn-eval");
                     std::process::exit(2);
                 }
             }
@@ -193,6 +205,7 @@ fn parse_args() -> CliArgs {
         datagen_count,
         gamelog_path,
         dump_sample_path,
+        nn_eval_fen,
         variant,
         curriculum_fraction,
         curriculum_path,
@@ -213,6 +226,42 @@ fn main() {
 
     if let Some(path) = cli.dump_sample_path {
         taflzero::gen_train_data::dump_single_sample(&path);
+        return;
+    }
+
+    // Debug: dump NN input tensor + raw policy/value for one FEN, as JSON to stdout.
+    // Used to cross-check the Rust inference pipeline against the Python model.
+    if let Some(fen) = cli.nn_eval_fen {
+        let mut nn = NeuralNet::new(&cli.net_path);
+        let mut board = Board::new();
+        board.set_rules(cli.variant);
+        board.set_fen(&fen).expect("Invalid FEN");
+
+        let bit_pos = BitPosition::from_board(&board, 1);
+        let mut input = vec![0f32; SAMPLE_SIZE];
+        fill_input(&mut input, &bit_pos);
+
+        let out = nn.evaluate_position(&bit_pos);
+
+        let f2s = |xs: &[f32]| {
+            xs.iter()
+                .map(|v| format!("{v}"))
+                .collect::<Vec<_>>()
+                .join(",")
+        };
+        let bytes = bit_pos
+            .as_bytes()
+            .iter()
+            .map(|b| b.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        println!("{{");
+        println!("  \"stm\": {}, \"rep\": {},", bit_pos.stm, bit_pos.rep);
+        println!("  \"bitpos_bytes\": [{bytes}],");
+        println!("  \"input\": [{}],", f2s(&input));
+        println!("  \"value\": {},", out.value);
+        println!("  \"policy\": [{}]", f2s(&out.policy[..POLICY_SIZE]));
+        println!("}}");
         return;
     }
 

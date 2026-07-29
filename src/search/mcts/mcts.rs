@@ -18,7 +18,7 @@ use std::hash::{BuildHasher, Hasher};
 type NodeId = usize;
 
 /// PUCT exploration constant, shared by selection and policy target pruning.
-pub const C_PUCT: f32 = 3.0;
+pub const C_PUCT: f32 = 1.4;
 
 pub struct MCTSConfig {
     /// Dirichlet noise alpha (0.0 = no noise). Typical: 0.03 for large boards, 0.3 for small.

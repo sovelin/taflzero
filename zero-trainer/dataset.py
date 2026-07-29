@@ -347,6 +347,7 @@ def _read_sample_at(
         last_of_game,
         corner_class,
         next_offset,
+        root_q,  # search's assessment of THIS position (decidedness signal)
     )
 
 
@@ -409,7 +410,7 @@ class SelfPlayDataset(Dataset):
 
     def __getitem__(self, idx: int):
         fh = self._get_fh()
-        planes, legal_mask, policy, value, policy_valid, last_of_game, corner, next_offset = \
+        planes, legal_mask, policy, value, policy_valid, last_of_game, corner, next_offset, root_q = \
             _read_sample_at(fh, int(self._offsets[idx]), self._z_lambda, self._legacy)
 
         # Opponent-reply auxiliary target: the next sample of the same game.
@@ -447,6 +448,7 @@ class SelfPlayDataset(Dataset):
             aux_legal,
             torch.tensor(1.0 if aux_valid else 0.0),
             torch.tensor(corner, dtype=torch.long),
+            torch.tensor(np.float32(root_q)),
         )
 
     def __del__(self) -> None:

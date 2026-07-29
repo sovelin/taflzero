@@ -127,13 +127,18 @@ def alpha_zero_loss(
     legal_mask: Tensor,
     sample_weights: Tensor | None = None,
     policy_valid: Tensor | None = None,
+    policy_sample_weights: Tensor | None = None,
 ) -> tuple[Tensor, Tensor, Tensor]:
+    """`sample_weights` weights the value loss (and policy, unless
+    `policy_sample_weights` is given, which overrides it for policy only —
+    used to down-weight policy in decided positions while keeping value)."""
+    p_weights = policy_sample_weights if policy_sample_weights is not None else sample_weights
     if policy_valid is not None:
         p_loss = policy_loss_masked(
-            policy_logits, pi_target, legal_mask, policy_valid, sample_weights,
+            policy_logits, pi_target, legal_mask, policy_valid, p_weights,
         )
     else:
-        p_loss = policy_loss(policy_logits, pi_target, legal_mask, sample_weights)
+        p_loss = policy_loss(policy_logits, pi_target, legal_mask, p_weights)
     v_loss = value_loss(value_pred, value_target, sample_weights)
     total = p_loss + v_loss
     return total, p_loss, v_loss

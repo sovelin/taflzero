@@ -37,13 +37,20 @@ def compute_batch_loss(
     aux_policy_weight: float,
     corner_weight: float,
     use_aux: bool,
+    decided_policy_k: float = 0.0,
 ):
     """Forward + all loss terms for one batch.
+
+    `decided_policy_k` > 0 down-weights the policy loss in decided positions:
+    policy weight *= (1 - |root_q|**decided_policy_k).  In won/lost positions
+    the search visits are near-uniform noise (max_prob ~0.15, n_eff ~80), so
+    training policy on them teaches diffuse, non-converting late-game play.
+    Value loss is NOT down-weighted (the outcome signal there is correct).
 
     Returns (total, p_loss, v_loss, aux_p_loss, corner_loss) as tensors.
     """
     (planes, legal_mask, pi_target, value_target,
-     policy_valid, aux_policy, aux_legal, aux_valid, corner) = batch
+     policy_valid, aux_policy, aux_legal, aux_valid, corner, root_q) = batch
 
     planes = planes.to(device)
     legal_mask = legal_mask.to(device)
@@ -52,6 +59,12 @@ def compute_batch_loss(
     policy_valid = policy_valid.to(device)
 
     weights = compute_sample_weights(planes, value_target, defender_weight)
+
+    policy_weights = None
+    if decided_policy_k > 0.0:
+        root_q = root_q.to(device)
+        decided_w = 1.0 - root_q.abs().clamp(0.0, 1.0) ** decided_policy_k
+        policy_weights = weights * decided_w
 
     if use_aux:
         aux_policy = aux_policy.to(device)
@@ -68,6 +81,7 @@ def compute_batch_loss(
             legal_mask=legal_mask,
             sample_weights=weights,
             policy_valid=policy_valid,
+            policy_sample_weights=policy_weights,
         )
         aux_p_loss = policy_loss_masked(aux_logits, aux_policy, aux_legal, aux_valid)
         corner_loss = F.cross_entropy(corner_logits, corner)
@@ -83,6 +97,7 @@ def compute_batch_loss(
         legal_mask=legal_mask,
         sample_weights=weights,
         policy_valid=policy_valid,
+        policy_sample_weights=policy_weights,
     )
     zero = total.detach() * 0.0
     return total, p_loss, v_loss, zero, zero
@@ -160,6 +175,7 @@ def train(
     warmup_steps: int = 0,
     aux_policy_weight: float = 0.0,
     corner_weight: float = 0.0,
+    decided_policy_k: float = 0.0,
 ) -> dict:
     model.to(device)
     model.train()
@@ -216,6 +232,7 @@ def train(
         total_loss, p_loss, v_loss, ap_loss, c_loss = compute_batch_loss(
             model, batch, device, defender_weight,
             aux_policy_weight, corner_weight, use_aux,
+            decided_policy_k=decided_policy_k,
         )
 
         optimizer.zero_grad(set_to_none=True)
@@ -308,6 +325,7 @@ def main() -> None:
     parser.add_argument("--se", action="store_true", help="Squeeze-excitation blocks for a fresh model (ignored if --checkpoint given)")
     parser.add_argument("--gpool-channels", type=int, default=None, help="Global pooling channels on odd blocks for a fresh model (0 = off; ignored if --checkpoint given)")
     parser.add_argument("--aux-heads", action="store_true", help="Build training-only aux heads (opponent policy + king corner) for a fresh model")
+    parser.add_argument("--decided-policy-k", type=float, default=0.0, help="Down-weight policy loss in decided positions by (1-|root_q|**k); 0 = off. Try 4.0. Value loss unaffected.")
     parser.add_argument("--aux-policy-weight", type=float, default=0.15, help="Loss weight of the opponent-reply aux policy head (used only if the model has aux heads)")
     parser.add_argument("--corner-weight", type=float, default=0.1, help="Loss weight of the king-escape-corner aux head (used only if the model has aux heads)")
     parser.add_argument("--legacy-data", action="store_true", help="Read v1 sample format (T1 runs, no flags/king_corner bytes)")
@@ -390,6 +408,7 @@ def main() -> None:
         warmup_steps=args.warmup_steps,
         aux_policy_weight=args.aux_policy_weight,
         corner_weight=args.corner_weight,
+        decided_policy_k=args.decided_policy_k,
     )
 
     # Save outputs
