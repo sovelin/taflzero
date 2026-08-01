@@ -14,6 +14,9 @@ use rand::prelude::*;
 use rand_distr::Gamma;
 use std::collections::HashSet;
 use std::hash::{BuildHasher, Hasher};
+use sysinfo::System;
+
+const MEMORY_LIMIT: f64 = 0.90;
 
 type NodeId = usize;
 
@@ -650,6 +653,7 @@ pub fn mcts_search(
     let mut move_stack = MovesStack::new();
     let mut iteration: u64 = 0;
     let mut last_report_ms: u64 = 0;
+    let mut sys = System::new_all();
 
     let root_id = tree.get_root_id();
     let batch_size = config.batch_size.max(1);
@@ -670,6 +674,15 @@ pub fn mcts_search(
     }
 
     loop {
+        // Check memory limit
+        sys.refresh_all();
+        let used_memory = sys.used_memory() as f64 / sys.total_memory() as f64;
+
+        if used_memory > MEMORY_LIMIT {
+            eprintln!("high memory usage: {used_memory}");
+            break;
+        }
+
         // Check time limit
         if iter_max.is_none() && search_data.time_exceeded() {
             break;
