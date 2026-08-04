@@ -58,6 +58,10 @@ impl Engine {
         }
     }
 
+    pub fn set_tree_memory_limit(&mut self, memory_limit: Option<f64>) {
+        self.tree.memory_limit = memory_limit;
+    }
+
     pub fn set_variant(&mut self, rules: RulesEnum) {
         self.board.set_rules(rules);
     }

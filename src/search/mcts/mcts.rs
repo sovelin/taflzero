@@ -117,6 +117,7 @@ const ROOT_ID: NodeId = 0;
 
 pub struct MCTSTree {
     nodes: Vec<MCTSNode>,
+    pub memory_limit: Option<f64>,
     pub move_gen: MoveGen,
 }
 
@@ -130,6 +131,7 @@ impl MCTSTree {
     pub fn new() -> Self {
         MCTSTree {
             nodes: vec![],
+            memory_limit: None,
             move_gen: MoveGen::new(),
         }
     }
@@ -649,6 +651,8 @@ pub fn mcts_search(
     multi_pv: Option<usize>,
 ) -> Option<Move> {
     tree.reroot(board.zobrist);
+    let mut check_memory = false;
+    let mut check_memory_count = 0;
     let mut mv_generator = MoveGen::new();
     let mut move_stack = MovesStack::new();
     let mut iteration: u64 = 0;
@@ -675,12 +679,15 @@ pub fn mcts_search(
 
     loop {
         // Check memory limit
-        sys.refresh_all();
-        let used_memory = sys.used_memory() as f64 / sys.total_memory() as f64;
+        if check_memory && let Some(memory_limit) = tree.memory_limit {
+            check_memory = false;
+            sys.refresh_memory();
+            let used_memory = sys.used_memory() as f64 / sys.total_memory() as f64;
 
-        if used_memory > MEMORY_LIMIT {
-            eprintln!("high memory usage: {used_memory}");
-            break;
+            if used_memory > memory_limit {
+                eprintln!("info string high memory usage: {used_memory}");
+                break;
+            }
         }
 
         // Check time limit
@@ -775,7 +782,15 @@ pub fn mcts_search(
 
             backpropagate(tree, &leaf.path, result);
         }
-        iteration += pending_leaves.len() as u64;
+        let pending_leaves_count = pending_leaves.len();
+
+        check_memory_count += pending_leaves_count;
+        if check_memory_count > 1023 {
+            check_memory = true;
+            check_memory_count = 0;
+        }
+
+        iteration += pending_leaves_count as u64;
 
         // Report every second
         let elapsed = search_data.timer.elapsed_ms();

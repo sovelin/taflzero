@@ -182,6 +182,7 @@ impl<O: UciOutput> UciController<O> {
                 self.send("option name NNFile type string default ./default_nn.onnx");
                 self.send("option name MultiPV type spin default 1 min 1 max 1000");
                 self.send("option name Variant type combo default copenhagen11x11 var copenhagen11x11 var historical11x11");
+                self.send("option name MemoryLimit type string default None");
                 UciRunState::Continue
             }
             "setoption" => {
@@ -226,6 +227,28 @@ impl<O: UciOutput> UciController<O> {
                         self.send("unknown variant");
                         UciRunState::Continue
                     };
+                } else if tokens.len() >= 5
+                    && tokens[1] == "name"
+                    && tokens[2] == "MemoryLimit"
+                    && tokens[3] == "value"
+                {
+                    let memory_limit = tokens[4];
+
+                    if memory_limit == "None" {
+                        if let Some(engine) = &mut self.engine {
+                            engine.set_tree_memory_limit(None);
+                        }
+                    } else {
+                        match memory_limit.parse() {
+                            Ok(memory_limit) => {
+                                if let Some(engine) = &mut self.engine {
+                                    engine.set_tree_memory_limit(Some(memory_limit));
+                                    self.send(&format!("memory_limit set to {memory_limit}"));
+                                }
+                            }
+                            Err(_) => self.send("invalid f64"),
+                        }
+                    }
                 } else {
                     self.send("unsupported setoption format");
                 }
