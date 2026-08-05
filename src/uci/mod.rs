@@ -236,6 +236,7 @@ impl<O: UciOutput> UciController<O> {
                     if let Some(engine) = &mut self.engine {
                         if memory_limit == "None" {
                             engine.set_tree_memory_limit(None);
+                            self.send(&format!("MemoryLimit set to {memory_limit}"));
                         } else {
                             match memory_limit.parse() {
                                 Ok(memory_limit) => {

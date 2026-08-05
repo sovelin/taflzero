@@ -783,7 +783,7 @@ pub fn mcts_search(
         let pending_leaves_count = pending_leaves.len();
 
         check_memory_count += pending_leaves_count;
-        if check_memory_count > 1023 {
+        if check_memory_count >= 1024 {
             check_memory = true;
             check_memory_count = 0;
         }
