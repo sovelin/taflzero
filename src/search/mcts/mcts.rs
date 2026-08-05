@@ -16,8 +16,6 @@ use std::collections::HashSet;
 use std::hash::{BuildHasher, Hasher};
 use sysinfo::System;
 
-const MEMORY_LIMIT: f64 = 0.90;
-
 type NodeId = usize;
 
 pub struct MCTSConfig {

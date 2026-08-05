@@ -233,20 +233,23 @@ impl<O: UciOutput> UciController<O> {
                     && tokens[3] == "value"
                 {
                     let memory_limit = tokens[4];
-
-                    if memory_limit == "None" {
-                        if let Some(engine) = &mut self.engine {
+                    if let Some(engine) = &mut self.engine {
+                        if memory_limit == "None" {
                             engine.set_tree_memory_limit(None);
-                        }
-                    } else {
-                        match memory_limit.parse() {
-                            Ok(memory_limit) => {
-                                if let Some(engine) = &mut self.engine {
-                                    engine.set_tree_memory_limit(Some(memory_limit));
-                                    self.send(&format!("memory_limit set to {memory_limit}"));
+                        } else {
+                            match memory_limit.parse() {
+                                Ok(memory_limit) => {
+                                    if 0.00 < memory_limit && memory_limit <= 1.00 {
+                                        engine.set_tree_memory_limit(Some(memory_limit));
+                                        self.send(&format!("MemoryLimit set to {memory_limit}"));
+                                    } else {
+                                        self.send(&format!(
+                                            "MemoryLimit must lie on the inteval (0, 1]"
+                                        ));
+                                    }
                                 }
+                                Err(_) => self.send("invalid f64"),
                             }
-                            Err(_) => self.send("invalid f64"),
                         }
                     }
                 } else {
