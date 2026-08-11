@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TaflZero — live gamelog</title>
+<style>
+  :root{ --bg:#0b0c12; --panel:#141824; --ink:#e8e8ee; --ink2:#9aa0b4; --muted:#6a7086;
+         --line:#252a38; --grid:#1e2230; --accent:#38c3b0; }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);
+    font:13px/1.45 -apple-system,Segoe UI,Roboto,sans-serif}
+  a{color:var(--accent)}
+  header{display:flex;align-items:baseline;gap:14px;padding:12px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  header h1{font-size:16px;margin:0}
+  header .s{color:var(--ink2);font-size:12px}
+  header .s b{color:var(--ink)}
+  #live{display:inline-flex;align-items:center;gap:6px;color:var(--ink2)}
+  #dot{width:8px;height:8px;border-radius:50%;background:#3ddc84;box-shadow:0 0 6px #3ddc84}
+  #dot.off{background:var(--muted);box-shadow:none}
+  .bar{display:flex;gap:14px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .bar label{color:var(--ink2)}
+  .bar input[type=number]{width:76px;background:#0c0e15;border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:5px 7px}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+  .seg button{background:#0c0e15;color:var(--ink2);border:0;padding:5px 12px;cursor:pointer;font-size:12px}
+  .seg button.on{background:var(--accent);color:#04120f;font-weight:600}
+  .chips{display:flex;gap:6px;flex-wrap:wrap}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border:1px solid var(--line);
+        border-radius:20px;cursor:pointer;user-select:none;font-size:12px;color:var(--ink2)}
+  .chip .sw{width:10px;height:10px;border-radius:50%}
+  .chip.on{color:var(--ink);border-color:var(--muted)}
+  .chip.off .sw{opacity:.25}
+  main{display:flex;gap:0;align-items:stretch}
+  #charts{flex:1;min-width:0;padding:12px 16px;overflow:auto}
+  #side{width:320px;flex:none;border-left:1px solid var(--line);padding:12px 14px;overflow:auto}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-bottom:12px}
+  .card h2{font-size:12px;margin:0;padding:8px 12px;border-bottom:1px solid var(--line);color:var(--ink2);font-weight:600}
+  .card .b{padding:6px 10px}
+  svg{display:block;width:100%}
+  .empty{color:var(--muted);padding:30px;text-align:center}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  td,th{padding:3px 6px;text-align:right}
+  td:first-child,th:first-child{text-align:left}
+  th{color:var(--muted);font-weight:500;border-bottom:1px solid var(--line)}
+  tr.sum td{border-top:1px solid var(--line);font-weight:600}
+  .tag{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px}
+  .mono{font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+<header>
+  <h1>TaflZero · live gamelog</h1>
+  <span class="s">games <b id="total">—</b></span>
+  <span class="s">chunks <b id="nchunks">—</b></span>
+  <span class="s">updated <b id="updated">—</b></span>
+  <span id="live"><span id="dot"></span><span id="livetxt">live 5s</span></span>
+</header>
+
+<div class="bar">
+  <span><label>chunk</label> <input type="number" id="step" value="5000" min="100" step="500"> <button id="apply" class="seg" style="padding:5px 12px">apply</button></span>
+  <span class="seg" id="mode">
+    <button data-m="separate" class="on">separate</button>
+    <button data-m="overlay">overlay</button>
+  </span>
+  <button class="seg" id="livebtn" style="padding:5px 12px">⏸ pause</button>
+  <div class="chips" id="chips"></div>
+</div>
+
+<main>
+  <div id="charts"></div>
+  <div id="side">
+    <div class="card"><h2>Latest chunk</h2><div class="b" id="latest"></div></div>
+    <div class="card"><h2>Last 10 chunks</h2><div class="b" id="recent" style="overflow-x:auto"></div></div>
+  </div>
+</main>
+
+<script>
+const SIDES = {
+  atk_capture:"ATK", atk_threefold:"ATK", atk_surrounded:"ATK", atk_no_moves:"ATK",
+  def_corner:"DEF", def_fort:"DEF", def_no_moves:"DEF",
+  draw_nocapture:"DRAW", draw_limit:"DRAW", draw_threefold:"DRAW",
+};
+const pct = (x,n)=> n? x/n*100 : 0;
+const sidePct = (c,n,side)=> n? Object.keys(SIDES).filter(k=>SIDES[k]===side).reduce((s,k)=>s+(c[k]||0),0)/n*100 : 0;
+
+const METRICS = {
+  fort:      {label:"def_fort %",       color:"#3b82f6", pctMetric:true, fn:(c,n,l)=>pct(c.def_fort||0,n)},
+  threefold: {label:"atk_threefold %",  color:"#ef4444", pctMetric:true, fn:(c,n,l)=>pct(c.atk_threefold||0,n)},
+  surround:  {label:"atk_surrounded %", color:"#f59e0b", pctMetric:true, fn:(c,n,l)=>pct(c.atk_surrounded||0,n)},
+  capture:   {label:"atk_capture %",    color:"#ec4899", pctMetric:true, fn:(c,n,l)=>pct(c.atk_capture||0,n)},
+  corner:    {label:"def_corner %",     color:"#10b981", pctMetric:true, fn:(c,n,l)=>pct(c.def_corner||0,n)},
+  atk:       {label:"ATK win %",        color:"#f43f5e", pctMetric:true, fn:(c,n,l)=>sidePct(c,n,"ATK")},
+  def:       {label:"DEF win %",        color:"#14b8a6", pctMetric:true, fn:(c,n,l)=>sidePct(c,n,"DEF")},
+  draw:      {label:"draw %",           color:"#94a3b8", pctMetric:true, fn:(c,n,l)=>sidePct(c,n,"DRAW")},
+  len:       {label:"avg length",       color:"#a855f7", pctMetric:false, fn:(c,n,l)=>l},
+};
+const $ = id=>document.getElementById(id);
+const LS = k=>`gld_${k}`;
+
+let state = {
+  step: 5000, mode:"separate", live:true,
+  sel: JSON.parse(localStorage.getItem(LS("sel"))||'["fort","threefold"]'),
+  data: null,
+};
+
+function roll(v,w=5){ return v.map((_,i)=>{ const a=Math.max(0,i-w+1); const s=v.slice(a,i+1); return s.reduce((x,y)=>x+y,0)/s.length; }); }
+
+// ---- SVG line chart ----
+function chart(xs, lines, opts){
+  const W=900, H=opts.h||150, P={l:52,r:56,t:10,b:22};
+  let ymin = opts.ymin!=null?opts.ymin:Math.min(...lines.flatMap(l=>l.vals));
+  let ymax = opts.ymax!=null?opts.ymax:Math.max(...lines.flatMap(l=>l.vals),1e-9);
+  const pad=(ymax-ymin)*0.08||1; ymax+=pad; if(opts.ymin==null) ymin-=pad; if(opts.zero)ymin=Math.min(0,ymin);
+  const xr=[xs[0]||0, xs[xs.length-1]||1];
+  const X=x=>P.l+(xr[1]===xr[0]?0:(x-xr[0])/(xr[1]-xr[0]))*(W-P.l-P.r);
+  const Y=v=>H-P.b-(v-ymin)/(ymax-ymin||1)*(H-P.t-P.b);
+  let h='';
+  for(let i=0;i<=3;i++){ const v=ymin+(ymax-ymin)*i/3, y=Y(v);
+    h+=`<line x1="${P.l}" x2="${W-P.r}" y1="${y}" y2="${y}" stroke="var(--grid)"/>`;
+    h+=`<text x="${P.l-6}" y="${y+3}" text-anchor="end" fill="var(--muted)" font-size="10">${opts.fmt?opts.fmt(v):v.toFixed(1)}</text>`; }
+  const xticks=5;
+  for(let i=0;i<=xticks;i++){ const x=xr[0]+(xr[1]-xr[0])*i/xticks;
+    h+=`<text x="${X(x)}" y="${H-6}" text-anchor="middle" fill="var(--muted)" font-size="10">${Math.round(x/1000)}k</text>`; }
+  for(const ln of lines){
+    if(ln.vals.length<1)continue;
+    const d=ln.vals.map((v,i)=>(i?'L':'M')+X(xs[i]).toFixed(1)+' '+Y(v).toFixed(1)).join(' ');
+    h+=`<path d="${d}" fill="none" stroke="${ln.color}" stroke-width="${ln.w||2}" opacity="${ln.op??1}"/>`;
+    if(ln.label!=null){ const lv=ln.vals[ln.vals.length-1];
+      h+=`<text x="${W-P.r+4}" y="${Y(lv)+3}" fill="${ln.color}" font-size="10" font-weight="700">${ln.label}</text>`; }
+  }
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${h}</svg>`;
+}
+
+function series(key){
+  const ch=state.data.chunks;
+  const xs=ch.map(c=>c.start);
+  const vals=ch.map(c=>METRICS[key].fn(c.counts,c.n,c.avg_len));
+  return {xs, vals, roll:roll(vals)};
+}
+
+function render(){
+  if(!state.data){ return; }
+  $('total').textContent = state.data.total.toLocaleString();
+  $('nchunks').textContent = state.data.chunks.length;
+  $('updated').textContent = new Date().toLocaleTimeString();
+
+  const box=$('charts');
+  const sel=state.sel.filter(k=>METRICS[k]);
+  if(!sel.length){ box.innerHTML='<div class="empty">select metrics with the chips above</div>'; renderSide(); return; }
+
+  if(state.mode==='separate'){
+    box.innerHTML = sel.map(key=>{
+      const m=METRICS[key], s=series(key);
+      const last=s.vals[s.vals.length-1]||0;
+      const lines=[
+        {vals:s.vals, color:m.color, w:1, op:.32},
+        {vals:s.roll, color:m.color, w:2.4, label:last.toFixed(m.pctMetric?2:0)+(m.pctMetric?'%':'')},
+      ];
+      const svg=chart(s.xs, lines, {h:150, zero:m.pctMetric, ymin:m.pctMetric?0:null,
+        fmt:v=>m.pctMetric?v.toFixed(1):v.toFixed(0)});
+      return `<div class="card"><h2><span class="tag" style="background:${m.color}"></span>${m.label}</h2><div class="b">${svg}</div></div>`;
+    }).join('');
+  } else {
+    // overlay: normalize each metric to its own max
+    const lines=sel.map(key=>{
+      const m=METRICS[key], s=series(key);
+      const mx=Math.max(...s.roll,1e-9);
+      const last=s.vals[s.vals.length-1]||0;
+      return {vals:s.roll.map(v=>v/mx), color:m.color, w:2.2,
+              label:(m.pctMetric?last.toFixed(2)+'%':last.toFixed(0))};
+    });
+    const xs=state.data.chunks.map(c=>c.start);
+    const svg=chart(xs, lines, {h:300, ymin:0, ymax:1.05, fmt:v=>Math.round(v*100)+'%'});
+    const legend=sel.map(key=>{const m=METRICS[key];
+      return `<span class="chip on" style="cursor:default"><span class="sw" style="background:${m.color}"></span>${m.label}</span>`;}).join(' ');
+    box.innerHTML=`<div class="card"><h2>overlay — each metric normalized to its own max</h2>
+      <div class="b">${svg}<div class="chips" style="margin-top:8px">${legend}</div></div></div>`;
+  }
+  renderSide();
+}
+
+function renderSide(){
+  if(!state.data||!state.data.chunks.length){ return; }
+  const ch=state.data.chunks, last=ch[ch.length-1];
+  const c=last.counts, n=last.n;
+  const order=Object.keys(SIDES).filter(k=>c[k]);
+  const sideColor={ATK:METRICS.atk.color, DEF:METRICS.def.color, DRAW:METRICS.draw.color};
+  // terminals that have a dedicated chart -> use that chart's colour
+  const TERM_COLOR={
+    def_fort:METRICS.fort.color, atk_threefold:METRICS.threefold.color,
+    atk_surrounded:METRICS.surround.color, atk_capture:METRICS.capture.color,
+    def_corner:METRICS.corner.color,
+  };
+  const termColor=k=>TERM_COLOR[k]||sideColor[SIDES[k]];
+  let rows=order.sort((a,b)=>c[b]-c[a]).map(k=>{
+    return `<tr><td><span class="tag" style="background:${termColor(k)}"></span>${k}</td>
+      <td class="mono">${c[k]}</td><td class="mono">${pct(c[k],n).toFixed(2)}%</td></tr>`;
+  }).join('');
+  const atk=sidePct(c,n,'ATK'),def=sidePct(c,n,'DEF'),draw=sidePct(c,n,'DRAW');
+  $('latest').innerHTML=`
+    <div style="color:var(--ink2);margin-bottom:6px">games ${last.start+1}–${last.start+n} · n=${n} · len ${last.avg_len}</div>
+    <table><tr class="sum"><td>ATK</td><td class="mono"></td><td class="mono" style="color:${METRICS.atk.color}">${atk.toFixed(1)}%</td></tr>
+    <tr class="sum"><td>DEF</td><td></td><td class="mono" style="color:${METRICS.def.color}">${def.toFixed(1)}%</td></tr>
+    <tr class="sum"><td>DRAW</td><td></td><td class="mono" style="color:${METRICS.draw.color}">${draw.toFixed(1)}%</td></tr></table>
+    <table style="margin-top:8px"><tr><th>terminal</th><th>n</th><th>%</th></tr>${rows}</table>`;
+
+  const rec=ch.slice(-10).reverse();   // newest chunk first
+  const cols=['fort','threefold','surround','atk','def','len'];
+  let head='<tr><th>#</th>'+cols.map(k=>`<th>${k}</th>`).join('')+'</tr>';
+  let body=rec.map(x=>{
+    const idx=ch.indexOf(x);
+    const cells=cols.map(k=>{const m=METRICS[k];const v=m.fn(x.counts,x.n,x.avg_len);
+      return `<td class="mono">${m.pctMetric?v.toFixed(2):v.toFixed(0)}</td>`;}).join('');
+    return `<tr><td>${idx}</td>${cells}</tr>`;
+  }).join('');
+  $('recent').innerHTML=`<table>${head}${body}</table>`;
+}
+
+async function fetchStats(){
+  try{
+    const r=await fetch(`/api/stats?step=${state.step}`);
+    state.data=await r.json();
+    $('dot').classList.remove('off');
+    render();
+  }catch(e){ $('dot').classList.add('off'); }
+}
+
+// ---- controls ----
+function buildChips(){
+  $('chips').innerHTML=Object.keys(METRICS).map(k=>{
+    const on=state.sel.includes(k), m=METRICS[k];
+    return `<span class="chip ${on?'on':'off'}" data-k="${k}"><span class="sw" style="background:${m.color}"></span>${k}</span>`;
+  }).join('');
+  document.querySelectorAll('.chip[data-k]').forEach(el=>el.onclick=()=>{
+    const k=el.dataset.k;
+    if(state.sel.includes(k)) state.sel=state.sel.filter(x=>x!==k); else state.sel.push(k);
+    localStorage.setItem(LS('sel'),JSON.stringify(state.sel));
+    buildChips(); render();
+  });
+}
+$('mode').querySelectorAll('button').forEach(b=>b.onclick=()=>{
+  state.mode=b.dataset.m;
+  $('mode').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
+  render();
+});
+$('apply').onclick=()=>{ state.step=Math.max(100,parseInt($('step').value)||5000); fetchStats(); };
+$('step').addEventListener('keydown',e=>{ if(e.key==='Enter')$('apply').click(); });
+$('livebtn').onclick=()=>{
+  state.live=!state.live;
+  $('livebtn').textContent=state.live?'⏸ pause':'▶ resume';
+  $('dot').classList.toggle('off',!state.live);
+  $('livetxt').textContent=state.live?'live 5s':'paused';
+};
+
+buildChips();
+fetchStats();
+setInterval(()=>{ if(state.live) fetchStats(); }, 5000);
+</script>
+</body>
+</html>

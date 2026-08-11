@@ -176,6 +176,8 @@ def train(
     aux_policy_weight: float = 0.0,
     corner_weight: float = 0.0,
     decided_policy_k: float = 0.0,
+    checkpoint_every: int = 0,
+    checkpoint_path=None,
 ) -> dict:
     model.to(device)
     model.train()
@@ -238,6 +240,16 @@ def train(
         optimizer.zero_grad(set_to_none=True)
         total_loss.backward()
         optimizer.step()
+
+        # Crash-resilient periodic checkpoint (long offline runs). Saves the
+        # current weights so a GPU/driver crash doesn't lose everything.
+        if checkpoint_every > 0 and checkpoint_path is not None and step % checkpoint_every == 0:
+            was_training = model.training
+            model.eval()
+            save_qnxx(model, checkpoint_path)
+            if was_training:
+                model.train()
+            print(f"  [checkpoint] saved at step {step} -> {checkpoint_path}")
 
         running_loss += total_loss.item()
         running_p += p_loss.item()
@@ -329,6 +341,7 @@ def main() -> None:
     parser.add_argument("--aux-policy-weight", type=float, default=0.15, help="Loss weight of the opponent-reply aux policy head (used only if the model has aux heads)")
     parser.add_argument("--corner-weight", type=float, default=0.1, help="Loss weight of the king-escape-corner aux head (used only if the model has aux heads)")
     parser.add_argument("--legacy-data", action="store_true", help="Read v1 sample format (T1 runs, no flags/king_corner bytes)")
+    parser.add_argument("--checkpoint-every", type=int, default=0, help="Save a .qnxx checkpoint every N steps (0 = only at end; crash resilience for long runs)")
     parser.add_argument("--out", type=Path, required=True, help="Output ONNX model path")
     parser.add_argument("--save-checkpoint", type=Path, default=None, help="Save .qnxx checkpoint after training")
     parser.add_argument("--window", type=int, default=0, help="Sliding window size (0 = use all data)")
@@ -409,6 +422,8 @@ def main() -> None:
         aux_policy_weight=args.aux_policy_weight,
         corner_weight=args.corner_weight,
         decided_policy_k=args.decided_policy_k,
+        checkpoint_every=args.checkpoint_every,
+        checkpoint_path=args.save_checkpoint,
     )
 
     # Save outputs
