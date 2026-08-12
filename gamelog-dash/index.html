@@ -100,6 +100,7 @@ const LS = k=>`gld_${k}`;
 let state = {
   step: 5000, mode:"separate", live:true,
   sel: JSON.parse(localStorage.getItem(LS("sel"))||'["fort","threefold"]'),
+  recentUnit: localStorage.getItem(LS("recunit"))||"%",
   data: null,
 };
 
@@ -204,16 +205,31 @@ function renderSide(){
     <tr class="sum"><td>DRAW</td><td></td><td class="mono" style="color:${METRICS.draw.color}">${draw.toFixed(1)}%</td></tr></table>
     <table style="margin-top:8px"><tr><th>terminal</th><th>n</th><th>%</th></tr>${rows}</table>`;
 
+  const unit=state.recentUnit;
   const rec=ch.slice(-10).reverse();   // newest chunk first
   const cols=['fort','threefold','surround','atk','def','len'];
-  let head='<tr><th>#</th>'+cols.map(k=>`<th>${k}</th>`).join('')+'</tr>';
+  let head='<tr><th>#</th><th>n</th>'+cols.map(k=>`<th>${k}</th>`).join('')+'</tr>';
   let body=rec.map(x=>{
     const idx=ch.indexOf(x);
-    const cells=cols.map(k=>{const m=METRICS[k];const v=m.fn(x.counts,x.n,x.avg_len);
-      return `<td class="mono">${m.pctMetric?v.toFixed(2):v.toFixed(0)}</td>`;}).join('');
-    return `<tr><td>${idx}</td>${cells}</tr>`;
+    const cells=cols.map(k=>{
+      const m=METRICS[k], v=m.fn(x.counts,x.n,x.avg_len);
+      let disp;
+      if(k==='len') disp=v.toFixed(0);                     // length: always avg
+      else if(unit==='%') disp=v.toFixed(2);               // percent
+      else disp=Math.round(v/100*x.n);                     // raw count
+      return `<td class="mono">${disp}</td>`;
+    }).join('');
+    return `<tr><td>${idx}</td><td class="mono">${x.n}</td>${cells}</tr>`;
   }).join('');
-  $('recent').innerHTML=`<table>${head}${body}</table>`;
+  const toggle=`<span class="seg" style="display:inline-flex;margin-bottom:6px">
+    <button data-u="%" class="${unit==='%'?'on':''}">%</button>
+    <button data-u="n" class="${unit==='n'?'on':''}">n</button></span>`;
+  $('recent').innerHTML=toggle+`<table>${head}${body}</table>`;
+  $('recent').querySelectorAll('.seg button').forEach(b=>b.onclick=()=>{
+    state.recentUnit=b.dataset.u;
+    localStorage.setItem(LS('recunit'),b.dataset.u);
+    renderSide();
+  });
 }
 
 async function fetchStats(){
