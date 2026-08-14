@@ -571,4 +571,19 @@ impl WasmClient {
     pub fn set_stop_buffer(&mut self, buffer: js_sys::Int32Array) {
         crate::search::search_data::set_wasm_stop_buffer(buffer);
     }
+
+    /// Register the SharedArrayBuffer-backed views used for NN inference done
+    /// by the onnxruntime-web worker.  Call once after construction, before any
+    /// search.  See `nn_wasm::set_nn_buffers` for the buffer layout.
+    ///   control: Int32Array [REQ, RESP, BATCH]
+    ///   input:   Float32Array  max_batch * 1331   (SAMPLE_SIZE)
+    ///   output:  Float32Array  max_batch * 4841   (POLICY_SIZE then value)
+    pub fn set_nn_buffers(
+        &mut self,
+        control: js_sys::Int32Array,
+        input: js_sys::Float32Array,
+        output: js_sys::Float32Array,
+    ) {
+        crate::search::nn::set_nn_buffers(control, input, output);
+    }
 }

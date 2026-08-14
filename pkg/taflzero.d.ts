@@ -93,6 +93,15 @@ export class WasmClient {
     run(cmd: string): void;
     set_nn(data: Uint8Array): void;
     /**
+     * Register the SharedArrayBuffer-backed views used for NN inference done
+     * by the onnxruntime-web worker.  Call once after construction, before any
+     * search.  See `nn_wasm::set_nn_buffers` for the buffer layout.
+     *   control: Int32Array [REQ, RESP, BATCH]
+     *   input:   Float32Array  max_batch * 1331   (SAMPLE_SIZE)
+     *   output:  Float32Array  max_batch * 4841   (POLICY_SIZE then value)
+     */
+    set_nn_buffers(control: Int32Array, input: Float32Array, output: Float32Array): void;
+    /**
      * Register a SharedArrayBuffer-backed Int32Array as the stop signal.
      * The main thread can stop an ongoing `go infinite` by calling:
      *   `Atomics.store(buffer, 0, 1)`
@@ -194,6 +203,7 @@ export interface InitOutput {
     readonly wasmclient_print_board: (a: number) => void;
     readonly wasmclient_run: (a: number, b: number, c: number) => void;
     readonly wasmclient_set_nn: (a: number, b: number, c: number) => void;
+    readonly wasmclient_set_nn_buffers: (a: number, b: number, c: number, d: number) => void;
     readonly wasmclient_set_stop_buffer: (a: number, b: number) => void;
     readonly main_js: () => void;
     readonly __wbindgen_export: (a: number, b: number) => number;
