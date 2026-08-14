@@ -49,10 +49,15 @@ fn format_info_message(iteration: SearchIterationResponse) -> String {
         String::new()
     };
 
+    let score_str = match iteration.mate {
+        Some(m) => format!("mate {}", m),
+        None => format!("cp {}", iteration.score),
+    };
+
     format!(
-        "info{} score cp {} winrate {:.1}% nodes {} time {} speed {} pv {}",
+        "info{} score {} winrate {:.1}% nodes {} time {} speed {} pv {}",
         multipv_str,
-        iteration.score,
+        score_str,
         iteration.winrate * 100.0,
         iteration.nodes,
         iteration.time,

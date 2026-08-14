@@ -66,6 +66,11 @@ pub struct MCTSNode {
     prior: f32,
     zobrist_hash: ZobristHash,
     virtual_loss: f32,
+    /// Proven game-theoretic result from this node's side-to-move perspective:
+    /// 0 = unknown, +1 = proven forced WIN, -1 = proven forced LOSS.
+    proven: i8,
+    /// Plies to the proven mate (shortest for a win, longest for a loss).
+    proven_dist: u16,
 }
 
 impl MCTSNode {
@@ -80,6 +85,8 @@ impl MCTSNode {
             prior: 0.0,
             zobrist_hash,
             virtual_loss: 0.0,
+            proven: 0,
+            proven_dist: 0,
         }
     }
 
@@ -114,6 +121,8 @@ impl MCTSNode {
             prior,
             zobrist_hash,
             virtual_loss: 0.0,
+            proven: 0,
+            proven_dist: 0,
         }
     }
 
@@ -258,6 +267,8 @@ impl MCTSTree {
                 prior: old_node.prior,
                 zobrist_hash: old_node.zobrist_hash,
                 virtual_loss: 0.0,
+                proven: old_node.proven,
+                proven_dist: old_node.proven_dist,
             });
 
             for &child in &old_node.children {
@@ -482,27 +493,71 @@ fn get_best_child(tree: &MCTSTree, temperature: f32) -> Option<NodeId> {
         return None;
     }
 
+    // --- proven-result handling (overrides the visit-based choice) ---
+    // A child that is a proven LOSS for its side-to-move (the opponent) is a
+    // forced WIN for us. Play the *nearest* such mate. If every move is a proven
+    // loss for us, delay it as long as possible.
+    let mut best_win: Option<(NodeId, u16, f32)> = None; // (id, dist, visits)
+    let mut best_loss: Option<(NodeId, u16)> = None; // (id, dist)
+    let mut has_non_losing = false;
+    for &c in &root.children {
+        let child = tree.get_node(c);
+        match child.proven {
+            -1 => {
+                let better = best_win.is_none_or(|(_, d, v)| {
+                    child.proven_dist < d || (child.proven_dist == d && child.visits > v)
+                });
+                if better {
+                    best_win = Some((c, child.proven_dist, child.visits));
+                }
+                has_non_losing = true;
+            }
+            1 => {
+                if best_loss.is_none_or(|(_, d)| child.proven_dist > d) {
+                    best_loss = Some((c, child.proven_dist));
+                }
+            }
+            _ => has_non_losing = true,
+        }
+    }
+    if let Some((id, _, _)) = best_win {
+        return Some(id); // nearest forced win
+    }
+    if !has_non_losing {
+        return best_loss.map(|(id, _)| id); // everything loses -> longest resistance
+    }
+
+    // --- normal visit-based selection over non-losing moves ---
+    let pool: Vec<NodeId> = root
+        .children
+        .iter()
+        .copied()
+        .filter(|&c| tree.get_node(c).proven != 1) // avoid proven-losing moves
+        .collect();
+
     if temperature <= 0.0 {
         // Greedy: pick most visited
-        return root
-            .children
+        return pool
             .iter()
             .max_by(|&&a, &&b| {
-                let va = tree.get_node(a).visits;
-                let vb = tree.get_node(b).visits;
-                va.partial_cmp(&vb).unwrap()
+                tree.get_node(a)
+                    .visits
+                    .partial_cmp(&tree.get_node(b).visits)
+                    .unwrap()
             })
             .copied();
     }
 
     // Temperature-based sampling proportional to visits^(1/T)
     let inv_t = 1.0 / temperature;
-    let weights: Vec<f64> = root
-        .children
+    let weights: Vec<f64> = pool
         .iter()
         .map(|&id| (tree.get_node(id).visits as f64).powf(inv_t as f64))
         .collect();
     let sum: f64 = weights.iter().sum();
+    if sum <= 0.0 {
+        return pool.first().copied();
+    }
     let probs: Vec<f64> = weights.iter().map(|&w| w / sum).collect();
 
     let mut rng = StdRng::seed_from_u64(std::hash::RandomState::new().build_hasher().finish());
@@ -513,10 +568,10 @@ fn get_best_child(tree: &MCTSTree, temperature: f32) -> Option<NodeId> {
     for (i, &p) in probs.iter().enumerate() {
         cumulative += p;
         if r < cumulative {
-            return Some(root.children[i]);
+            return Some(pool[i]);
         }
     }
-    Some(*root.children.last().unwrap())
+    pool.last().copied()
 }
 
 /**
@@ -685,6 +740,54 @@ fn backpropagate(tree: &mut MCTSTree, path: &[NodeId], mut result: f32) {
     }
 }
 
+/// Propagate proven win/loss up the search path (MCTS-Solver style).
+/// A node is a proven WIN if any child is a proven LOSS (for that child's
+/// side-to-move); a proven LOSS if it is fully expanded and *every* child is a
+/// proven WIN. Distance is the shortest path to a forced win (so the root plays
+/// the nearest mate) or the longest resistance before a forced loss.
+fn propagate_proven(tree: &mut MCTSTree, path: &[NodeId]) {
+    for &node_id in path.iter().rev() {
+        update_proven(tree, node_id);
+    }
+}
+
+fn update_proven(tree: &mut MCTSTree, node_id: NodeId) {
+    let node = tree.get_node(node_id);
+    if node.children.is_empty() {
+        return; // leaf/terminal: `proven` is set at expansion time
+    }
+    let expanded = node.expanded;
+    let children = node.children.clone();
+
+    let mut win_dist: Option<u16> = None; // shortest dist among LOSS children (we win)
+    let mut loss_dist: u16 = 0; // longest dist among WIN children (we lose)
+    let mut all_win = expanded; // is every child a proven WIN-for-opponent?
+
+    for c in children {
+        let child = tree.get_node(c);
+        match child.proven {
+            -1 => {
+                // opponent is lost in this line -> a winning move for us
+                win_dist = Some(win_dist.map_or(child.proven_dist, |w| w.min(child.proven_dist)));
+                all_win = false;
+            }
+            1 => loss_dist = loss_dist.max(child.proven_dist),
+            _ => all_win = false,
+        }
+    }
+
+    let node = tree.get_node_mut(node_id);
+    if let Some(d) = win_dist {
+        node.proven = 1;
+        node.proven_dist = d.saturating_add(1);
+    } else if all_win {
+        node.proven = -1;
+        node.proven_dist = loss_dist.saturating_add(1);
+    } else {
+        node.proven = 0;
+    }
+}
+
 pub fn mcts_search(
     board: &mut Board,
     tree: &mut MCTSTree,
@@ -737,6 +840,13 @@ pub fn mcts_search(
         if let Some(max) = iter_max
             && iteration >= max
         {
+            break;
+        }
+
+        // Stop early once the root is a proven win/loss — more search cannot
+        // change the outcome. Play mode only (temperature <= 0); self-play keeps
+        // searching so the policy targets (visit distribution) are unaffected.
+        if config.temperature <= 0.0 && tree.get_root().proven != 0 {
             break;
         }
 
@@ -797,8 +907,11 @@ pub fn mcts_search(
             remove_virtual_loss(tree, &leaf.path);
 
             let result = if let Some(terminal_val) = leaf.terminal_value {
-                // Terminal — mark expanded
-                tree.get_node_mut(leaf.node_id).expanded = true;
+                // Terminal — mark expanded and record the proven result (mate in 0).
+                let node = tree.get_node_mut(leaf.node_id);
+                node.expanded = true;
+                node.proven = if terminal_val > 0.0 { 1 } else { -1 };
+                node.proven_dist = 0;
                 terminal_val
             } else {
                 // Use NN output to expand
@@ -820,6 +933,7 @@ pub fn mcts_search(
             };
 
             backpropagate(tree, &leaf.path, result);
+            propagate_proven(tree, &leaf.path);
         }
         iteration += pending_leaves.len() as u64;
 
@@ -828,62 +942,87 @@ pub fn mcts_search(
         if elapsed >= last_report_ms + 100 {
             last_report_ms = elapsed;
 
-            if let Some(callback) = on_iteration
-                && let Some(best_id) = get_best_child(tree, 0.0)
-            {
-                fn response_from_move(
-                    node_id: NodeId,
-                    tree: &MCTSTree,
-                    elapsed: u64,
-                    callback: &dyn Fn(SearchIterationResponse),
-                    iteration: u64,
-                    multi_pv: Option<usize>,
-                ) {
-                    let node = tree.get_node(node_id);
-
-                    let (score, winrate) = if node.visits > 0.0 {
-                        let v = (node.wins / node.visits).clamp(-0.9999, 0.9999);
-                        let winrate = (v + 1.0) / 2.0;
-                        ((111.714_64 * (1.562_068_8 * v).tan()) as i32, winrate)
-                    } else {
-                        (0, 0.5)
-                    };
-                    let speed = if elapsed > 0 {
-                        iteration * 1000 / elapsed
-                    } else {
-                        0
-                    };
-
-                    callback(SearchIterationResponse {
-                        score,
-                        nodes: iteration,
-                        time: elapsed,
-                        speed,
-                        pv: tree.get_pv_from(node_id),
-                        winrate,
-                        multi_pv,
-                    });
-                }
-
-                if let Some(multi_pv) = multi_pv {
-                    for rank in 1..=multi_pv {
-                        if let Some(multi_id) = get_multi_pv_child(tree, tree.get_root_id(), rank) {
-                            response_from_move(
-                                multi_id,
-                                tree,
-                                elapsed,
-                                callback,
-                                iteration,
-                                Some(rank),
-                            );
-                        }
-                    }
-                } else {
-                    response_from_move(best_id, tree, elapsed, callback, iteration, None);
-                }
+            if let Some(callback) = on_iteration {
+                report_iteration(tree, callback, elapsed, iteration, multi_pv);
             }
         }
     }
 
+    // Final report so the last PV/score (including a proven `mate N`) is emitted
+    // even when the search stopped early on a proven result or a time cutoff.
+    if let Some(callback) = on_iteration {
+        let elapsed = search_data.timer.elapsed_ms();
+        report_iteration(tree, callback, elapsed, iteration, multi_pv);
+    }
+
     get_best_child(tree, config.temperature).map(|id| tree.get_node(id).mv.unwrap())
+}
+
+fn response_from_move(
+    node_id: NodeId,
+    tree: &MCTSTree,
+    elapsed: u64,
+    callback: &dyn Fn(SearchIterationResponse),
+    iteration: u64,
+    multi_pv: Option<usize>,
+) {
+    let node = tree.get_node(node_id);
+
+    let (score, winrate) = if node.visits > 0.0 {
+        let v = (node.wins / node.visits).clamp(-0.9999, 0.9999);
+        let winrate = (v + 1.0) / 2.0;
+        ((111.714_64 * (1.562_068_8 * v).tan()) as i32, winrate)
+    } else {
+        (0, 0.5)
+    };
+    let speed = if elapsed > 0 {
+        iteration * 1000 / elapsed
+    } else {
+        0
+    };
+
+    // Plies to mate from the current position (node is 1 ply from root, so its
+    // dist + 1 = the root's distance to mate).
+    let mate = match node.proven {
+        -1 => Some(node.proven_dist as i32 + 1), // we force the mate
+        1 => Some(-(node.proven_dist as i32 + 1)), // we get mated
+        _ => None,
+    };
+    // A proven result is a certainty, so report 100%/0% instead of the value
+    // net's (saturated but not exact) estimate.
+    let winrate = match node.proven {
+        -1 => 1.0,
+        1 => 0.0,
+        _ => winrate,
+    };
+
+    callback(SearchIterationResponse {
+        score,
+        nodes: iteration,
+        time: elapsed,
+        speed,
+        pv: tree.get_pv_from(node_id),
+        winrate,
+        multi_pv,
+        mate,
+    });
+}
+
+/// Emit one report: all ranks in MultiPV mode, otherwise just the best move.
+fn report_iteration(
+    tree: &MCTSTree,
+    callback: &dyn Fn(SearchIterationResponse),
+    elapsed: u64,
+    iteration: u64,
+    multi_pv: Option<usize>,
+) {
+    if let Some(mpv) = multi_pv {
+        for rank in 1..=mpv {
+            if let Some(id) = get_multi_pv_child(tree, tree.get_root_id(), rank) {
+                response_from_move(id, tree, elapsed, callback, iteration, Some(rank));
+            }
+        }
+    } else if let Some(best_id) = get_best_child(tree, 0.0) {
+        response_from_move(best_id, tree, elapsed, callback, iteration, None);
+    }
 }
