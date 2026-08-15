@@ -63,14 +63,18 @@ impl NeuralNet {
         // 1. write input into the shared input buffer
         NN_INPUT.with(|b| {
             let b = b.borrow();
-            let arr = b.as_ref().expect("NN input buffer not registered (set_nn_buffers)");
+            let arr = b
+                .as_ref()
+                .expect("NN input buffer not registered (set_nn_buffers)");
             arr.subarray(0, input.len() as u32).copy_from(&input);
         });
 
         // 2. request an evaluation and block until the NN worker answers
         NN_CONTROL.with(|c| {
             let c = c.borrow();
-            let ctrl = c.as_ref().expect("NN control buffer not registered (set_nn_buffers)");
+            let ctrl = c
+                .as_ref()
+                .expect("NN control buffer not registered (set_nn_buffers)");
             let js = ctrl.as_ref(); // &JsValue for js_sys::Atomics
             Atomics::store(js, CTRL_BATCH, batch as i32).unwrap();
             // only the engine writes REQ, so plain load+store is race-free
@@ -91,7 +95,9 @@ impl NeuralNet {
         let mut results = Vec::with_capacity(batch);
         NN_OUTPUT.with(|b| {
             let b = b.borrow();
-            let arr = b.as_ref().expect("NN output buffer not registered (set_nn_buffers)");
+            let arr = b
+                .as_ref()
+                .expect("NN output buffer not registered (set_nn_buffers)");
             let policy_len = batch * POLICY_SIZE;
             let mut policy_all = vec![0.0f32; policy_len];
             arr.subarray(0, policy_len as u32).copy_to(&mut policy_all);

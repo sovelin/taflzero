@@ -1001,9 +1001,7 @@ fn response_from_move(
     } else {
         (0, 0.5)
     };
-    let speed = (
-        iteration * 1_000).checked_div( elapsed
-    ).unwrap_or_default();
+    let speed = (iteration * 1_000).checked_div(elapsed).unwrap_or_default();
 
     // Plies to mate from the current position (node is 1 ply from root, so its
     // dist + 1 = the root's distance to mate).
