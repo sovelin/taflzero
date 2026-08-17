@@ -823,6 +823,57 @@ mod tests {
 
             assert_eq!(undo.captured_pieces_count, 0);
         }
+
+        // A wall bracketed by a friend and a corner already exists on the bottom
+        // edge; a defender move that doesn't flank it must not trigger a capture. - case 1
+        #[test]
+        fn should_not_do_shield_wall_capture() {
+            let mut board = Board::new();
+            board
+                .set_fen("6aa3/8a2/4a6/1a8a/a8a1/a8a1/8a2/4a1a2aa/d9a/2a3adkd1/3a2adaa1 d")
+                .unwrap();
+
+            let mv = create_move_from_algebraic("a3a2").unwrap();
+
+            let mut undo = UndoMove::new();
+            board.make_move(mv, &mut undo).expect("make move failed");
+
+            assert_eq!(undo.captured_pieces_count, 0);
+        }
+
+        // A wall bracketed by a friend and a corner already exists on the bottom
+        // edge; a defender move that doesn't flank it must not trigger a capture. - case 2
+        #[test]
+        fn corner_bracketed_wall_not_captured_by_move_off_the_edge() {
+            let mut board = Board::new();
+            board
+                .set_fen("6aa3/8a2/4a6/1a8a/a8a1/a7aa1/11/4a1a2aa/1d8a/2a3adkd1/3a2adaa1 d")
+                .unwrap();
+
+            let mv = create_move_from_algebraic("b3b2").unwrap();
+
+            let mut undo = UndoMove::new();
+            board.make_move(mv, &mut undo).expect("make move failed");
+
+            assert_eq!(undo.captured_pieces_count, 0);
+        }
+
+        // Same pre-existing corner wall, but this time the defender lands ON the
+        // wall's edge — still not a flank of the wall, so no capture. - case 3
+        #[test]
+        fn corner_bracketed_wall_not_captured_when_landing_on_edge_without_flanking() {
+            let mut board = Board::new();
+            board
+                .set_fen("6aa3/8a2/4a6/1a8a/a8a1/a7a2/9a1/4a1a2aa/4d5a/2a3adkd1/3a2adaa1 d")
+                .unwrap();
+
+            let mv = create_move_from_algebraic("e3e1").unwrap();
+
+            let mut undo = UndoMove::new();
+            board.make_move(mv, &mut undo).expect("make move failed");
+
+            assert_eq!(undo.captured_pieces_count, 0);
+        }
     }
 
     mod king_capture_rule {

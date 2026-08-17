@@ -104,7 +104,11 @@ fn captures_on_side(board: &mut Board, side: Side, which: ShieldSide, undo: &mut
     while let Some(next_sq) = it.and_then(next) {
         if is_last(next_sq) {
             if seq.len() > 1 {
-                res.extend_from_slice(&seq);
+                if board.last_move_to == start_sq as OptionalSquare
+                    || board.last_move_to == next_sq as OptionalSquare
+                {
+                    res.extend_from_slice(&seq);
+                }
                 seq.clear();
             }
         } else if board.board[next_sq] == Piece::EMPTY && !is_always_friend(next_sq) {
