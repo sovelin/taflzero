@@ -4,7 +4,7 @@ use std::error::Error;
 use std::io::Cursor;
 
 use crate::Engine;
-use crate::board::board::Board;
+use crate::board::Board;
 use crate::board::types::{Piece, Side, Square};
 use crate::board::utils::{get_col, get_row, get_square_from_algebraic};
 use crate::mv::{Move, create_move_from_algebraic};

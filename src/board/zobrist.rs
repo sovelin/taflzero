@@ -18,9 +18,9 @@ fn generate_zobrist() -> ZobristData {
 
     let mut table = [[0; SQS]; PIECES_COUNT];
 
-    for p in 0..PIECES_COUNT {
-        for sq in 0..SQS {
-            table[p][sq] = rng.random::<u64>()
+    for p in table.iter_mut().take(PIECES_COUNT) {
+        for sq in p.iter_mut().take(SQS) {
+            *sq = rng.random::<u64>()
         }
     }
 

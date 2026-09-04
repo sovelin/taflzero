@@ -150,7 +150,7 @@ mod tests {
     use std::error::Error;
 
     use super::*;
-    use crate::board::board::Board;
+    use crate::board::Board;
     use crate::board::types::{Piece, Side};
     use crate::board::utils::get_square_from_algebraic;
     use crate::moves::mv::create_move_from_algebraic;

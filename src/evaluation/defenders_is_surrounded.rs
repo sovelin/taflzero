@@ -56,8 +56,8 @@ pub fn defenders_is_surrounded(board: &Board) -> bool {
         &start_sqs,
     );
 
-    for i in 0..inner_squares.len() {
-        if inner_squares[i] && is_edge_square(i as Square) {
+    for (i, inner_square) in inner_squares.iter().enumerate() {
+        if *inner_square && is_edge_square(i as Square) {
             return false;
         }
     }

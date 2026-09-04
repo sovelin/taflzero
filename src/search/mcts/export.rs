@@ -1,7 +1,7 @@
 use crate::board::Board;
 use crate::board::position_export::BitPosition;
 use crate::board::types::Side;
-use crate::mcts::mcts::MCTSTree;
+use crate::mcts::MCTSTree;
 use crate::mcts::utils::move_to_policy_index;
 use std::io::{Result, Write};
 

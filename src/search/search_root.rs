@@ -1,5 +1,5 @@
 use crate::board::Board;
-use crate::mcts::mcts::{MCTSConfig, MCTSTree, mcts_search};
+use crate::mcts::{MCTSConfig, MCTSTree, mcts_search};
 use crate::moves::mv::Move;
 use crate::search::nn::NeuralNet;
 use crate::search::search_data::SearchData;

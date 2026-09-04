@@ -2,7 +2,7 @@
 mod tests {
     use std::error::Error;
 
-    use crate::board::board::Board;
+    use crate::board::Board;
     use crate::board::types::Piece;
     use crate::board::utils::get_square_from_algebraic;
     use crate::tests::*;
