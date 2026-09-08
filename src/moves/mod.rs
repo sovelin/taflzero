@@ -1,5 +1,4 @@
 mod make_move;
-pub mod masks;
 pub mod movegen;
 pub mod mv;
 pub mod undo;

@@ -1,5 +1,6 @@
 pub mod constants;
 mod fen;
+mod masks;
 pub mod position_export;
 mod precompute;
 pub mod rules;
@@ -8,6 +9,7 @@ pub mod types;
 pub mod utils;
 mod zobrist;
 
+pub use masks::LINE_MOVES;
 pub use precompute::*;
 pub use utils::get_side_by_piece;
 

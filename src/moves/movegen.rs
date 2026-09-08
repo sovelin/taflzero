@@ -1,8 +1,7 @@
-use crate::board::Board;
 use crate::board::constants::HOLE;
 use crate::board::types::{Piece, Side, Square};
 use crate::board::utils::get_square;
-use crate::moves::masks::LINE_MOVES;
+use crate::board::{Board, LINE_MOVES};
 use crate::moves::mv::Move;
 
 pub static MAX_MOVES: usize = 1024;
