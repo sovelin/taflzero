@@ -12,7 +12,7 @@ mod zobrist;
 pub use precompute::*;
 pub use utils::get_side_by_piece;
 
-use crate::board::constants::{ATTACKERS_MAX, BOARD_SIZE, DEFENDERS_MAX, HOLE, SQS};
+use crate::board::constants::{ATTACKERS_MAX, DEFENDERS_MAX, HOLE, SQS};
 use crate::board::fen::FenError;
 use crate::board::rules::{Rules, RulesEnum};
 use crate::board::types::{OptionalSquare, Piece, Side, Square, ZobristHash};
@@ -31,8 +31,8 @@ pub struct Board {
     pub king_sq: OptionalSquare,
     pub attackers_count: u8,
     pub defenders_count: u8,
-    pub row_occ: [u16; BOARD_SIZE],
-    pub col_occ: [u16; BOARD_SIZE],
+    pub row_occ: Vec<u16>,
+    pub col_occ: Vec<u16>,
     pub piece_index_by_square: [u8; SQS],
     pub side_to_move: Side,
     pub zobrist: ZobristHash,
@@ -51,6 +51,9 @@ impl Default for Board {
 
 impl Board {
     pub fn new() -> Self {
+        let rules = RulesEnum::Copenhagen11x11;
+        let board_size = rules.rules().board_size;
+
         Self {
             board: [Piece::EMPTY; SQS],
             attackers: [0; ATTACKERS_MAX],
@@ -58,15 +61,15 @@ impl Board {
             king_sq: HOLE,
             attackers_count: 0,
             defenders_count: 0,
-            row_occ: [0; BOARD_SIZE],
-            col_occ: [0; BOARD_SIZE],
+            row_occ: vec![0; board_size],
+            col_occ: vec![0; board_size],
             piece_index_by_square: [0; SQS],
             side_to_move: Side::ATTACKERS,
             zobrist: 0,
             rep_table: HashMap::new(),
             last_move_to: HOLE,
             was_capture: false,
-            rules: RulesEnum::Copenhagen11x11,
+            rules,
             precomputed: Arc::new(Precomputed::default()),
         }
     }
@@ -226,7 +229,7 @@ impl Board {
 
 impl Debug for Board {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let size = BOARD_SIZE;
+        let size = self.board_size();
         let cell_gap = "  ";
 
         write!(f, "    ")?;

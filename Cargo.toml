@@ -15,6 +15,7 @@ cargo = "deny"
 
 [dev-dependencies]
 csv = "1"
+indoc = "2"
 serde = { version = "1", features = ["derive"] }
 
 [dependencies]
