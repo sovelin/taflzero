@@ -1,20 +1,22 @@
-use crate::board::constants::SQS;
 use crate::board::types::Square;
 use std::collections::VecDeque;
 
 pub fn bfs(
     is_archivable: impl Fn(Square) -> bool,
-    neighbors: &[Vec<Square>; SQS],
+    neighbors: &[Vec<Square>],
     start_sq: &[Square],
-) -> [bool; SQS] {
+) -> Vec<bool> {
     let mut queue: VecDeque<Square> = VecDeque::new();
 
     for &sq in start_sq.iter() {
         queue.push_back(sq);
     }
 
-    let mut visited = [false; SQS];
-    let mut result: [bool; SQS] = [false; SQS];
+    // TODO(board-size): result length now comes from `neighbors`, but every caller still
+    // indexes it with squares derived from the SQS constant. These agree only while
+    // PRECOMPUTED is built at BOARD_SIZE.
+    let mut visited = vec![false; neighbors.len()];
+    let mut result: Vec<bool> = vec![false; neighbors.len()];
 
     while let Some(current_sq) = queue.pop_front() {
         if visited[current_sq] {
@@ -45,11 +47,11 @@ mod tests {
     use crate::board::utils::get_square_from_algebraic;
     use crate::board::{Board, PRECOMPUTED};
 
-    fn expect_cell_in_result(res: &[bool; SQS], sq: Square) {
+    fn expect_cell_in_result(res: &[bool], sq: Square) {
         assert!(res[sq], "Expected square {} to be in the result set", sq);
     }
 
-    fn expect_res_size(res: &[bool; SQS], expected_size: usize) {
+    fn expect_res_size(res: &[bool], expected_size: usize) {
         let actual_size = res.iter().filter(|&&v| v).count();
         assert_eq!(
             actual_size, expected_size,

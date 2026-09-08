@@ -5,6 +5,9 @@ use crate::utils::bfs::bfs;
 
 pub const NUM_PLANES: usize = 11;
 pub const POLICY_SIZE: usize = 4840;
+// TODO(board-size): SQS is a compile-time constant while PRECOMPUTED now holds Vecs.
+// SAMPLE_SIZE and POLICY_SIZE must become functions of the active board size
+// (POLICY_SIZE = n*n * 4 * (n-1)) once more than one size is supported.
 pub const SAMPLE_SIZE: usize = NUM_PLANES * SQS;
 
 pub struct NnOutput {
@@ -85,7 +88,9 @@ pub fn fill_input(input: &mut [f32], pos: &BitPosition) {
             &group_seeds,
         )
     } else {
-        [false; SQS]
+        // TODO(board-size): must match PRECOMPUTED.vertical_horizontal_neighbors.len(),
+        // not the SQS constant — bfs() now sizes its result from the neighbor slice.
+        vec![false; SQS]
     };
     let group_offset = 7 * SQS;
     for idx in 0..SQS {
@@ -108,7 +113,9 @@ pub fn fill_input(input: &mut [f32], pos: &BitPosition) {
             &[ksq],
         )
     } else {
-        [false; SQS]
+        // TODO(board-size): must match PRECOMPUTED.vertical_horizontal_neighbors.len(),
+        // not the SQS constant — bfs() now sizes its result from the neighbor slice.
+        vec![false; SQS]
     };
     let king_offset = 8 * SQS;
     // Include king square itself in king BFS plane

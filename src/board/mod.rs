@@ -21,6 +21,8 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 
 pub struct Board {
+    // TODO(board-size): these stay SQS-sized arrays while PRECOMPUTED moved to Vecs.
+    // They are indexed by the same squares, so both must be built for the same size.
     pub board: [Piece; SQS],
     pub attackers: [Square; ATTACKERS_MAX],
     pub defenders: [Square; DEFENDERS_MAX],

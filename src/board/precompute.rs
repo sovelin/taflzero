@@ -1,4 +1,4 @@
-use crate::board::constants::{BOARD_SIZE, SQS};
+use crate::board::constants::BOARD_SIZE;
 use crate::board::types::{Col, Row, Square};
 use crate::board::utils::{
     get_all_neighbors, get_bottom_left_neighbor, get_bottom_left_sq, get_bottom_neighbor,
@@ -9,7 +9,7 @@ use crate::board::utils::{
 };
 use std::sync::LazyLock;
 
-type CellsArray<T> = [Option<T>; SQS];
+type CellsArray<T> = Vec<Option<T>>;
 
 pub struct SandwichCapture {
     pub between_sq: Square,
@@ -17,8 +17,8 @@ pub struct SandwichCapture {
 }
 
 pub struct Precomputed {
-    pub row: [Row; SQS],
-    pub col: [Col; SQS],
+    pub row: Vec<Row>,
+    pub col: Vec<Col>,
     pub throne_sq: usize,
     pub corners_sq: Vec<Square>,
     pub edges_sq: Vec<Square>,
@@ -35,10 +35,10 @@ pub struct Precomputed {
     pub top_left_neighbor: CellsArray<Square>,
     pub bottom_right_neighbor: CellsArray<Square>,
     pub bottom_left_neighbor: CellsArray<Square>,
-    pub vertical_horizontal_neighbors: [Vec<Square>; SQS],
-    pub all_neighbors: [Vec<Square>; SQS],
-    pub manhattan_distance: [[usize; SQS]; SQS],
-    pub sandwich_captures: [Vec<SandwichCapture>; SQS],
+    pub vertical_horizontal_neighbors: Vec<Vec<Square>>,
+    pub all_neighbors: Vec<Vec<Square>>,
+    pub manhattan_distance: Vec<Vec<usize>>,
+    pub sandwich_captures: Vec<Vec<SandwichCapture>>,
 }
 
 pub fn get_right_sandwich_capture(sq: Square) -> Option<SandwichCapture> {
@@ -110,47 +110,53 @@ pub fn precompute_sandwich_captures(vec: &mut Vec<SandwichCapture>, sq: Square) 
 
 impl Default for Precomputed {
     fn default() -> Self {
-        Self::new()
+        Self::new(BOARD_SIZE)
     }
 }
 
 impl Precomputed {
-    pub fn new() -> Self {
-        let mut col = [0; SQS];
-        let mut row = [0; SQS];
-        let mut right_neighbor: CellsArray<Square> = [None; SQS];
-        let mut left_neighbor: CellsArray<Square> = [None; SQS];
-        let mut top_neighbor: CellsArray<Square> = [None; SQS];
-        let mut bottom_neighbor: CellsArray<Square> = [None; SQS];
-        let mut top_right_neighbor: CellsArray<Square> = [None; SQS];
-        let mut top_left_neighbor: CellsArray<Square> = [None; SQS];
-        let mut bottom_right_neighbor: CellsArray<Square> = [None; SQS];
-        let mut bottom_left_neighbor: CellsArray<Square> = [None; SQS];
-        let mut vertical_horizontal_neighbors: [Vec<Square>; SQS] =
-            std::array::from_fn(|_| Vec::new());
-        let mut all_neighbors: [Vec<Square>; SQS] = std::array::from_fn(|_| Vec::new());
-        let mut manhattan_distance = [[0; SQS]; SQS];
-        let mut sandwich_captures: [Vec<SandwichCapture>; SQS] =
-            std::array::from_fn(|_| Vec::new());
+    // TODO(board-size): `board_size` currently only sizes the vectors below. Every
+    // helper called here (get_row/get_col/get_*_neighbor/get_throne_sq/get_corners_sq/
+    // get_edges_sq) still computes geometry from the BOARD_SIZE constant, so passing
+    // anything other than BOARD_SIZE builds vectors of the right length filled with
+    // wrong data. Parameterize those helpers before relying on this argument.
+    pub fn new(board_size: usize) -> Self {
+        let sqs = board_size * board_size;
 
-        for i in 0..SQS {
-            row[i] = get_row(i);
-            col[i] = get_col(i);
-            left_neighbor[i] = get_left_neighbor(i);
-            right_neighbor[i] = get_right_neighbor(i);
-            top_neighbor[i] = get_top_neighbor(i);
-            bottom_neighbor[i] = get_bottom_neighbor(i);
-            top_right_neighbor[i] = get_top_right_neighbor(i);
-            top_left_neighbor[i] = get_top_left_neighbor(i);
-            bottom_right_neighbor[i] = get_bottom_right_neighbor(i);
-            bottom_left_neighbor[i] = get_bottom_left_neighbor(i);
-            vertical_horizontal_neighbors[i] = get_vertical_horizontal_neighbors(i);
-            all_neighbors[i] = get_all_neighbors(i);
+        let mut row: Vec<Row> = Vec::with_capacity(sqs);
+        let mut col: Vec<Col> = Vec::with_capacity(sqs);
+        let mut right_neighbor: CellsArray<Square> = Vec::with_capacity(sqs);
+        let mut left_neighbor: CellsArray<Square> = Vec::with_capacity(sqs);
+        let mut top_neighbor: CellsArray<Square> = Vec::with_capacity(sqs);
+        let mut bottom_neighbor: CellsArray<Square> = Vec::with_capacity(sqs);
+        let mut top_right_neighbor: CellsArray<Square> = Vec::with_capacity(sqs);
+        let mut top_left_neighbor: CellsArray<Square> = Vec::with_capacity(sqs);
+        let mut bottom_right_neighbor: CellsArray<Square> = Vec::with_capacity(sqs);
+        let mut bottom_left_neighbor: CellsArray<Square> = Vec::with_capacity(sqs);
+        let mut vertical_horizontal_neighbors: Vec<Vec<Square>> = Vec::with_capacity(sqs);
+        let mut all_neighbors: Vec<Vec<Square>> = Vec::with_capacity(sqs);
+        let mut manhattan_distance: Vec<Vec<usize>> = vec![vec![0; sqs]; sqs];
+        let mut sandwich_captures: Vec<Vec<SandwichCapture>> =
+            (0..sqs).map(|_| Vec::new()).collect();
+
+        for i in 0..sqs {
+            row.push(get_row(i));
+            col.push(get_col(i));
+            left_neighbor.push(get_left_neighbor(i));
+            right_neighbor.push(get_right_neighbor(i));
+            top_neighbor.push(get_top_neighbor(i));
+            bottom_neighbor.push(get_bottom_neighbor(i));
+            top_right_neighbor.push(get_top_right_neighbor(i));
+            top_left_neighbor.push(get_top_left_neighbor(i));
+            bottom_right_neighbor.push(get_bottom_right_neighbor(i));
+            bottom_left_neighbor.push(get_bottom_left_neighbor(i));
+            vertical_horizontal_neighbors.push(get_vertical_horizontal_neighbors(i));
+            all_neighbors.push(get_all_neighbors(i));
             precompute_sandwich_captures(&mut sandwich_captures[i], i);
         }
 
-        for i in 0..SQS {
-            for j in 0..SQS {
+        for i in 0..sqs {
+            for j in 0..sqs {
                 let row_diff = row[i].abs_diff(row[j]);
                 let col_diff = col[i].abs_diff(col[j]);
                 manhattan_distance[i][j] = row_diff + col_diff;
@@ -183,4 +189,6 @@ impl Precomputed {
     }
 }
 
-pub static PRECOMPUTED: LazyLock<Precomputed> = LazyLock::new(Precomputed::new);
+// TODO(board-size): single global instance fixed at BOARD_SIZE. Supporting several
+// sizes at once means a per-size registry plus a reference on Board, not a static.
+pub static PRECOMPUTED: LazyLock<Precomputed> = LazyLock::new(|| Precomputed::new(BOARD_SIZE));

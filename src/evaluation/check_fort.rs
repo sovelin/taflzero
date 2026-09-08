@@ -13,6 +13,8 @@ pub struct Area {
 
 pub struct AreaList {
     areas: Vec<Area>,
+    // TODO(board-size): fixed-size, indexed by squares that now come from Vec-based
+    // PRECOMPUTED tables.
     board_map: [Option<usize>; SQS],
 }
 
@@ -273,9 +275,11 @@ fn king_contacts_edge(king_sq: Square) -> bool {
     row == 0 || row == BOARD_SIZE - 1 || col == 0 || col == BOARD_SIZE - 1
 }
 
+// TODO(board-size): accepts a neighbor slice of any length but allocates SQS-sized
+// arrays below; out-of-range panic if the slice ever comes from a different size.
 fn bfs_ts<F>(
     start_squares: &[Square],
-    neighbors: &[Vec<Square>; SQS],
+    neighbors: &[Vec<Square>],
     mut is_achievable: F,
 ) -> [bool; SQS]
 where
