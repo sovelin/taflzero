@@ -1,4 +1,5 @@
 use crate::board::constants::BOARD_SIZE;
+use crate::board::masks::{Mask, create_line_moves};
 use crate::board::types::{Col, Row, Square};
 use crate::board::utils::{
     get_all_neighbors, get_bottom_left_neighbor, get_bottom_left_sq, get_bottom_neighbor,
@@ -39,6 +40,7 @@ pub struct Precomputed {
     pub all_neighbors: Vec<Vec<Square>>,
     pub manhattan_distance: Vec<Vec<usize>>,
     pub sandwich_captures: Vec<Vec<SandwichCapture>>,
+    pub line_moves: Vec<Vec<Mask>>,
 }
 
 pub fn get_right_sandwich_capture(sq: Square) -> Option<SandwichCapture> {
@@ -185,6 +187,7 @@ impl Precomputed {
             bottom_right_sq: get_bottom_right_sq(),
             bottom_left_sq: get_bottom_left_sq(),
             sandwich_captures,
+            line_moves: create_line_moves(board_size),
         }
     }
 }

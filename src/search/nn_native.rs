@@ -1,6 +1,6 @@
 use super::nn_common::{NUM_PLANES, NnOutput, POLICY_SIZE, SAMPLE_SIZE, build_input_data};
+use crate::board::constants::BOARD_SIZE;
 use crate::board::position_export::BitPosition;
-use crate::masks::BOARD_SIZE;
 use ndarray::{Array, IxDyn};
 #[cfg(feature = "cuda")]
 use ort::execution_providers::CUDAExecutionProvider;

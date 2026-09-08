@@ -9,7 +9,6 @@ pub mod types;
 pub mod utils;
 mod zobrist;
 
-pub use masks::LINE_MOVES;
 pub use precompute::*;
 pub use utils::get_side_by_piece;
 

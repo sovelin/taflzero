@@ -1,7 +1,7 @@
+use crate::board::Board;
 use crate::board::constants::HOLE;
 use crate::board::types::{Piece, Side, Square};
 use crate::board::utils::get_square;
-use crate::board::{Board, LINE_MOVES};
 use crate::moves::mv::Move;
 
 pub static MAX_MOVES: usize = 1024;
@@ -66,7 +66,7 @@ impl MoveGen {
         let col = precomputed.col[from];
         let row_occ = board.row_occ[row];
 
-        let horizontal = LINE_MOVES[col][row_occ as usize] & !(1 << col);
+        let horizontal = board.precomputed().line_moves[col][row_occ as usize] & !(1 << col);
         let mut horizontal_moves =
             self.disable_blocked_squares(board, horizontal, board.board[from], row);
 
@@ -89,7 +89,7 @@ impl MoveGen {
         let row = precomputed.row[from];
         let col_occ = board.col_occ[col];
 
-        let vertical = LINE_MOVES[row][col_occ as usize] & !(1 << row);
+        let vertical = board.precomputed().line_moves[row][col_occ as usize] & !(1 << row);
         let mut vertical_moves =
             self.disable_blocked_squares(board, vertical, board.board[from], col);
 
