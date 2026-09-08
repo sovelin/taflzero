@@ -152,6 +152,7 @@ mod tests {
 
     use super::*;
     use crate::board::Board;
+    use crate::board::rules::RulesEnum;
     use crate::board::types::{Piece, Side};
     use crate::board::utils::get_square_from_algebraic;
     use crate::moves::mv::create_move_from_algebraic;
@@ -354,5 +355,42 @@ mod tests {
 
             Ok(())
         }
+    }
+
+    // A lone piece on an empty 9x9 Tablut board can slide to every other square on its
+    // row and column: 8 + 8. Anything else means move generation is still using 11x11
+    // geometry.
+    #[test]
+    fn single_piece_on_9x9_slides_within_the_board() -> Result<(), Box<dyn Error>> {
+        let mut board = Board::new();
+        board.set_rules(RulesEnum::Tablut9x9);
+        board.side_to_move = Side::ATTACKERS;
+
+        let board_size = board.board_size();
+        assert_eq!(board_size, 9);
+
+        // Row 2, column 1 — clear of the throne row and column.
+        let from = 2 * board_size + 1;
+        board.set_piece(from, Piece::ATTACKER)?;
+
+        let mut movegen = MoveGen::new();
+        movegen.generate_moves(&board);
+
+        expect_moves_count(&movegen, (board_size - 1) * 2);
+
+        let sqs = board_size * board_size;
+        for mv in movegen.moves() {
+            assert!(
+                mv.to() < sqs,
+                "move {mv:?} leaves the 9x9 board: to-square {} >= {sqs}",
+                mv.to()
+            );
+            assert!(
+                mv.from() == from,
+                "move {mv:?} starts from an unexpected square"
+            );
+        }
+
+        Ok(())
     }
 }

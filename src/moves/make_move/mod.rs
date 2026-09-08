@@ -299,6 +299,7 @@ mod tests {
         #[test]
         fn should_not_capture_king_historical_variant() {
             let mut board = Board::new();
+            board.set_rules(RulesEnum::Historical11x11);
 
             set_board_from_str(
                 &mut board,
@@ -315,7 +316,6 @@ mod tests {
                     ...........",
             );
 
-            board.set_rules(RulesEnum::Historical11x11);
             board.set_side(Side::ATTACKERS);
 
             let mv = create_move_from_algebraic("e7e6").unwrap();

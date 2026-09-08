@@ -85,6 +85,12 @@ impl Board {
 
     pub fn set_rules(&mut self, rules: RulesEnum) {
         self.rules = rules;
+        let board_size = rules.rules().board_size;
+
+        self.precomputed = Arc::new(Precomputed::new(board_size));
+        self.row_occ.resize(board_size, 0);
+        self.row_occ.resize(board_size, 0);
+        self.clear();
     }
 
     pub fn clear(&mut self) {
