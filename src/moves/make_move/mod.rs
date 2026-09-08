@@ -2,9 +2,9 @@ pub mod is_capture_possible;
 pub mod king_is_surrounded;
 mod mask_shield_captures;
 
+use crate::board::Board;
 use crate::board::types::OptionalSquare;
 use crate::board::types::{Piece, Side, Square};
-use crate::board::{Board, PRECOMPUTED};
 use crate::moves::make_move::is_capture_possible::is_capture_possible;
 use crate::moves::make_move::king_is_surrounded::king_is_surrounded;
 use crate::moves::make_move::mask_shield_captures::make_shield_wall_captures;
@@ -34,7 +34,9 @@ impl Board {
         self.clear_piece(from);
         self.set_piece(to, piece)?;
 
-        for sandwich in PRECOMPUTED.sandwich_captures[to].iter() {
+        let precomputed = self.precomputed().clone();
+
+        for sandwich in precomputed.sandwich_captures[to].iter() {
             if is_capture_possible(self, sandwich.between_sq, to, sandwich.captor_sq) {
                 undo.add_captured_piece(CapturedPiece {
                     square: sandwich.between_sq,
@@ -54,7 +56,7 @@ impl Board {
         if self.king_sq != -1 && self.side_to_move == Side::ATTACKERS {
             let king_sq = self.king_sq as usize;
             let should_capture = if self.get_rules().is_king_strong {
-                PRECOMPUTED.vertical_horizontal_neighbors[king_sq].contains(&to)
+                precomputed.vertical_horizontal_neighbors[king_sq].contains(&to)
                     && king_is_surrounded(self)
             } else {
                 // Historical: weak king captured when the moving piece completes a sandwich
@@ -62,14 +64,14 @@ impl Board {
                 let is_attacker = |sq_opt: Option<Square>| {
                     sq_opt.is_some_and(|sq| self.board[sq] == Piece::ATTACKER)
                 };
-                (PRECOMPUTED.left_neighbor[king_sq] == Some(to)
-                    && is_attacker(PRECOMPUTED.right_neighbor[king_sq]))
-                    || (PRECOMPUTED.right_neighbor[king_sq] == Some(to)
-                        && is_attacker(PRECOMPUTED.left_neighbor[king_sq]))
-                    || (PRECOMPUTED.top_neighbor[king_sq] == Some(to)
-                        && is_attacker(PRECOMPUTED.bottom_neighbor[king_sq]))
-                    || (PRECOMPUTED.bottom_neighbor[king_sq] == Some(to)
-                        && is_attacker(PRECOMPUTED.top_neighbor[king_sq]))
+                (precomputed.left_neighbor[king_sq] == Some(to)
+                    && is_attacker(precomputed.right_neighbor[king_sq]))
+                    || (precomputed.right_neighbor[king_sq] == Some(to)
+                        && is_attacker(precomputed.left_neighbor[king_sq]))
+                    || (precomputed.top_neighbor[king_sq] == Some(to)
+                        && is_attacker(precomputed.bottom_neighbor[king_sq]))
+                    || (precomputed.bottom_neighbor[king_sq] == Some(to)
+                        && is_attacker(precomputed.top_neighbor[king_sq]))
             };
 
             if should_capture {

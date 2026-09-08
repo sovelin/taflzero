@@ -1,7 +1,7 @@
+use crate::board::Board;
 use crate::board::constants::HOLE;
 use crate::board::types::{Piece, Side, Square};
 use crate::board::utils::get_square;
-use crate::board::{Board, PRECOMPUTED};
 use crate::moves::masks::LINE_MOVES;
 use crate::moves::mv::Move;
 
@@ -62,8 +62,9 @@ impl MoveGen {
     }
 
     fn generate_horizontal_moves(&mut self, board: &Board, from: usize) {
-        let row = PRECOMPUTED.row[from];
-        let col = PRECOMPUTED.col[from];
+        let precomputed = board.precomputed().clone();
+        let row = precomputed.row[from];
+        let col = precomputed.col[from];
         let row_occ = board.row_occ[row];
 
         let horizontal = LINE_MOVES[col][row_occ as usize] & !(1 << col);
@@ -84,8 +85,9 @@ impl MoveGen {
     }
 
     fn generate_vertical_moves(&mut self, board: &Board, from: usize) {
-        let col = PRECOMPUTED.col[from];
-        let row = PRECOMPUTED.row[from];
+        let precomputed = board.precomputed().clone();
+        let col = precomputed.col[from];
+        let row = precomputed.row[from];
         let col_occ = board.col_occ[col];
 
         let vertical = LINE_MOVES[row][col_occ as usize] & !(1 << row);

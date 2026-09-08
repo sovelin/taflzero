@@ -19,6 +19,7 @@ use crate::board::utils::get_square;
 use crate::board::zobrist::ZOBRIST_DATA;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
+use std::sync::Arc;
 
 pub struct Board {
     // TODO(board-size): these stay SQS-sized arrays while PRECOMPUTED moved to Vecs.
@@ -38,6 +39,7 @@ pub struct Board {
     pub last_move_to: OptionalSquare,
     pub was_capture: bool,
     pub rules: RulesEnum,
+    precomputed: Arc<Precomputed>,
 }
 
 impl Default for Board {
@@ -64,7 +66,13 @@ impl Board {
             last_move_to: HOLE,
             was_capture: false,
             rules: RulesEnum::Copenhagen11x11,
+            precomputed: Arc::new(Precomputed::default()),
         }
+    }
+
+    #[inline]
+    pub fn precomputed(&self) -> &Arc<Precomputed> {
+        &self.precomputed
     }
 
     pub fn get_rules(&self) -> Rules {
