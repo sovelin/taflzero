@@ -6,7 +6,7 @@ pub struct Rules {
     pub initial_fen: String,
     pub is_king_strong: bool,
     pub is_corners_hostile: bool,
-    board_size: u8,
+    pub board_size: usize,
 }
 
 #[derive(Copy, Clone)]

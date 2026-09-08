@@ -207,6 +207,10 @@ impl Board {
     pub fn board(&self) -> &[Piece; SQS] {
         &self.board
     }
+
+    fn board_size(&self) -> usize {
+        self.rules.rules().board_size
+    }
 }
 
 impl Debug for Board {
