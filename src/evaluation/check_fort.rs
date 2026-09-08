@@ -1,8 +1,8 @@
-use crate::board::constants::{BOARD_SIZE, HOLE, SQS};
+use crate::board::Board;
+use crate::board::constants::HOLE;
 use crate::board::types::OptionalSquare;
 use crate::board::types::{Piece, Square};
 use crate::board::utils::is_edge_square;
-use crate::board::{Board, PRECOMPUTED};
 use std::collections::{HashSet, VecDeque};
 
 pub struct Area {
@@ -13,16 +13,14 @@ pub struct Area {
 
 pub struct AreaList {
     areas: Vec<Area>,
-    // TODO(board-size): fixed-size, indexed by squares that now come from Vec-based
-    // PRECOMPUTED tables.
-    board_map: [Option<usize>; SQS],
+    board_map: Vec<Option<usize>>,
 }
 
 impl AreaList {
-    pub fn new() -> Self {
+    pub fn new(board_size: usize) -> Self {
         Self {
             areas: vec![],
-            board_map: [None; SQS],
+            board_map: vec![None; board_size * board_size],
         }
     }
 
@@ -71,7 +69,7 @@ pub fn check_fort(board: &mut Board) -> bool {
         return false;
     }
 
-    if !king_has_moves(board) || !king_contacts_edge(board.king_sq as Square) {
+    if !king_has_moves(board) || !king_contacts_edge(&board) {
         return false;
     }
 
@@ -107,7 +105,8 @@ pub fn king_contacts_attackers(board: &Board) -> bool {
 
     bfs_ts(
         &[board.king_sq as Square],
-        &PRECOMPUTED.vertical_horizontal_neighbors,
+        &board.precomputed().vertical_horizontal_neighbors,
+        board.board_size(),
         |sq| {
             if board.board[sq] == Piece::ATTACKER {
                 is_contacting = true;
@@ -127,7 +126,7 @@ pub fn get_attackers_areas(board: &Board) -> AreaList {
         .cloned()
         .collect();
 
-    let mut areas = AreaList::new();
+    let mut areas = AreaList::new(board.board_size());
 
     while !available_attackers.is_empty() {
         let next_attacker = *available_attackers.iter().next().unwrap();
@@ -143,7 +142,8 @@ pub fn get_attackers_areas(board: &Board) -> AreaList {
 
         bfs_ts(
             [next_attacker].as_slice(),
-            &PRECOMPUTED.vertical_horizontal_neighbors,
+            &board.precomputed().vertical_horizontal_neighbors,
+            board.board_size(),
             |sq| {
                 let piece = board.board[sq];
 
@@ -154,8 +154,8 @@ pub fn get_attackers_areas(board: &Board) -> AreaList {
 
                 let is_achievable = piece != Piece::DEFENDER
                     && piece != Piece::KING
-                    && !PRECOMPUTED.corners_sq.contains(&sq)
-                    && sq != PRECOMPUTED.throne_sq;
+                    && !board.precomputed().corners_sq.contains(&sq)
+                    && sq != board.precomputed().throne_sq;
 
                 if is_achievable {
                     area.squares.insert(sq);
@@ -210,8 +210,8 @@ fn try_break_fort(area_list: &AreaList, board: &mut Board) -> OptionalSquare {
     for &defender in board.defenders[0..board.defenders_count as usize].iter() {
         // check horizontal capture
 
-        let left = PRECOMPUTED.left_neighbor[defender];
-        let right = PRECOMPUTED.right_neighbor[defender];
+        let left = board.precomputed().left_neighbor[defender];
+        let right = board.precomputed().right_neighbor[defender];
 
         if is_theoretically_possible_to_capture(area_list, left, right) {
             board.clear_piece(defender);
@@ -219,8 +219,8 @@ fn try_break_fort(area_list: &AreaList, board: &mut Board) -> OptionalSquare {
         }
 
         // check vertical capture
-        let top = PRECOMPUTED.top_neighbor[defender];
-        let bottom = PRECOMPUTED.bottom_neighbor[defender];
+        let top = board.precomputed().top_neighbor[defender];
+        let bottom = board.precomputed().bottom_neighbor[defender];
 
         if is_theoretically_possible_to_capture(area_list, top, bottom) {
             board.clear_piece(defender);
@@ -247,7 +247,7 @@ fn is_calculate_needed(board: &Board) -> bool {
     }
 
     let is_edge = is_edge_square(board.last_move_to as usize);
-    let neighbors = &PRECOMPUTED.all_neighbors[board.last_move_to as usize];
+    let neighbors = &board.precomputed().all_neighbors[board.last_move_to as usize];
 
     let mut defenders_nearby = 0;
     for &sq in neighbors.iter() {
@@ -260,7 +260,9 @@ fn is_calculate_needed(board: &Board) -> bool {
 }
 
 fn king_has_moves(board: &Board) -> bool {
-    for &neighbor in PRECOMPUTED.vertical_horizontal_neighbors[board.king_sq as usize].iter() {
+    for &neighbor in
+        board.precomputed().vertical_horizontal_neighbors[board.king_sq as usize].iter()
+    {
         if board.board[neighbor] == Piece::EMPTY {
             return true;
         }
@@ -268,11 +270,11 @@ fn king_has_moves(board: &Board) -> bool {
     false
 }
 
-fn king_contacts_edge(king_sq: Square) -> bool {
-    let row = PRECOMPUTED.row[king_sq];
-    let col = PRECOMPUTED.col[king_sq];
+fn king_contacts_edge(board: &Board) -> bool {
+    let row = board.precomputed().row[board.king_sq as usize];
+    let col = board.precomputed().col[board.king_sq as usize];
 
-    row == 0 || row == BOARD_SIZE - 1 || col == 0 || col == BOARD_SIZE - 1
+    row == 0 || row == board.board_size() - 1 || col == 0 || col == board.board_size() - 1
 }
 
 // TODO(board-size): accepts a neighbor slice of any length but allocates SQS-sized
@@ -280,18 +282,16 @@ fn king_contacts_edge(king_sq: Square) -> bool {
 fn bfs_ts<F>(
     start_squares: &[Square],
     neighbors: &[Vec<Square>],
+    board_size: usize,
     mut is_achievable: F,
-) -> [bool; SQS]
-where
+) where
     F: FnMut(Square) -> bool,
 {
     let mut queue: VecDeque<Square> = VecDeque::new();
-    let mut visited = [false; SQS];
-    let mut flags = [false; SQS];
+    let mut visited = vec![false; board_size * board_size];
 
     for &sq in start_squares {
         visited[sq] = true;
-        flags[sq] = true;
         queue.push_back(sq);
     }
 
@@ -306,12 +306,9 @@ where
             }
 
             visited[neighbor] = true;
-            flags[neighbor] = true;
             queue.push_back(neighbor);
         }
     }
-
-    flags
 }
 
 #[cfg(test)]

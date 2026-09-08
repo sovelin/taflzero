@@ -219,7 +219,7 @@ impl Board {
         &self.board
     }
 
-    fn board_size(&self) -> usize {
+    pub fn board_size(&self) -> usize {
         self.rules.rules().board_size
     }
 }
