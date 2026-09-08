@@ -13,15 +13,19 @@ pub struct BitPosition {
 
 impl BitPosition {
     pub fn from_board(board: &Board, rep: u8) -> Self {
+        // TODO(board-size): `planes` is a fixed 3x16 bytes, enough only for boards up
+        // to 128 squares. Larger sizes need a variable layout plus a header in the
+        // self-play binary format.
         let mut planes = [0u8; 16 * 3];
+        let board_size = board.board_size();
 
-        for row in 0..11 {
-            for col in 0..11 {
-                let idx = row * 11 + col;
+        for row in 0..board_size {
+            for col in 0..board_size {
+                let idx = row * board_size + col;
                 let byte = idx / 8;
                 let bit = idx % 8;
 
-                match board.board[get_square(row, col)] {
+                match board.board[get_square(row, col, board_size)] {
                     Piece::ATTACKER => {
                         planes[byte] |= 1 << bit;
                     }
@@ -94,7 +98,7 @@ mod tests {
         for i in 0..BOARD_SIZE * BOARD_SIZE {
             let row = BOARD_SIZE - 1 - i / BOARD_SIZE;
             let col = i % BOARD_SIZE;
-            let sq = get_square(row, col);
+            let sq = get_square(row, col, 11);
 
             let byte = sq / 8;
             let bit = sq % 8;

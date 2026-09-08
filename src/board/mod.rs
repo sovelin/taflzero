@@ -290,10 +290,12 @@ impl Display for Board {
 pub fn set_board_from_str(board: &mut Board, position: &str) {
     board.clear();
 
+    let board_size = board.board_size();
+
     for (r, line) in position.lines().enumerate() {
         let mut index = 0;
         for ch in line.chars() {
-            let sq = get_square(BOARD_SIZE - 1 - r, index);
+            let sq = get_square(board_size - 1 - r, index, board_size);
             let piece = match ch {
                 'A' => Some(Piece::ATTACKER),
                 'D' => Some(Piece::DEFENDER),

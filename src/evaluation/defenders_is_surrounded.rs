@@ -56,10 +56,9 @@ pub fn defenders_is_surrounded(board: &Board) -> bool {
         &start_sqs,
     );
 
-    // TODO(board-size): relies on bfs result index == square index, and is_edge_square
-    // derives the edge from the BOARD_SIZE constant rather than the Vec length.
+    // TODO(board-size): relies on bfs result index == square index.
     for (i, inner_square) in inner_squares.iter().enumerate() {
-        if *inner_square && is_edge_square(i as Square) {
+        if *inner_square && is_edge_square(i as Square, board.board_size()) {
             return false;
         }
     }

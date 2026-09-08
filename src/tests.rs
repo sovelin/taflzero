@@ -64,16 +64,16 @@ fn play_outs() -> Result<(), Box<dyn Error>> {
 }
 
 fn expect_occupied(board: &Board, sq: Square) {
-    let row = get_row(sq);
-    let col = get_col(sq);
+    let row = get_row(sq, 11);
+    let col = get_col(sq, 11);
 
     assert_ne!(board.row_occ[row] & (1 << col), 0);
     assert_ne!(board.col_occ[col] & (1 << row), 0);
 }
 
 fn expect_not_occupied(board: &Board, sq: Square) {
-    let row = get_row(sq);
-    let col = get_col(sq);
+    let row = get_row(sq, 11);
+    let col = get_col(sq, 11);
 
     assert_eq!(board.row_occ[row] & (1 << col), 0);
     assert_eq!(board.col_occ[col] & (1 << row), 0);

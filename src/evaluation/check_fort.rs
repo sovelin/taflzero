@@ -246,12 +246,12 @@ fn is_calculate_needed(board: &Board) -> bool {
         return false;
     }
 
-    let is_edge = is_edge_square(board.last_move_to as usize);
+    let is_edge = is_edge_square(board.last_move_to as usize, board.board_size());
     let neighbors = &board.precomputed().all_neighbors[board.last_move_to as usize];
 
     let mut defenders_nearby = 0;
     for &sq in neighbors.iter() {
-        if board.board[sq] == Piece::DEFENDER || is_edge_square(sq) {
+        if board.board[sq] == Piece::DEFENDER || is_edge_square(sq, board.board_size()) {
             defenders_nearby += 1;
         }
     }

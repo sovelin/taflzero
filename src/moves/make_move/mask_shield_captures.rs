@@ -146,15 +146,15 @@ fn captures_on_side(board: &mut Board, side: Side, which: ShieldSide, undo: &mut
     }
 }
 
-fn is_edged_sq(sq: Square) -> bool {
-    let row = get_row(sq);
-    let col = get_col(sq);
+fn is_edged_sq(sq: Square, board_size: usize) -> bool {
+    let row = get_row(sq, board_size);
+    let col = get_col(sq, board_size);
 
-    row == 0 || row == BOARD_SIZE - 1 || col == 0 || col == BOARD_SIZE - 1
+    row == 0 || row == board_size - 1 || col == 0 || col == board_size - 1
 }
 
 pub fn make_shield_wall_captures(board: &mut Board, to_sq: Square, undo: &mut UndoMove) {
-    if !is_edged_sq(to_sq) {
+    if !is_edged_sq(to_sq, board.board_size()) {
         return;
     }
 

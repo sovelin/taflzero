@@ -74,7 +74,7 @@ impl MoveGen {
 
         while horizontal_moves != 0 {
             if cur & horizontal_moves != 0 {
-                let to = get_square(row, cur.trailing_zeros() as usize);
+                let to = get_square(row, cur.trailing_zeros() as usize, precomputed.board_size);
 
                 self.add_move(Move::new(from, to));
             }
@@ -97,7 +97,7 @@ impl MoveGen {
 
         while vertical_moves != 0 {
             if cur & vertical_moves != 0 {
-                let to = get_square(cur.trailing_zeros() as usize, col);
+                let to = get_square(cur.trailing_zeros() as usize, col, precomputed.board_size);
                 self.add_move(Move::new(from, to));
             }
             vertical_moves &= !cur;

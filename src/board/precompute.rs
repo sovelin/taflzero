@@ -18,6 +18,8 @@ pub struct SandwichCapture {
 }
 
 pub struct Precomputed {
+    pub board_size: usize,
+    pub sqs: usize,
     pub row: Vec<Row>,
     pub col: Vec<Col>,
     pub throne_sq: usize,
@@ -43,10 +45,10 @@ pub struct Precomputed {
     pub line_moves: Vec<Vec<Mask>>,
 }
 
-pub fn get_right_sandwich_capture(sq: Square) -> Option<SandwichCapture> {
-    let col = get_col(sq);
+pub fn get_right_sandwich_capture(sq: Square, board_size: usize) -> Option<SandwichCapture> {
+    let col = get_col(sq, board_size);
 
-    if col + 2 >= BOARD_SIZE {
+    if col + 2 >= board_size {
         return None;
     }
 
@@ -56,8 +58,8 @@ pub fn get_right_sandwich_capture(sq: Square) -> Option<SandwichCapture> {
     })
 }
 
-pub fn get_left_sandwich_capture(sq: Square) -> Option<SandwichCapture> {
-    let col = get_col(sq);
+pub fn get_left_sandwich_capture(sq: Square, board_size: usize) -> Option<SandwichCapture> {
+    let col = get_col(sq, board_size);
 
     if col < 2 {
         return None;
@@ -69,43 +71,43 @@ pub fn get_left_sandwich_capture(sq: Square) -> Option<SandwichCapture> {
     })
 }
 
-pub fn get_up_sandwich_capture(sq: Square) -> Option<SandwichCapture> {
-    let row = get_row(sq);
+pub fn get_up_sandwich_capture(sq: Square, board_size: usize) -> Option<SandwichCapture> {
+    let row = get_row(sq, board_size);
 
-    if row + 2 >= BOARD_SIZE {
+    if row + 2 >= board_size {
         return None;
     }
 
     Some(SandwichCapture {
-        between_sq: sq + BOARD_SIZE,
-        captor_sq: sq + 2 * BOARD_SIZE,
+        between_sq: sq + board_size,
+        captor_sq: sq + 2 * board_size,
     })
 }
 
-pub fn get_down_sandwich_capture(sq: Square) -> Option<SandwichCapture> {
-    let row = get_row(sq);
+pub fn get_down_sandwich_capture(sq: Square, board_size: usize) -> Option<SandwichCapture> {
+    let row = get_row(sq, board_size);
 
     if row < 2 {
         return None;
     }
 
     Some(SandwichCapture {
-        between_sq: sq - BOARD_SIZE,
-        captor_sq: sq - 2 * BOARD_SIZE,
+        between_sq: sq - board_size,
+        captor_sq: sq - 2 * board_size,
     })
 }
 
-pub fn precompute_sandwich_captures(vec: &mut Vec<SandwichCapture>, sq: Square) {
-    if let Some(capture) = get_right_sandwich_capture(sq) {
+pub fn precompute_sandwich_captures(vec: &mut Vec<SandwichCapture>, sq: Square, board_size: usize) {
+    if let Some(capture) = get_right_sandwich_capture(sq, board_size) {
         vec.push(capture);
     }
-    if let Some(capture) = get_left_sandwich_capture(sq) {
+    if let Some(capture) = get_left_sandwich_capture(sq, board_size) {
         vec.push(capture);
     }
-    if let Some(capture) = get_up_sandwich_capture(sq) {
+    if let Some(capture) = get_up_sandwich_capture(sq, board_size) {
         vec.push(capture);
     }
-    if let Some(capture) = get_down_sandwich_capture(sq) {
+    if let Some(capture) = get_down_sandwich_capture(sq, board_size) {
         vec.push(capture);
     }
 }
@@ -117,11 +119,6 @@ impl Default for Precomputed {
 }
 
 impl Precomputed {
-    // TODO(board-size): `board_size` currently only sizes the vectors below. Every
-    // helper called here (get_row/get_col/get_*_neighbor/get_throne_sq/get_corners_sq/
-    // get_edges_sq) still computes geometry from the BOARD_SIZE constant, so passing
-    // anything other than BOARD_SIZE builds vectors of the right length filled with
-    // wrong data. Parameterize those helpers before relying on this argument.
     pub fn new(board_size: usize) -> Self {
         let sqs = board_size * board_size;
 
@@ -142,19 +139,19 @@ impl Precomputed {
             (0..sqs).map(|_| Vec::new()).collect();
 
         for i in 0..sqs {
-            row.push(get_row(i));
-            col.push(get_col(i));
-            left_neighbor.push(get_left_neighbor(i));
-            right_neighbor.push(get_right_neighbor(i));
-            top_neighbor.push(get_top_neighbor(i));
-            bottom_neighbor.push(get_bottom_neighbor(i));
-            top_right_neighbor.push(get_top_right_neighbor(i));
-            top_left_neighbor.push(get_top_left_neighbor(i));
-            bottom_right_neighbor.push(get_bottom_right_neighbor(i));
-            bottom_left_neighbor.push(get_bottom_left_neighbor(i));
-            vertical_horizontal_neighbors.push(get_vertical_horizontal_neighbors(i));
-            all_neighbors.push(get_all_neighbors(i));
-            precompute_sandwich_captures(&mut sandwich_captures[i], i);
+            row.push(get_row(i, board_size));
+            col.push(get_col(i, board_size));
+            left_neighbor.push(get_left_neighbor(i, board_size));
+            right_neighbor.push(get_right_neighbor(i, board_size));
+            top_neighbor.push(get_top_neighbor(i, board_size));
+            bottom_neighbor.push(get_bottom_neighbor(i, board_size));
+            top_right_neighbor.push(get_top_right_neighbor(i, board_size));
+            top_left_neighbor.push(get_top_left_neighbor(i, board_size));
+            bottom_right_neighbor.push(get_bottom_right_neighbor(i, board_size));
+            bottom_left_neighbor.push(get_bottom_left_neighbor(i, board_size));
+            vertical_horizontal_neighbors.push(get_vertical_horizontal_neighbors(i, board_size));
+            all_neighbors.push(get_all_neighbors(i, board_size));
+            precompute_sandwich_captures(&mut sandwich_captures[i], i, board_size);
         }
 
         for i in 0..sqs {
@@ -166,6 +163,8 @@ impl Precomputed {
         }
 
         Self {
+            board_size,
+            sqs,
             row,
             col,
             left_neighbor,
@@ -179,13 +178,13 @@ impl Precomputed {
             vertical_horizontal_neighbors,
             all_neighbors,
             manhattan_distance,
-            throne_sq: get_throne_sq(),
-            corners_sq: get_corners_sq(),
-            edges_sq: get_edges_sq(),
-            top_left_sq: get_top_left_sq(),
-            top_right_sq: get_top_right_sq(),
-            bottom_right_sq: get_bottom_right_sq(),
-            bottom_left_sq: get_bottom_left_sq(),
+            throne_sq: get_throne_sq(board_size),
+            corners_sq: get_corners_sq(board_size),
+            edges_sq: get_edges_sq(board_size),
+            top_left_sq: get_top_left_sq(board_size),
+            top_right_sq: get_top_right_sq(board_size),
+            bottom_right_sq: get_bottom_right_sq(board_size),
+            bottom_left_sq: get_bottom_left_sq(board_size),
             sandwich_captures,
             line_moves: create_line_moves(board_size),
         }
@@ -195,3 +194,33 @@ impl Precomputed {
 // TODO(board-size): single global instance fixed at BOARD_SIZE. Supporting several
 // sizes at once means a per-size registry plus a reference on Board, not a static.
 pub static PRECOMPUTED: LazyLock<Precomputed> = LazyLock::new(|| Precomputed::new(BOARD_SIZE));
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Precomputed::new must derive every table from its argument, not from BOARD_SIZE.
+    #[test]
+    fn geometry_follows_board_size() {
+        let p = Precomputed::new(9);
+
+        assert_eq!(p.board_size, 9);
+        assert_eq!(p.sqs, 81);
+        assert_eq!(p.row.len(), 81);
+        assert_eq!(p.col.len(), 81);
+
+        assert_eq!(p.throne_sq, 40); // (4, 4) on a 9x9 board
+        assert_eq!(p.corners_sq, vec![0, 8, 72, 80]);
+        assert_eq!(p.edges_sq.len(), 32); // 9*9 - 7*7
+        assert_eq!(p.bottom_left_sq, 0);
+        assert_eq!(p.top_right_sq, 80);
+
+        assert_eq!(p.right_neighbor[7], Some(8));
+        assert_eq!(p.right_neighbor[8], None); // right edge
+        assert_eq!(p.top_neighbor[80], None); // top edge
+        assert_eq!(p.sandwich_captures[0].len(), 2); // corner: right + up only
+
+        assert_eq!(p.line_moves.len(), 9);
+        assert_eq!(p.line_moves[0].len(), 1 << 9);
+    }
+}

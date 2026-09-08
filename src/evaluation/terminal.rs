@@ -17,7 +17,7 @@ fn has_corners_win(board: &Board) -> bool {
 }
 
 fn has_edge_win(board: &Board) -> bool {
-    is_edge_square(board.king_sq as Square)
+    is_edge_square(board.king_sq as Square, board.board_size())
 }
 
 pub fn check_terminal(board: &mut Board) -> Option<Side> {

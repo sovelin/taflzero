@@ -146,11 +146,11 @@ mod tests {
         let from_sq = mv.from();
         let to_sq = mv.to();
 
-        let from_row = get_row(from_sq);
-        let to_row = get_row(to_sq);
+        let from_row = get_row(from_sq, 11);
+        let to_row = get_row(to_sq, 11);
 
-        let from_col = get_col(from_sq);
-        let to_col = get_col(to_sq);
+        let from_col = get_col(from_sq, 11);
+        let to_col = get_col(to_sq, 11);
 
         assert_eq!(from_col, 0);
         assert_eq!(from_row, 9);

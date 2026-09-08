@@ -92,7 +92,7 @@ impl Board {
                         should: self.board_size(),
                     });
                 }
-                let sq: Square = get_square(row_idx, col);
+                let sq: Square = get_square(row_idx, col, self.board_size());
 
                 match self.set_piece(sq, piece) {
                     Ok(_) => {}
@@ -156,7 +156,7 @@ impl Board {
             let mut out = String::new();
 
             for col in 0..self.board_size() {
-                let sq = get_square(row as Row, col as Col);
+                let sq = get_square(row as Row, col as Col, self.board_size());
                 let p = self.board[sq as usize];
 
                 if p == Piece::EMPTY {
