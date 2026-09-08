@@ -1,4 +1,3 @@
-pub mod board;
 pub mod constants;
 mod fen;
 pub mod position_export;
@@ -9,6 +8,291 @@ pub mod types;
 pub mod utils;
 mod zobrist;
 
-pub use board::*;
 pub use precompute::*;
 pub use utils::get_side_by_piece;
+
+use crate::board::constants::{ATTACKERS_MAX, BOARD_SIZE, DEFENDERS_MAX, HOLE, SQS};
+use crate::board::fen::FenError;
+use crate::board::rules::{Rules, RulesEnum};
+use crate::board::types::{OptionalSquare, Piece, Side, Square, ZobristHash};
+use crate::board::utils::get_square;
+use crate::board::zobrist::ZOBRIST_DATA;
+use std::collections::HashMap;
+use std::fmt::{Debug, Display, Formatter};
+
+pub struct Board {
+    pub board: [Piece; SQS],
+    pub attackers: [Square; ATTACKERS_MAX],
+    pub defenders: [Square; DEFENDERS_MAX],
+    pub king_sq: OptionalSquare,
+    pub attackers_count: u8,
+    pub defenders_count: u8,
+    pub row_occ: [u16; BOARD_SIZE],
+    pub col_occ: [u16; BOARD_SIZE],
+    pub piece_index_by_square: [u8; SQS],
+    pub side_to_move: Side,
+    pub zobrist: ZobristHash,
+    pub rep_table: HashMap<ZobristHash, u8>,
+    pub last_move_to: OptionalSquare,
+    pub was_capture: bool,
+    pub rules: RulesEnum,
+}
+
+impl Default for Board {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Board {
+    pub fn new() -> Self {
+        Self {
+            board: [Piece::EMPTY; SQS],
+            attackers: [0; ATTACKERS_MAX],
+            defenders: [0; DEFENDERS_MAX],
+            king_sq: HOLE,
+            attackers_count: 0,
+            defenders_count: 0,
+            row_occ: [0; BOARD_SIZE],
+            col_occ: [0; BOARD_SIZE],
+            piece_index_by_square: [0; SQS],
+            side_to_move: Side::ATTACKERS,
+            zobrist: 0,
+            rep_table: HashMap::new(),
+            last_move_to: HOLE,
+            was_capture: false,
+            rules: RulesEnum::Copenhagen11x11,
+        }
+    }
+
+    pub fn get_rules(&self) -> Rules {
+        self.rules.rules()
+    }
+
+    pub fn set_rules(&mut self, rules: RulesEnum) {
+        self.rules = rules;
+    }
+
+    pub fn clear(&mut self) {
+        self.board.fill(Piece::EMPTY);
+        self.attackers.fill(0);
+        self.defenders.fill(0);
+        self.king_sq = HOLE;
+        self.attackers_count = 0;
+        self.defenders_count = 0;
+        self.row_occ.fill(0);
+        self.col_occ.fill(0);
+        self.piece_index_by_square.fill(0);
+        self.side_to_move = Side::ATTACKERS;
+        self.zobrist = 0;
+        self.rep_table.clear();
+        self.last_move_to = HOLE;
+        self.set_side_to_move(Side::ATTACKERS);
+    }
+
+    fn set_side_to_move(&mut self, side: Side) {
+        self.side_to_move = side;
+    }
+
+    fn set_attacker(&mut self, sq: Square) -> Result<(), &'static str> {
+        if self.attackers_count >= ATTACKERS_MAX as u8 {
+            return Err("Exceeded maximum attackers capacity");
+        }
+
+        self.attackers[self.attackers_count as usize] = sq;
+        self.attackers_count += 1;
+        self.piece_index_by_square[sq] = self.attackers_count - 1;
+
+        Ok(())
+    }
+
+    fn set_defender(&mut self, sq: Square) -> Result<(), &'static str> {
+        if self.defenders_count >= DEFENDERS_MAX as u8 {
+            return Err("Exceeded maximum defenders capacity");
+        }
+
+        self.defenders[self.defenders_count as usize] = sq;
+        self.defenders_count += 1;
+        self.piece_index_by_square[sq] = self.defenders_count - 1;
+
+        Ok(())
+    }
+
+    fn clear_defender(&mut self, sq: Square) {
+        let index = self.piece_index_by_square[sq];
+
+        if self.defenders_count == 1 {
+            self.piece_index_by_square[sq] = 0
+        } else {
+            let last_sq = self.defenders[self.defenders_count as usize - 1];
+            self.defenders[index as usize] = last_sq;
+            self.piece_index_by_square[last_sq] = index;
+        }
+
+        self.defenders_count -= 1;
+    }
+
+    fn clear_attacker(&mut self, sq: Square) {
+        let index = self.piece_index_by_square[sq];
+
+        if self.attackers_count == 1 {
+            self.piece_index_by_square[sq] = 0
+        } else {
+            let last_sq = self.attackers[self.attackers_count as usize - 1];
+            self.attackers[index as usize] = last_sq;
+            self.piece_index_by_square[last_sq] = index;
+        }
+
+        self.attackers_count -= 1;
+    }
+
+    pub fn set_piece(&mut self, sq: Square, piece: Piece) -> Result<(), &'static str> {
+        self.board[sq] = piece;
+        self.zobrist ^= ZOBRIST_DATA.table[piece as usize][sq];
+
+        let row = PRECOMPUTED.row[sq];
+        let col = PRECOMPUTED.col[sq];
+
+        self.row_occ[row] |= 1 << col;
+        self.col_occ[col] |= 1 << row;
+
+        if piece == Piece::ATTACKER {
+            self.set_attacker(sq)
+        } else if piece == Piece::DEFENDER {
+            self.set_defender(sq)
+        } else if piece == Piece::KING {
+            self.king_sq = sq as OptionalSquare;
+            Ok(())
+        } else {
+            Err("Invalid piece type")
+        }
+    }
+    pub fn clear_piece(&mut self, sq: Square) {
+        let piece = self.board[sq];
+
+        self.zobrist ^= ZOBRIST_DATA.table[piece as usize][sq];
+        self.board[sq] = Piece::EMPTY;
+
+        let row = PRECOMPUTED.row[sq];
+        let col = PRECOMPUTED.col[sq];
+
+        self.row_occ[row] &= !(1 << col);
+        self.col_occ[col] &= !(1 << row);
+
+        if piece == Piece::ATTACKER {
+            self.clear_attacker(sq);
+        } else if piece == Piece::DEFENDER {
+            self.clear_defender(sq);
+        } else {
+            self.king_sq = HOLE;
+        }
+    }
+
+    pub fn flip_side(&mut self) {
+        self.set_side_to_move(Side::opposite(self.side_to_move));
+        self.zobrist ^= ZOBRIST_DATA.side;
+    }
+
+    pub fn setup_initial_position(&mut self) -> Result<(), FenError> {
+        self.clear();
+        self.set_fen(self.rules.rules().initial_fen.as_str())
+    }
+
+    pub fn set_side(&mut self, side: Side) {
+        if self.side_to_move != side {
+            self.flip_side();
+        }
+    }
+
+    pub fn board(&self) -> &[Piece; SQS] {
+        &self.board
+    }
+}
+
+impl Debug for Board {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let size = BOARD_SIZE;
+        let cell_gap = "  ";
+
+        write!(f, "    ")?;
+        for c in 0..size {
+            let ch = (b'a' + c as u8) as char;
+            write!(f, "{:<2}", ch)?;
+            if c + 1 != size {
+                write!(f, " ")?;
+            }
+        }
+        writeln!(f)?;
+
+        let border = "─".repeat(size * 3 - 1);
+        writeln!(f, "  ┌{}┐", border)?;
+
+        for r in (0..size).rev() {
+            write!(f, "{:>2}│ ", r + 1)?;
+            for c in 0..size {
+                let sq = r * size + c;
+                let p = self.board[sq];
+
+                // ANSI colors: 31=red, 34=blue, 33=yellow
+                match p {
+                    Piece::ATTACKER => write!(f, "\x1b[31mA\x1b[0m")?,
+                    Piece::DEFENDER => write!(f, "\x1b[34mD\x1b[0m")?,
+                    Piece::KING => write!(f, "\x1b[33mK\x1b[0m")?,
+                    Piece::EMPTY => write!(f, ".")?,
+                }
+
+                if c + 1 != size {
+                    write!(f, "{cell_gap}")?;
+                }
+            }
+            writeln!(f, "│{:>2}", r + 1)?;
+        }
+
+        writeln!(f, "  └{}┘", border)?;
+
+        write!(f, "    ")?;
+        for c in 0..size {
+            let ch = (b'a' + c as u8) as char;
+            write!(f, "{:<2}", ch)?;
+            if c + 1 != size {
+                write!(f, " ")?;
+            }
+        }
+        writeln!(f)?;
+
+        writeln!(f, "zobrist: {}", self.zobrist)?;
+
+        Ok(())
+    }
+}
+
+impl Display for Board {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+pub fn set_board_from_str(board: &mut Board, position: &str) {
+    board.clear();
+
+    for (r, line) in position.lines().enumerate() {
+        let mut index = 0;
+        for ch in line.chars() {
+            let sq = get_square(BOARD_SIZE - 1 - r, index);
+            let piece = match ch {
+                'A' => Some(Piece::ATTACKER),
+                'D' => Some(Piece::DEFENDER),
+                'K' => Some(Piece::KING),
+                '.' => Some(Piece::EMPTY),
+                _ => None,
+            };
+
+            if let Some(piece) = piece {
+                if piece != Piece::EMPTY {
+                    board.set_piece(sq, piece).expect("set_piece");
+                }
+                index += 1;
+            };
+        }
+    }
+}

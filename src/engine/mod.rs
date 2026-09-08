@@ -5,7 +5,7 @@ use wasm_bindgen::prelude::*;
 use crate::board::Board;
 use crate::board::rules::RulesEnum;
 use crate::board::types::Side;
-use crate::mcts::mcts::MCTSTree;
+use crate::mcts::MCTSTree;
 use crate::mv::Move;
 use crate::search::nn::NeuralNet;
 use crate::search::search_data::SearchData;

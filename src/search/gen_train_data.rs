@@ -3,8 +3,8 @@ use crate::board::position_export::BitPosition;
 use crate::board::rules::RulesEnum;
 use crate::board::types::Side;
 use crate::mcts::export::{KING_CORNER_NONE, LegalMask, PendingSample, king_corner_index};
-use crate::mcts::mcts::{C_PUCT, MCTSConfig, MCTSTree, mcts_search};
 use crate::mcts::utils::move_to_policy_index;
+use crate::mcts::{C_PUCT, MCTSConfig, MCTSTree, mcts_search};
 use crate::movegen::MoveGen;
 use crate::search::nn::NeuralNet;
 use crate::search_data::SearchData;
@@ -312,19 +312,15 @@ pub fn gen_train_data(
     let use_curriculum = cfg.curriculum_fraction > 0.0;
     let mut curriculum = CurriculumBuffer::new(cfg.curriculum_max_size);
 
-    if use_curriculum {
-        if let Some(ref path) = cfg.curriculum_path {
-            curriculum.load_from_file(path);
-            curriculum.trim_and_rewrite_file(path);
-        }
+    if use_curriculum && let Some(ref path) = cfg.curriculum_path {
+        curriculum.load_from_file(path);
+        curriculum.trim_and_rewrite_file(path);
     }
 
     // Append file handle for curriculum (opened lazily)
     let mut curriculum_file: Option<std::fs::File> = None;
-    if use_curriculum {
-        if let Some(ref path) = cfg.curriculum_path {
-            curriculum_file = OpenOptions::new().create(true).append(true).open(path).ok();
-        }
+    if use_curriculum && let Some(ref path) = cfg.curriculum_path {
+        curriculum_file = OpenOptions::new().create(true).append(true).open(path).ok();
     }
 
     let bp_size = size_of::<BitPosition>();

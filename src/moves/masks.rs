@@ -62,14 +62,15 @@ fn build_line_mask_dir(occ: Mask, pos: usize, dir: Direction) -> i8 {
 
 pub static LINE_MOVES: LazyLock<[[Mask; OCC_STATES]; BOARD_SIZE]> = LazyLock::new(|| {
     let mut table = [[0u16; OCC_STATES]; BOARD_SIZE];
-    for pos in 0..BOARD_SIZE {
-        for occ in 0..OCC_STATES {
-            table[pos][occ] = build_line_mask(pos, occ as Mask);
+    for (pos, position) in table.iter_mut().enumerate().take(BOARD_SIZE) {
+        for (occ, occupied) in position.iter_mut().enumerate().take(OCC_STATES) {
+            *occupied = build_line_mask(pos, occ as Mask);
         }
     }
     table
 });
 
+#[allow(clippy::needless_range_loop)]
 pub static LINE_CAPTURES: LazyLock<[[[i8; OCC_STATES]; 2]; BOARD_SIZE]> = LazyLock::new(|| {
     let mut table = [[[-1i8; OCC_STATES]; 2]; BOARD_SIZE];
 

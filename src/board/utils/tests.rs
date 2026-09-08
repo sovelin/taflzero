@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use super::super::utils::*;
+    use super::super::*;
     use crate::board::types::Square;
     use crate::board::utils::get_square_from_algebraic;
 
