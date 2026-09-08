@@ -6,18 +6,21 @@ pub struct Rules {
     pub initial_fen: String,
     pub is_king_strong: bool,
     pub is_corners_hostile: bool,
+    board_size: u8,
 }
 
 #[derive(Copy, Clone)]
 pub enum RulesEnum {
     Copenhagen11x11,
     Historical11x11,
+    Tablut9x9,
 }
 
 pub fn get_rules_enum_from_str(rules_str: &str) -> Option<RulesEnum> {
     match rules_str {
         "copenhagen11x11" => Some(RulesEnum::Copenhagen11x11),
         "historical11x11" => Some(RulesEnum::Historical11x11),
+        "tablut9x9" => Some(RulesEnum::Tablut9x9),
         _ => None,
     }
 }
@@ -27,6 +30,7 @@ impl RulesEnum {
         match self {
             RulesEnum::Copenhagen11x11 => Rules::create_copenhagen_rules(),
             RulesEnum::Historical11x11 => Rules::create_historical_rules(),
+            RulesEnum::Tablut9x9 => Rules::create_tablut_rules(),
         }
     }
 }
@@ -42,6 +46,7 @@ impl Rules {
                 .to_string(),
             is_king_strong: true,
             is_corners_hostile: true,
+            board_size: 11,
         }
     }
 
@@ -55,6 +60,20 @@ impl Rules {
                 .to_string(),
             is_king_strong: false,
             is_corners_hostile: false,
+            board_size: 11,
+        }
+    }
+
+    pub fn create_tablut_rules() -> Rules {
+        Rules {
+            has_corners_win: false,
+            has_edge_win: true,
+            has_fort_win: false,
+            has_shield_walls: false,
+            initial_fen: "3aaa3/4a4/4a4/a3d3a/a1ddkdd1a/a3d3a/4a4/4a4/3aaa3 d".to_string(),
+            is_king_strong: false,
+            is_corners_hostile: false,
+            board_size: 9,
         }
     }
 }
