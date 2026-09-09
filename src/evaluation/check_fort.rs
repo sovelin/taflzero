@@ -317,13 +317,12 @@ mod tests {
     use crate::board::Board;
     use crate::board::set_board_from_str;
     use crate::board::types::Piece;
-    use crate::board::utils::get_square_from_algebraic;
 
     #[test]
     fn empty_king_not_fort() {
         let mut board = Board::new();
         board
-            .set_piece(get_square_from_algebraic("f6"), Piece::KING)
+            .set_piece(board.get_square_from_algebraic("f6"), Piece::KING)
             .unwrap();
         assert!(!check_fort(&mut board));
     }
@@ -332,37 +331,37 @@ mod tests {
     fn king_surrounded_by_defenders_in_center_not_fort() {
         let mut board = Board::new();
         board
-            .set_piece(get_square_from_algebraic("f6"), Piece::KING)
+            .set_piece(board.get_square_from_algebraic("f6"), Piece::KING)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("e6"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("e6"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("e7"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("e7"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("g6"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("g6"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("g7"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("g7"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("f5"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("f5"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("f8"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("f8"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("e5"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("e5"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("g5"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("g5"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("e8"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("e8"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("g8"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("g8"), Piece::DEFENDER)
             .unwrap();
         assert!(!check_fort(&mut board));
     }
@@ -371,31 +370,31 @@ mod tests {
     fn king_surrounded_on_edge_impossible_to_break_king_has_moves_fort() {
         let mut board = Board::new();
         board
-            .set_piece(get_square_from_algebraic("f1"), Piece::KING)
+            .set_piece(board.get_square_from_algebraic("f1"), Piece::KING)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("e1"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("e1"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("e2"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("e2"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("g1"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("g1"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("g2"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("g2"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("f3"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("f3"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("e3"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("e3"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("g3"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("g3"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("g8"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("g8"), Piece::ATTACKER)
             .unwrap();
         assert!(check_fort(&mut board));
     }
@@ -404,31 +403,31 @@ mod tests {
     fn king_surrounded_have_access_to_edge_not_on_edge_not_fort() {
         let mut board = Board::new();
         board
-            .set_piece(get_square_from_algebraic("f2"), Piece::KING)
+            .set_piece(board.get_square_from_algebraic("f2"), Piece::KING)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("e1"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("e1"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("e2"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("e2"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("g1"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("g1"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("g2"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("g2"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("f3"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("f3"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("e3"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("e3"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("g3"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("g3"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("g8"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("g8"), Piece::ATTACKER)
             .unwrap();
         assert!(!check_fort(&mut board));
     }
@@ -437,37 +436,37 @@ mod tests {
     fn king_surrounded_on_edge_attacker_inside_not_fort() {
         let mut board = Board::new();
         board
-            .set_piece(get_square_from_algebraic("f1"), Piece::KING)
+            .set_piece(board.get_square_from_algebraic("f1"), Piece::KING)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("e1"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("e1"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("e2"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("e2"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("g1"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("g1"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("g2"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("g2"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("f4"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("f4"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("e3"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("e3"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("g3"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("g3"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("e4"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("e4"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("g4"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("g4"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("f3"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("f3"), Piece::ATTACKER)
             .unwrap();
         assert!(!check_fort(&mut board));
     }
@@ -476,28 +475,28 @@ mod tests {
     fn king_surrounded_by_attackers_like_fort_not_fort() {
         let mut board = Board::new();
         board
-            .set_piece(get_square_from_algebraic("f2"), Piece::KING)
+            .set_piece(board.get_square_from_algebraic("f2"), Piece::KING)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("e1"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("e1"), Piece::ATTACKER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("e2"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("e2"), Piece::ATTACKER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("g1"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("g1"), Piece::ATTACKER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("g2"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("g2"), Piece::ATTACKER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("f3"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("f3"), Piece::ATTACKER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("e3"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("e3"), Piece::ATTACKER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("g3"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("g3"), Piece::ATTACKER)
             .unwrap();
         assert!(!check_fort(&mut board));
     }
@@ -506,25 +505,25 @@ mod tests {
     fn king_surrounded_on_edge_no_moves_not_fort() {
         let mut board = Board::new();
         board
-            .set_piece(get_square_from_algebraic("f1"), Piece::KING)
+            .set_piece(board.get_square_from_algebraic("f1"), Piece::KING)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("e1"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("e1"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("g1"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("g1"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("f2"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("f2"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("e2"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("e2"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("g2"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("g2"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("g8"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("g8"), Piece::ATTACKER)
             .unwrap();
         assert!(!check_fort(&mut board));
     }
@@ -533,30 +532,30 @@ mod tests {
     fn king_surrounded_on_edge_possible_to_break_no_moves_not_fort() {
         let mut board = Board::new();
         board
-            .set_piece(get_square_from_algebraic("f1"), Piece::KING)
+            .set_piece(board.get_square_from_algebraic("f1"), Piece::KING)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("e1"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("e1"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("g1"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("g1"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("f3"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("f3"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("e2"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("e2"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("g2"), Piece::DEFENDER)
-            .unwrap();
-
-        board
-            .set_piece(get_square_from_algebraic("b2"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("g2"), Piece::DEFENDER)
             .unwrap();
 
         board
-            .set_piece(get_square_from_algebraic("a2"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("b2"), Piece::ATTACKER)
+            .unwrap();
+
+        board
+            .set_piece(board.get_square_from_algebraic("a2"), Piece::ATTACKER)
             .unwrap();
 
         println!("{:?}", board);
@@ -568,46 +567,46 @@ mod tests {
     fn king_surrounded_on_edge_impossible_to_break_no_moves_complex_case_fort() {
         let mut board = Board::new();
         board
-            .set_piece(get_square_from_algebraic("f1"), Piece::KING)
+            .set_piece(board.get_square_from_algebraic("f1"), Piece::KING)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("e1"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("e1"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("g1"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("g1"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("f3"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("f3"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("e2"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("e2"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("g2"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("g2"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("e3"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("e3"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("f4"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("f4"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("g3"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("g3"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("d2"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("d2"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("h2"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("h2"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("i2"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("i2"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("c2"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("c2"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("g8"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("g8"), Piece::ATTACKER)
             .unwrap();
         assert!(check_fort(&mut board));
     }
@@ -616,34 +615,34 @@ mod tests {
     fn king_surrounded_on_specific_hard_case_with_holes_is_fort() {
         let mut board = Board::new();
         board
-            .set_piece(get_square_from_algebraic("e1"), Piece::KING)
+            .set_piece(board.get_square_from_algebraic("e1"), Piece::KING)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("d1"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("d1"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("f1"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("f1"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("d2"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("d2"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("f2"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("f2"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("e3"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("e3"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("c3"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("c3"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("c4"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("c4"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("d4"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("d4"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("b8"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("b8"), Piece::ATTACKER)
             .unwrap();
         assert!(check_fort(&mut board));
 
@@ -655,35 +654,35 @@ mod tests {
     fn king_surrounded_on_specific_hard_breakable_case_with_holes_is_not_fort() {
         let mut board = Board::new();
         board
-            .set_piece(get_square_from_algebraic("e1"), Piece::KING)
+            .set_piece(board.get_square_from_algebraic("e1"), Piece::KING)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("d1"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("d1"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("f1"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("f1"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("d2"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("d2"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("f2"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("f2"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("e3"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("e3"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("c3"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("c3"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("d4"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("d4"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("b8"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("b8"), Piece::ATTACKER)
             .unwrap();
 
         board
-            .set_piece(get_square_from_algebraic("a8"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("a8"), Piece::ATTACKER)
             .unwrap();
         assert!(!check_fort(&mut board));
 

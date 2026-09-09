@@ -5,9 +5,10 @@ use std::io::Cursor;
 
 use crate::Engine;
 use crate::board::Board;
+use crate::board::rules::RulesEnum;
 use crate::board::types::{Piece, Side, Square};
 use crate::board::utils::{get_col, get_row, get_square_from_algebraic};
-use crate::mv::{Move, create_move_from_algebraic};
+use crate::mv::Move;
 
 #[derive(Debug, serde::Deserialize)]
 struct Record {
@@ -25,6 +26,8 @@ pub fn aagenielsen_dk_game_records() -> Vec<Vec<Move>> {
         .has_headers(false)
         .from_reader(cursor);
 
+    // The records are Copenhagen 11x11; a board of that variant reads their coordinates.
+    let board = Board::from_rules(RulesEnum::Copenhagen11x11);
     let mut game_records = Vec::with_capacity(1_800);
 
     for result in rdr.deserialize() {
@@ -38,7 +41,9 @@ pub fn aagenielsen_dk_game_records() -> Vec<Vec<Move>> {
                 let to_capture: Vec<_> = vertexes[1].split('x').collect();
                 let to = to_capture[0];
 
-                let play = create_move_from_algebraic(&format!("{from}{to}")).unwrap();
+                let play = board
+                    .create_move_from_algebraic(&format!("{from}{to}"))
+                    .unwrap();
                 record_taflzero.push(play);
             }
         }
@@ -106,21 +111,21 @@ fn expect_attacker_not_in_attackers_array(board: &Board, sq: Square) {
 }
 
 pub fn expect_defender_on(board: &Board, sq_str: &str) {
-    let sq = get_square_from_algebraic(sq_str);
+    let sq = get_square_from_algebraic(sq_str, 11);
     assert_eq!(board.board[sq], Piece::DEFENDER);
     expect_defender_in_defenders_array(board, sq);
     expect_occupied(board, sq);
 }
 
 pub fn expect_attacker_on(board: &Board, sq_str: &str) {
-    let sq = get_square_from_algebraic(sq_str);
+    let sq = get_square_from_algebraic(sq_str, 11);
     assert_eq!(board.board[sq], Piece::ATTACKER);
     expect_attacker_in_attackers_array(board, sq);
     expect_occupied(board, sq);
 }
 
 pub fn expect_king_on(board: &Board, sq_str: &str) {
-    let sq = get_square_from_algebraic(sq_str);
+    let sq = get_square_from_algebraic(sq_str, 11);
     assert_eq!(board.board[sq], Piece::KING);
     assert_eq!(board.king_sq as Square, sq);
     expect_occupied(board, sq);
@@ -135,7 +140,7 @@ pub fn expect_defenders_count(board: &Board, count: u8) {
 }
 
 pub fn expect_no_pice_on(board: &Board, sq_str: &str) {
-    let sq = get_square_from_algebraic(sq_str);
+    let sq = get_square_from_algebraic(sq_str, 11);
     assert_eq!(board.board[sq], Piece::EMPTY);
 
     expect_not_occupied(board, sq);

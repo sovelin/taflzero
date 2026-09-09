@@ -152,7 +152,7 @@ mod tests {
     use crate::get_sample_size;
 
     fn sq(alg: &str) -> usize {
-        get_square_from_algebraic(alg)
+        get_square_from_algebraic(alg, 11)
     }
 
     fn make_input(board: &Board, rep: u8) -> Vec<f32> {

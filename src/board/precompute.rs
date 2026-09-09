@@ -1,4 +1,3 @@
-use crate::board::constants::BOARD_SIZE;
 use crate::board::masks::{Mask, create_line_moves};
 use crate::board::types::{Col, Row, Square};
 use crate::board::utils::{
@@ -8,7 +7,6 @@ use crate::board::utils::{
     get_top_left_sq, get_top_neighbor, get_top_right_neighbor, get_top_right_sq,
     get_vertical_horizontal_neighbors,
 };
-use std::sync::LazyLock;
 
 type CellsArray<T> = Vec<Option<T>>;
 
@@ -112,12 +110,6 @@ pub fn precompute_sandwich_captures(vec: &mut Vec<SandwichCapture>, sq: Square, 
     }
 }
 
-impl Default for Precomputed {
-    fn default() -> Self {
-        Self::new(BOARD_SIZE)
-    }
-}
-
 impl Precomputed {
     pub fn new(board_size: usize) -> Self {
         let sqs = board_size * board_size;
@@ -190,10 +182,6 @@ impl Precomputed {
         }
     }
 }
-
-// TODO(board-size): single global instance fixed at BOARD_SIZE. Supporting several
-// sizes at once means a per-size registry plus a reference on Board, not a static.
-pub static PRECOMPUTED: LazyLock<Precomputed> = LazyLock::new(|| Precomputed::new(BOARD_SIZE));
 
 #[cfg(test)]
 mod tests {

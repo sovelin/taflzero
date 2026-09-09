@@ -1,7 +1,7 @@
-use crate::board::constants::BOARD_SIZE;
+use crate::board::Board;
 use crate::board::types::{Col, Row, Square};
 use crate::board::utils::get_sq_algebraic;
-use std::fmt::{Debug, Display};
+use std::fmt::Debug;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[repr(transparent)]
@@ -16,25 +16,12 @@ impl Default for Move {
     }
 }
 
+/// Raw square indices — a move alone does not know which board it belongs to, so it
+/// cannot render algebraic coordinates. Use `Board::move_to_algebraic` for those.
 impl Debug for Move {
     #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let from_sq = self.from();
-        let to_sq = self.to();
-        let alg_from = get_sq_algebraic(from_sq);
-        let alg_to = get_sq_algebraic(to_sq);
-        write!(f, "{}{}", alg_from, alg_to)
-    }
-}
-
-impl Display for Move {
-    #[inline]
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let from_sq = self.from();
-        let to_sq = self.to();
-        let alg_from = get_sq_algebraic(from_sq);
-        let alg_to = get_sq_algebraic(to_sq);
-        write!(f, "{}{}", alg_from, alg_to)
+        write!(f, "Move({} -> {})", self.from(), self.to())
     }
 }
 
@@ -76,56 +63,76 @@ impl Move {
     }
 }
 
-pub fn create_move_from_algebraic(s: &str) -> Result<Move, String> {
-    if s.len() < 4 || s.len() > 6 {
-        return Err(format!("Invalid move format length: {s}"));
+/// Renders a move in algebraic coordinates for a board of the given size.
+pub fn move_to_algebraic(mv: Move, board_size: usize) -> String {
+    format!(
+        "{}{}",
+        get_sq_algebraic(mv.from(), board_size),
+        get_sq_algebraic(mv.to(), board_size)
+    )
+}
+
+impl Board {
+    /// Renders a move in this board's algebraic coordinates.
+    pub fn move_to_algebraic(&self, mv: Move) -> String {
+        move_to_algebraic(mv, self.board_size())
     }
 
-    let bytes = s.as_bytes();
+    pub fn create_move_from_algebraic(&self, s: &str) -> Result<Move, String> {
+        if s.len() < 4 || s.len() > 6 {
+            return Err(format!("Invalid move format length: {s}"));
+        }
 
-    let from_file = bytes[0];
-    if !(b'a'..=b'k').contains(&from_file) {
-        return Err(format!("Invalid from-file: {s}"));
+        let bytes = s.as_bytes();
+
+        let last_file = b'a' + (self.board_size() - 1) as u8;
+
+        let from_file = bytes[0];
+        if !(b'a'..=last_file).contains(&from_file) {
+            return Err(format!("Invalid from-file: {s}"));
+        }
+        let from_col: Col = (from_file - b'a') as Col;
+
+        let mut i = 1;
+        while i < bytes.len() && bytes[i].is_ascii_digit() {
+            i += 1;
+        }
+        if i >= bytes.len() {
+            return Err(format!("Invalid move format (missing to-file): {s}"));
+        }
+
+        let to_file = bytes[i];
+        if !(b'a'..=last_file).contains(&to_file) {
+            return Err(format!("Invalid to-file: {s}"));
+        }
+        let to_col: Col = (to_file - b'a') as Col;
+
+        let from_rank_str = &s[1..i];
+        let to_rank_str = s
+            .get(i + 1..)
+            .ok_or_else(|| format!("Invalid move format (missing to-rank): {s}"))?;
+
+        let from_rank_num: usize = from_rank_str
+            .parse()
+            .map_err(|_| format!("Invalid from-rank: {from_rank_str}"))?;
+        let to_rank_num: usize = to_rank_str
+            .parse()
+            .map_err(|_| format!("Invalid to-rank: {to_rank_str}"))?;
+
+        let board_size = self.board_size();
+
+        if !(1..=board_size).contains(&from_rank_num) || !(1..=board_size).contains(&to_rank_num) {
+            return Err(format!("Rank out of range (1..={board_size}): {s}"));
+        }
+
+        let from_row: Row = (from_rank_num - 1) as Row;
+        let to_row: Row = (to_rank_num - 1) as Row;
+
+        let from_sq: Square = from_row * board_size + from_col;
+        let to_sq: Square = to_row * board_size + to_col;
+
+        Ok(Move::new(from_sq, to_sq))
     }
-    let from_col: Col = (from_file - b'a') as Col;
-
-    let mut i = 1;
-    while i < bytes.len() && bytes[i].is_ascii_digit() {
-        i += 1;
-    }
-    if i >= bytes.len() {
-        return Err(format!("Invalid move format (missing to-file): {s}"));
-    }
-
-    let to_file = bytes[i];
-    if !(b'a'..=b'k').contains(&to_file) {
-        return Err(format!("Invalid to-file: {s}"));
-    }
-    let to_col: Col = (to_file - b'a') as Col;
-
-    let from_rank_str = &s[1..i];
-    let to_rank_str = s
-        .get(i + 1..)
-        .ok_or_else(|| format!("Invalid move format (missing to-rank): {s}"))?;
-
-    let from_rank_num: usize = from_rank_str
-        .parse()
-        .map_err(|_| format!("Invalid from-rank: {from_rank_str}"))?;
-    let to_rank_num: usize = to_rank_str
-        .parse()
-        .map_err(|_| format!("Invalid to-rank: {to_rank_str}"))?;
-
-    if !(1..=BOARD_SIZE).contains(&from_rank_num) || !(1..=BOARD_SIZE).contains(&to_rank_num) {
-        return Err(format!("Rank out of range (1..={BOARD_SIZE}): {s}"));
-    }
-
-    let from_row: Row = (from_rank_num - 1) as Row;
-    let to_row: Row = (to_rank_num - 1) as Row;
-
-    let from_sq: Square = from_row * BOARD_SIZE + from_col;
-    let to_sq: Square = to_row * BOARD_SIZE + to_col;
-
-    Ok(Move::new(from_sq, to_sq))
 }
 
 impl PartialEq for Move {
@@ -142,7 +149,8 @@ mod tests {
 
     #[test]
     fn algebraic_move_parsing() {
-        let mv = create_move_from_algebraic("a10a9").expect("parse");
+        let board = Board::default();
+        let mv = board.create_move_from_algebraic("a10a9").expect("parse");
         let from_sq = mv.from();
         let to_sq = mv.to();
 
@@ -169,10 +177,11 @@ mod tests {
 
     #[test]
     fn bad_format_rejected() {
-        assert!(create_move_from_algebraic("z10a9").is_err());
-        assert!(create_move_from_algebraic("a0a1").is_err());
-        assert!(create_move_from_algebraic("a12a1").is_err());
-        assert!(create_move_from_algebraic("a1a").is_err());
-        assert!(create_move_from_algebraic("a1  a2").is_err());
+        let board = Board::default();
+        assert!(board.create_move_from_algebraic("z10a9").is_err());
+        assert!(board.create_move_from_algebraic("a0a1").is_err());
+        assert!(board.create_move_from_algebraic("a12a1").is_err());
+        assert!(board.create_move_from_algebraic("a1a").is_err());
+        assert!(board.create_move_from_algebraic("a1  a2").is_err());
     }
 }

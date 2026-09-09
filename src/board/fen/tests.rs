@@ -3,7 +3,6 @@ mod tests {
     use crate::board::Board;
     use crate::board::constants::INITIAL_FEN;
     use crate::board::types::{Piece, Side};
-    use crate::board::utils::get_square_from_algebraic;
 
     mod set_fen {
         use super::*;
@@ -68,12 +67,12 @@ mod tests {
         fn one_king_two_attackers_two_defenders_attackers_to_move() -> Result<(), Box<dyn Error>> {
             let mut b = Board::new();
 
-            b.set_piece(get_square_from_algebraic("i3"), Piece::ATTACKER)?;
-            b.set_piece(get_square_from_algebraic("f6"), Piece::KING)?;
-            b.set_piece(get_square_from_algebraic("b4"), Piece::DEFENDER)?;
-            b.set_piece(get_square_from_algebraic("h7"), Piece::DEFENDER)?;
-            b.set_piece(get_square_from_algebraic("e10"), Piece::ATTACKER)?;
-            b.set_piece(get_square_from_algebraic("k1"), Piece::ATTACKER)?;
+            b.set_piece(b.get_square_from_algebraic("i3"), Piece::ATTACKER)?;
+            b.set_piece(b.get_square_from_algebraic("f6"), Piece::KING)?;
+            b.set_piece(b.get_square_from_algebraic("b4"), Piece::DEFENDER)?;
+            b.set_piece(b.get_square_from_algebraic("h7"), Piece::DEFENDER)?;
+            b.set_piece(b.get_square_from_algebraic("e10"), Piece::ATTACKER)?;
+            b.set_piece(b.get_square_from_algebraic("k1"), Piece::ATTACKER)?;
 
             b.side_to_move = Side::ATTACKERS;
 

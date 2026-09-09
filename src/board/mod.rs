@@ -16,7 +16,7 @@ use crate::board::constants::HOLE;
 use crate::board::fen::FenError;
 use crate::board::rules::{Rules, RulesEnum};
 use crate::board::types::{OptionalSquare, Piece, Side, Square, ZobristHash};
-use crate::board::utils::get_square;
+use crate::board::utils::{get_sq_algebraic, get_square, get_square_from_algebraic};
 use crate::board::zobrist::ZobristData;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
@@ -217,6 +217,14 @@ impl Board {
 
     pub fn board_size(&self) -> usize {
         self.rules.rules().board_size
+    }
+
+    pub fn get_square_from_algebraic(&self, coord: &str) -> Square {
+        get_square_from_algebraic(coord, self.board_size())
+    }
+
+    pub fn get_sq_algebraic(&self, sq: Square) -> String {
+        get_sq_algebraic(sq, self.board_size())
     }
 
     pub fn sqs(&self) -> usize {

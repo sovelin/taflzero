@@ -658,14 +658,15 @@ export function get_row(sq, board_size) {
 
 /**
  * @param {number} sq
+ * @param {number} board_size
  * @returns {string}
  */
-export function get_sq_algebraic(sq) {
+export function get_sq_algebraic(sq, board_size) {
     let deferred1_0;
     let deferred1_1;
     try {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-        wasm.get_sq_algebraic(retptr, sq);
+        wasm.get_sq_algebraic(retptr, sq, board_size);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         deferred1_0 = r0;
@@ -690,12 +691,13 @@ export function get_square(row, col, board_size) {
 
 /**
  * @param {string} coord
+ * @param {number} board_size
  * @returns {number}
  */
-export function get_square_from_algebraic(coord) {
+export function get_square_from_algebraic(coord, board_size) {
     const ptr0 = passStringToWasm0(coord, wasm.__wbindgen_export, wasm.__wbindgen_export2);
     const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.get_square_from_algebraic(ptr0, len0);
+    const ret = wasm.get_square_from_algebraic(ptr0, len0, board_size);
     return ret >>> 0;
 }
 

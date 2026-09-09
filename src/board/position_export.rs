@@ -85,7 +85,6 @@ impl BitPosition {
 
 #[cfg(test)]
 mod tests {
-    use crate::board::constants::BOARD_SIZE;
     use crate::board::position_export::BitPosition;
     use crate::board::rules::RulesEnum;
     use crate::board::types::{Piece, Side};
@@ -117,7 +116,7 @@ mod tests {
     }
 
     fn defenders_plane(bit_position: &BitPosition, plane: usize) -> String {
-        plane_of_size(bit_position, plane, BOARD_SIZE)
+        plane_of_size(bit_position, plane, 11)
     }
 
     fn board_with(variant: RulesEnum, position: &str) -> Board {

@@ -8,14 +8,12 @@ pub fn get_square(row: Row, col: Col, board_size: usize) -> Square {
     row * board_size + col
 }
 
-// TODO(board-size): algebraic notation crosses the UCI/JS boundary where no board is
-// available, so it stays on the BOARD_SIZE constant — same as `get_sq_algebraic`.
 #[wasm_bindgen]
-pub fn get_square_from_algebraic(coord: &str) -> Square {
+pub fn get_square_from_algebraic(coord: &str, board_size: usize) -> Square {
     let file = coord.as_bytes()[0] - b'a';
     let rank = coord[1..].parse::<u8>().unwrap() - 1;
 
-    get_square(rank as Row, file as Col, 11)
+    get_square(rank as Row, file as Col, board_size)
 }
 
 #[wasm_bindgen]
@@ -186,14 +184,12 @@ pub fn is_edge_square(sq: Square, board_size: usize) -> bool {
     row == 0 || row == board_size - 1 || col == 0 || col == board_size - 1
 }
 
-// TODO(board-size): stays on the BOARD_SIZE constant because `Display for Move` has
-// no access to a board. Threading geometry into move formatting is a separate step.
 #[wasm_bindgen]
-pub fn get_sq_algebraic(sq: Square) -> String {
+pub fn get_sq_algebraic(sq: Square, board_size: usize) -> String {
     let mut first = b'a';
 
-    let col = get_col(sq, 11);
-    let row = get_row(sq, 11);
+    let col = get_col(sq, board_size);
+    let row = get_row(sq, board_size);
 
     first += col as u8;
 

@@ -44,7 +44,6 @@ impl Board {
 mod tests {
     use crate::board::Board;
     use crate::board::types::{OptionalSquare, Piece, Side};
-    use crate::board::utils::get_square_from_algebraic;
     use crate::moves::mv::Move;
     use crate::moves::undo::{CapturedPiece, UndoMove};
     use crate::tests::{
@@ -57,26 +56,26 @@ mod tests {
         let board = &mut Board::new();
         board.set_side(Side::DEFENDERS);
         board
-            .set_piece(get_square_from_algebraic("b5"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("b5"), Piece::ATTACKER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("b7"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("b7"), Piece::ATTACKER)
             .unwrap();
         println!("{:?}", board);
 
         let mut undo = UndoMove::new();
         undo.add_captured_piece(CapturedPiece {
-            square: get_square_from_algebraic("b6"),
+            square: board.get_square_from_algebraic("b6"),
             piece: Piece::DEFENDER,
         });
 
         undo.mv = Move::new(
-            get_square_from_algebraic("b4"),
-            get_square_from_algebraic("b5"),
+            board.get_square_from_algebraic("b4"),
+            board.get_square_from_algebraic("b5"),
         );
 
         undo.moved_piece = Piece::ATTACKER;
-        undo.last_move_to = get_square_from_algebraic("a9") as OptionalSquare;
+        undo.last_move_to = board.get_square_from_algebraic("a9") as OptionalSquare;
 
         // Unmake the move
         board.unmake_move(&mut undo).unwrap();
@@ -90,7 +89,7 @@ mod tests {
         expect_side_to_be(board, Side::ATTACKERS);
         assert_eq!(
             board.last_move_to,
-            get_square_from_algebraic("a9") as OptionalSquare
+            board.get_square_from_algebraic("a9") as OptionalSquare
         );
     }
 }

@@ -5,13 +5,12 @@ mod tests {
     use crate::board::Board;
     use crate::board::rules::RulesEnum;
     use crate::board::types::Piece;
-    use crate::board::utils::get_square_from_algebraic;
     use crate::tests::*;
 
     #[test]
     fn set_piece_places_attacker_correctly() -> Result<(), Box<dyn Error>> {
         let mut b = Board::new();
-        b.set_piece(get_square_from_algebraic("f3"), Piece::ATTACKER)?;
+        b.set_piece(b.get_square_from_algebraic("f3"), Piece::ATTACKER)?;
 
         expect_attacker_on(&b, "f3");
         expect_attackers_count(&b, 1);
@@ -22,9 +21,9 @@ mod tests {
     #[test]
     fn set_2_attackers_and_defenders_correctly() -> Result<(), Box<dyn Error>> {
         let mut b = Board::new();
-        b.set_piece(get_square_from_algebraic("f3"), Piece::ATTACKER)?;
-        b.set_piece(get_square_from_algebraic("c6"), Piece::ATTACKER)?;
-        b.set_piece(get_square_from_algebraic("i9"), Piece::DEFENDER)?;
+        b.set_piece(b.get_square_from_algebraic("f3"), Piece::ATTACKER)?;
+        b.set_piece(b.get_square_from_algebraic("c6"), Piece::ATTACKER)?;
+        b.set_piece(b.get_square_from_algebraic("i9"), Piece::DEFENDER)?;
 
         expect_attacker_on(&b, "f3");
         expect_attacker_on(&b, "c6");
@@ -39,7 +38,7 @@ mod tests {
     #[test]
     fn set_king() -> Result<(), Box<dyn Error>> {
         let mut b = Board::new();
-        b.set_piece(get_square_from_algebraic("f6"), Piece::KING)?;
+        b.set_piece(b.get_square_from_algebraic("f6"), Piece::KING)?;
         expect_king_on(&b, "f6");
 
         Ok(())
@@ -67,9 +66,9 @@ mod tests {
     fn clear_piece_correctly() -> Result<(), Box<dyn Error>> {
         let mut b = Board::new();
 
-        b.set_piece(get_square_from_algebraic("c1"), Piece::ATTACKER)?;
-        b.set_piece(get_square_from_algebraic("c2"), Piece::DEFENDER)?;
-        b.clear_piece(get_square_from_algebraic("c1"));
+        b.set_piece(b.get_square_from_algebraic("c1"), Piece::ATTACKER)?;
+        b.set_piece(b.get_square_from_algebraic("c2"), Piece::DEFENDER)?;
+        b.clear_piece(b.get_square_from_algebraic("c1"));
 
         expect_no_pice_on(&b, "c1");
         // expect_defender_on(&b, "c2");

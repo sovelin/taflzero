@@ -126,11 +126,11 @@ export function get_initial_board_fen(): string;
 
 export function get_row(sq: number, board_size: number): number;
 
-export function get_sq_algebraic(sq: number): string;
+export function get_sq_algebraic(sq: number, board_size: number): string;
 
 export function get_square(row: number, col: number, board_size: number): number;
 
-export function get_square_from_algebraic(coord: string): number;
+export function get_square_from_algebraic(coord: string, board_size: number): number;
 
 export function hello(): string;
 
@@ -189,9 +189,9 @@ export interface InitOutput {
     readonly get_col: (a: number, b: number) => number;
     readonly get_initial_board_fen: (a: number) => void;
     readonly get_row: (a: number, b: number) => number;
-    readonly get_sq_algebraic: (a: number, b: number) => void;
+    readonly get_sq_algebraic: (a: number, b: number, c: number) => void;
     readonly get_square: (a: number, b: number, c: number) => number;
-    readonly get_square_from_algebraic: (a: number, b: number) => number;
+    readonly get_square_from_algebraic: (a: number, b: number, c: number) => number;
     readonly hello: (a: number) => void;
     readonly move_create_null: () => number;
     readonly move_from: (a: number) => number;
