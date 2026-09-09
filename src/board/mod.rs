@@ -12,7 +12,7 @@ mod zobrist;
 pub use precompute::*;
 pub use utils::get_side_by_piece;
 
-use crate::board::constants::{ATTACKERS_MAX, DEFENDERS_MAX, HOLE, SQS};
+use crate::board::constants::{ATTACKERS_MAX, DEFENDERS_MAX, HOLE};
 use crate::board::fen::FenError;
 use crate::board::rules::{Rules, RulesEnum};
 use crate::board::types::{OptionalSquare, Piece, Side, Square, ZobristHash};

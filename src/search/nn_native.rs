@@ -1,7 +1,7 @@
-use super::nn_common::{NUM_PLANES, NnOutput, POLICY_SIZE, SAMPLE_SIZE, build_input_data};
-use crate::board::Board;
-use crate::board::constants::BOARD_SIZE;
+use super::nn_common::{NUM_PLANES, NnOutput, POLICY_SIZE, build_input_data};
+use crate::board::Precomputed;
 use crate::board::position_export::BitPosition;
+use crate::get_sample_size;
 use ndarray::{Array, IxDyn};
 #[cfg(feature = "cuda")]
 use ort::execution_providers::CUDAExecutionProvider;
@@ -17,7 +17,7 @@ pub struct NeuralNet {
 }
 
 impl NeuralNet {
-    pub fn new(path: &str) -> Self {
+    pub fn new(path: &str, board_size: usize) -> Self {
         println!("[NN] Loading model: {}", path);
 
         #[cfg(all(feature = "cuda", feature = "directml"))]
@@ -66,9 +66,9 @@ impl NeuralNet {
             .expect("Unable to commit neural net");
 
         // Warmup + benchmark
-        let warmup_input = vec![0.0f32; SAMPLE_SIZE * 8];
+        let warmup_input = vec![0.0f32; get_sample_size(board_size) * 8];
         let warmup_tensor = Array::from_shape_vec(
-            IxDyn(&[8, NUM_PLANES, BOARD_SIZE, BOARD_SIZE]),
+            IxDyn(&[8, NUM_PLANES, board_size, board_size]),
             warmup_input,
         )
         .unwrap();
@@ -81,9 +81,9 @@ impl NeuralNet {
         let bench_runs = 10;
         let start = std::time::Instant::now();
         for _ in 0..bench_runs {
-            let input = vec![0.0f32; SAMPLE_SIZE * 8];
+            let input = vec![0.0f32; get_sample_size(board_size) * 8];
             let tensor =
-                Array::from_shape_vec(IxDyn(&[8, NUM_PLANES, BOARD_SIZE, BOARD_SIZE]), input)
+                Array::from_shape_vec(IxDyn(&[8, NUM_PLANES, board_size, board_size]), input)
                     .unwrap();
             let val = Value::from_array(tensor).unwrap();
             let _ = session.run(ort::inputs![val]).unwrap();
@@ -106,16 +106,20 @@ impl NeuralNet {
         Self { session }
     }
 
-    pub fn evaluate_position(&mut self, pos: &BitPosition, board: &Board) -> NnOutput {
-        self.evaluate_batch(&[pos], &board).pop().unwrap()
+    pub fn evaluate_position(&mut self, pos: &BitPosition, geom: &Precomputed) -> NnOutput {
+        self.evaluate_batch(&[pos], geom).pop().unwrap()
     }
 
-    pub fn evaluate_batch(&mut self, positions: &[&BitPosition], board: &Board) -> Vec<NnOutput> {
+    pub fn evaluate_batch(
+        &mut self,
+        positions: &[&BitPosition],
+        geom: &Precomputed,
+    ) -> Vec<NnOutput> {
         let batch_size = positions.len();
-        let input_data = build_input_data(positions, &board);
+        let input_data = build_input_data(positions, geom);
 
         let input_tensor = Array::from_shape_vec(
-            IxDyn(&[batch_size, NUM_PLANES, BOARD_SIZE, BOARD_SIZE]),
+            IxDyn(&[batch_size, NUM_PLANES, geom.board_size, geom.board_size]),
             input_data,
         )
         .unwrap();

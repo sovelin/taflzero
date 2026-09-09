@@ -1,24 +1,19 @@
-use crate::board::Board;
-use crate::board::constants::SQS;
+use crate::board::Precomputed;
 use crate::board::position_export::BitPosition;
+use crate::get_sample_size;
 use crate::utils::bfs::bfs;
 
 pub const NUM_PLANES: usize = 11;
 pub const POLICY_SIZE: usize = 4840;
-// TODO(board-size): SQS is a compile-time constant while PRECOMPUTED now holds Vecs.
-// SAMPLE_SIZE and POLICY_SIZE must become functions of the active board size
-// (POLICY_SIZE = n*n * 4 * (n-1)) once more than one size is supported.
-pub const SAMPLE_SIZE: usize = NUM_PLANES * SQS;
 
 pub struct NnOutput {
     pub policy: [f32; POLICY_SIZE],
     pub value: f32,
 }
 
-pub fn fill_input(input: &mut [f32], pos: &BitPosition, board: &Board) {
-    let precomputed = board.precomputed();
-    let sqs = board.board_size() * board.board_size();
-    debug_assert!(input.len() == SAMPLE_SIZE);
+pub fn fill_input(input: &mut [f32], pos: &BitPosition, geom: &Precomputed) {
+    let sqs = geom.sqs;
+    debug_assert!(input.len() == get_sample_size(geom.board_size));
 
     // Planes 0-2: unpack bit planes (attackers, defenders, king)
     for plane in 0..3 {
@@ -42,17 +37,17 @@ pub fn fill_input(input: &mut [f32], pos: &BitPosition, board: &Board) {
 
     // Plane 4: throne
     let throne_offset = 4 * sqs;
-    input[throne_offset + precomputed.throne_sq] = 1.0;
+    input[throne_offset + geom.throne_sq] = 1.0;
 
     // Plane 5: corners
     let corners_offset = 5 * sqs;
-    for &sq in &precomputed.corners_sq {
+    for &sq in &geom.corners_sq {
         input[corners_offset + sq] = 1.0;
     }
 
     // Plane 6: edge squares
     let edges_offset = 6 * sqs;
-    for &sq in &precomputed.edges_sq {
+    for &sq in &geom.edges_sq {
         input[edges_offset + sq] = 1.0;
     }
 
@@ -86,7 +81,7 @@ pub fn fill_input(input: &mut [f32], pos: &BitPosition, board: &Board) {
                 let bit = sq % 8;
                 (pos.planes[byte] >> bit) & 1 == 0 // not attacker
             },
-            &precomputed.vertical_horizontal_neighbors,
+            &geom.vertical_horizontal_neighbors,
             &group_seeds,
         )
     } else {
@@ -111,7 +106,7 @@ pub fn fill_input(input: &mut [f32], pos: &BitPosition, board: &Board) {
                 let is_def = (pos.planes[16 + byte] >> bit) & 1 == 1;
                 !is_atk && !is_def
             },
-            &precomputed.vertical_horizontal_neighbors,
+            &geom.vertical_horizontal_neighbors,
             &[ksq],
         )
     } else {
@@ -149,9 +144,11 @@ pub fn fill_input(input: &mut [f32], pos: &BitPosition, board: &Board) {
 mod tests {
     use super::*;
     use crate::board::Board;
+    use crate::board::constants::SQS;
     use crate::board::position_export::BitPosition;
     use crate::board::types::{Piece, Side};
     use crate::board::utils::get_square_from_algebraic;
+    use crate::get_sample_size;
 
     fn sq(alg: &str) -> usize {
         get_square_from_algebraic(alg)
@@ -159,8 +156,8 @@ mod tests {
 
     fn make_input(board: &Board, rep: u8) -> Vec<f32> {
         let bp = BitPosition::from_board(board, rep);
-        let mut input = vec![0.0f32; SAMPLE_SIZE];
-        fill_input(&mut input, &bp, &board);
+        let mut input = vec![0.0f32; get_sample_size(board.board_size())];
+        fill_input(&mut input, &bp, board.precomputed());
         input
     }
 
@@ -316,14 +313,15 @@ mod tests {
     }
 }
 
-pub fn build_input_data(positions: &[&BitPosition], board: &Board) -> Vec<f32> {
+pub fn build_input_data(positions: &[&BitPosition], geom: &Precomputed) -> Vec<f32> {
     let batch_size = positions.len();
-    let mut input_data = vec![0.0f32; batch_size * SAMPLE_SIZE];
+    let sample_size = get_sample_size(geom.board_size);
+    let mut input_data = vec![0.0f32; batch_size * sample_size];
 
     for (i, pos) in positions.iter().enumerate() {
-        let start = i * SAMPLE_SIZE;
-        let end = start + SAMPLE_SIZE;
-        fill_input(&mut input_data[start..end], pos, board);
+        let start = i * sample_size;
+        let end = start + sample_size;
+        fill_input(&mut input_data[start..end], pos, geom);
     }
 
     input_data

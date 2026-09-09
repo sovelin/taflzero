@@ -14,7 +14,7 @@
 //! blocking is allowed) until the NN worker sets RESP and notifies back.
 
 use super::nn_common::{NnOutput, POLICY_SIZE, build_input_data};
-use crate::board::Board;
+use crate::board::Precomputed;
 use crate::board::position_export::BitPosition;
 use js_sys::{Atomics, Float32Array, Int32Array};
 use std::cell::RefCell;
@@ -45,7 +45,7 @@ pub struct NeuralNet;
 
 impl NeuralNet {
     /// No model is loaded in Rust anymore — the JS NN worker owns it.
-    pub fn new(_path: &str) -> Self {
+    pub fn new(_path: &str, _board_size: usize) -> Self {
         NeuralNet
     }
 
@@ -53,13 +53,17 @@ impl NeuralNet {
         NeuralNet
     }
 
-    pub fn evaluate_position(&mut self, pos: &BitPosition, board: &Board) -> NnOutput {
-        self.evaluate_batch(&[pos], &board).pop().unwrap()
+    pub fn evaluate_position(&mut self, pos: &BitPosition, geom: &Precomputed) -> NnOutput {
+        self.evaluate_batch(&[pos], geom).pop().unwrap()
     }
 
-    pub fn evaluate_batch(&mut self, positions: &[&BitPosition], board: &Board) -> Vec<NnOutput> {
+    pub fn evaluate_batch(
+        &mut self,
+        positions: &[&BitPosition],
+        geom: &Precomputed,
+    ) -> Vec<NnOutput> {
         let batch = positions.len();
-        let input = build_input_data(positions, &board); // batch * SAMPLE_SIZE, NCHW
+        let input = build_input_data(positions, geom); // batch * SAMPLE_SIZE, NCHW
 
         // 1. write input into the shared input buffer
         NN_INPUT.with(|b| {

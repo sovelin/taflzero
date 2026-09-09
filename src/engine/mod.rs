@@ -38,12 +38,12 @@ impl Engine {
         let config = EngineConfig {
             net_path: net_path.clone(),
         };
-        let nn = NeuralNet::new(config.net_path.as_str());
-
         let mut board = Board::new();
         board
             .setup_initial_position()
             .expect("Setup initial position failed");
+
+        let nn = NeuralNet::new(config.net_path.as_str(), board.board_size());
 
         Self {
             search_data: SearchData::new(),
@@ -66,7 +66,7 @@ impl Engine {
 
     pub fn set_nn(&mut self, path: String) {
         self.config.net_path = path;
-        self.nn = NeuralNet::new(self.config.net_path.as_str());
+        self.nn = NeuralNet::new(self.config.net_path.as_str(), self.board.board_size());
     }
 
     pub fn set_nn_bytes(&mut self, data: &[u8]) {
