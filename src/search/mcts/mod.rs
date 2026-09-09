@@ -421,7 +421,7 @@ fn expand_node(
     if !moves.is_empty() {
         let logits: Vec<f32> = moves
             .iter()
-            .map(|mv| nn_out.policy[move_to_policy_index(*mv) as usize])
+            .map(|mv| nn_out.policy[move_to_policy_index(*mv, board.board_size()) as usize])
             .collect();
         let priors = softmax(&logits);
 
@@ -713,14 +713,15 @@ fn select_leaf(
 fn expand_with_nn_output(
     tree: &mut MCTSTree,
     node_id: NodeId,
-    policy: &[f32; 4840],
+    policy: &[f32],
     legal_moves: &[Move],
     child_zobrists: &[ZobristHash],
+    board_size: usize,
 ) {
     if !legal_moves.is_empty() {
         let logits: Vec<f32> = legal_moves
             .iter()
-            .map(|mv| policy[move_to_policy_index(*mv) as usize])
+            .map(|mv| policy[move_to_policy_index(*mv, board_size) as usize])
             .collect();
         let priors = softmax(&logits);
 
@@ -944,6 +945,7 @@ pub fn mcts_search(
                         &nn_out.policy,
                         &leaf.legal_moves,
                         &leaf.child_zobrists,
+                        board.board_size(),
                     );
                 }
 

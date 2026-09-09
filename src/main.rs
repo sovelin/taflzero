@@ -2,7 +2,7 @@ use taflzero::board::Board;
 use taflzero::board::position_export::BitPosition;
 use taflzero::board::rules::{RulesEnum, get_rules_enum_from_str};
 use taflzero::gen_train_data::{DatagenConfig, SearchConfig, gen_train_data};
-use taflzero::search::nn::{NeuralNet, POLICY_SIZE, fill_input};
+use taflzero::search::nn::{NeuralNet, fill_input};
 use taflzero::{ConsoleClient, UciRunState, get_sample_size};
 
 struct CliArgs {
@@ -261,7 +261,7 @@ fn main() {
         println!("  \"bitpos_bytes\": [{bytes}],");
         println!("  \"input\": [{}],", f2s(&input));
         println!("  \"value\": {},", out.value);
-        println!("  \"policy\": [{}]", f2s(&out.policy[..POLICY_SIZE]));
+        println!("  \"policy\": [{}]", f2s(&out.policy));
         println!("}}");
         return;
     }

@@ -464,12 +464,12 @@ pub fn dump_single_sample(output_path: &str) {
     }
 
     let first_mv = move_gen.moves[0];
-    let move_index = move_to_policy_index(first_mv);
+    let move_index = move_to_policy_index(first_mv, board.board_size());
 
-    let mut legal_mask = LegalMask::new();
+    let mut legal_mask = LegalMask::new(board.board_size());
     for i in 0..move_gen.count {
         let mv = move_gen.moves[i];
-        let idx = move_to_policy_index(mv);
+        let idx = move_to_policy_index(mv, board.board_size());
         legal_mask.set(idx as usize);
     }
 

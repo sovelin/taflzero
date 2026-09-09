@@ -1,7 +1,7 @@
-use super::nn_common::{NUM_PLANES, NnOutput, POLICY_SIZE, build_input_data};
+use super::nn_common::{NUM_PLANES, NnOutput, build_input_data};
 use crate::board::Precomputed;
 use crate::board::position_export::BitPosition;
-use crate::get_sample_size;
+use crate::{get_policy_size, get_sample_size};
 use ndarray::{Array, IxDyn};
 #[cfg(feature = "cuda")]
 use ort::execution_providers::CUDAExecutionProvider;
@@ -132,8 +132,8 @@ impl NeuralNet {
 
         let mut results = Vec::with_capacity(batch_size);
         for i in 0..batch_size {
-            let mut policy = [0.0f32; POLICY_SIZE];
-            policy.copy_from_slice(&policy_data[i * POLICY_SIZE..(i + 1) * POLICY_SIZE]);
+            let policy_size = get_policy_size(geom.board_size);
+            let policy = policy_data[i * policy_size..(i + 1) * policy_size].to_vec();
             let value = value_data[i];
             results.push(NnOutput { policy, value });
         }

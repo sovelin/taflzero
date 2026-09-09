@@ -3,11 +3,13 @@ use crate::board::position_export::BitPosition;
 use crate::get_sample_size;
 use crate::utils::bfs::bfs;
 
+/// Feature planes fed to the network. Unrelated to the board side — it just happens
+/// to be 11 as well.
 pub const NUM_PLANES: usize = 11;
-pub const POLICY_SIZE: usize = 4840;
 
 pub struct NnOutput {
-    pub policy: [f32; POLICY_SIZE],
+    /// One logit per action, `get_policy_size(board_size)` long.
+    pub policy: Vec<f32>,
     pub value: f32,
 }
 

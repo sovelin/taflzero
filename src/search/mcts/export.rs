@@ -1,29 +1,27 @@
 use crate::board::Board;
 use crate::board::position_export::BitPosition;
 use crate::board::types::Side;
+use crate::get_policy_size;
 use crate::mcts::MCTSTree;
 use crate::mcts::utils::move_to_policy_index;
 use std::io::{Result, Write};
 
-pub const ACTIONS: usize = 121 * 4 * 10; // 4840
-pub const LEGAL_MASK_BYTES: usize = ACTIONS.div_ceil(8); // 605
-
-#[repr(C)]
-#[derive(Clone)]
-pub struct LegalMask {
-    data: [u8; LEGAL_MASK_BYTES],
+/// Bytes needed to pack one bit per action on a board of this size.
+pub fn legal_mask_bytes(board_size: usize) -> usize {
+    get_policy_size(board_size).div_ceil(8)
 }
 
-impl Default for LegalMask {
-    fn default() -> Self {
-        Self::new()
-    }
+#[derive(Clone)]
+pub struct LegalMask {
+    actions: usize,
+    data: Vec<u8>,
 }
 
 impl LegalMask {
-    pub fn new() -> Self {
+    pub fn new(board_size: usize) -> Self {
         Self {
-            data: [0u8; LEGAL_MASK_BYTES],
+            actions: get_policy_size(board_size),
+            data: vec![0u8; legal_mask_bytes(board_size)],
         }
     }
 
@@ -33,7 +31,7 @@ impl LegalMask {
 
     #[inline]
     pub fn set(&mut self, action_index: usize) {
-        debug_assert!(action_index < ACTIONS);
+        debug_assert!(action_index < self.actions);
 
         let byte = action_index / 8;
         let bit = action_index % 8;
@@ -43,7 +41,7 @@ impl LegalMask {
 
     #[inline]
     pub fn is_set(&self, action_index: usize) -> bool {
-        debug_assert!(action_index < ACTIONS);
+        debug_assert!(action_index < self.actions);
 
         let byte = action_index / 8;
         let bit = action_index % 8;
@@ -193,12 +191,12 @@ impl PendingSample {
 
 impl MCTSTree {
     fn build_legal_mask_from_board(&mut self, board: &Board) -> LegalMask {
-        let mut legal_mask = LegalMask::new();
+        let mut legal_mask = LegalMask::new(board.board_size());
         self.move_gen.generate_moves(board);
 
         for i in 0..self.move_gen.count {
             let mv = self.move_gen.moves[i];
-            let move_index = move_to_policy_index(mv);
+            let move_index = move_to_policy_index(mv, board.board_size());
             legal_mask.set(move_index as usize);
         }
 
@@ -251,7 +249,12 @@ impl MCTSTree {
                     continue;
                 }
                 let q = node.wins() / visits_f;
-                entries.push((move_to_policy_index(mv), visits_f, q, node.prior()));
+                entries.push((
+                    move_to_policy_index(mv, board.board_size()),
+                    visits_f,
+                    q,
+                    node.prior(),
+                ));
             }
         }
 
