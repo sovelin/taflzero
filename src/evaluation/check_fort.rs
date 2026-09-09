@@ -277,8 +277,6 @@ fn king_contacts_edge(board: &Board) -> bool {
     row == 0 || row == board.board_size() - 1 || col == 0 || col == board.board_size() - 1
 }
 
-// TODO(board-size): accepts a neighbor slice of any length but allocates SQS-sized
-// arrays below; out-of-range panic if the slice ever comes from a different size.
 fn bfs_ts<F>(
     start_squares: &[Square],
     neighbors: &[Vec<Square>],

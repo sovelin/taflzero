@@ -12,9 +12,6 @@ pub fn bfs(
         queue.push_back(sq);
     }
 
-    // TODO(board-size): result length now comes from `neighbors`, but every caller still
-    // indexes it with squares derived from the SQS constant. These agree only while
-    // PRECOMPUTED is built at BOARD_SIZE.
     let mut visited = vec![false; neighbors.len()];
     let mut result: Vec<bool> = vec![false; neighbors.len()];
 

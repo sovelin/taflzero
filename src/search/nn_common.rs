@@ -87,8 +87,6 @@ pub fn fill_input(input: &mut [f32], pos: &BitPosition, geom: &Precomputed) {
             &group_seeds,
         )
     } else {
-        // TODO(board-size): must match PRECOMPUTED.vertical_horizontal_neighbors.len(),
-        // not the SQS constant — bfs() now sizes its result from the neighbor slice.
         vec![false; sqs]
     };
     let group_offset = 7 * sqs;
@@ -112,8 +110,6 @@ pub fn fill_input(input: &mut [f32], pos: &BitPosition, geom: &Precomputed) {
             &[ksq],
         )
     } else {
-        // TODO(board-size): must match PRECOMPUTED.vertical_horizontal_neighbors.len(),
-        // not the SQS constant — bfs() now sizes its result from the neighbor slice.
         vec![false; sqs]
     };
     let king_offset = 8 * sqs;
