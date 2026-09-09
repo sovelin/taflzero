@@ -58,8 +58,12 @@ pub enum TerminalType {
     KingOnCorner = 3,
     DefendersSurrounded = 4,
     FortCheck = 5,
+    KingOnEdge = 6,
 }
 
+/// Must agree with `check_terminal` on *whether* a position is terminal — the datagen
+/// loop ends games by this function and takes the winner from `check_terminal`, so a
+/// disagreement either drops won games or panics. Hence the same rule gates here.
 pub fn get_terminal(board: &mut Board) -> Option<TerminalType> {
     if board.king_sq == -1 {
         return Some(TerminalType::KingCaptured);
@@ -69,19 +73,19 @@ pub fn get_terminal(board: &mut Board) -> Option<TerminalType> {
         return Some(TerminalType::ThreefoldRepetition);
     }
 
-    if board
-        .precomputed()
-        .corners_sq
-        .contains(&(board.king_sq as Square))
-    {
+    if board.get_rules().has_corners_win && has_corners_win(board) {
         return Some(TerminalType::KingOnCorner);
+    }
+
+    if board.get_rules().has_edge_win && has_edge_win(board) {
+        return Some(TerminalType::KingOnEdge);
     }
 
     if defenders_is_surrounded(board) {
         return Some(TerminalType::DefendersSurrounded);
     }
 
-    if check_fort(board) {
+    if board.get_rules().has_fort_win && check_fort(board) {
         return Some(TerminalType::FortCheck);
     }
 

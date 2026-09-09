@@ -102,6 +102,7 @@ fn terminal_type_str(t: &TerminalType) -> &'static str {
         TerminalType::KingOnCorner => "def_corner",
         TerminalType::DefendersSurrounded => "atk_surrounded",
         TerminalType::FortCheck => "def_fort",
+        TerminalType::KingOnEdge => "def_edge",
     }
 }
 
@@ -206,16 +207,20 @@ fn play_game(
             }
 
             if let Some(terminal) = get_terminal(&mut board) {
-                let result = check_terminal(&mut board).unwrap();
                 println!("{}", board);
                 terminal_str = Some(terminal_type_str(&terminal));
 
+                // Repetitions are dropped, not stored as draws: they teach nothing and
+                // dilute the value target.
                 if terminal == TerminalType::ThreefoldRepetition {
                     game_result = None;
                     break;
                 }
 
-                game_result = Some(result);
+                game_result = Some(
+                    check_terminal(&mut board)
+                        .expect("get_terminal and check_terminal disagree on a terminal position"),
+                );
                 break;
             }
         } else {
