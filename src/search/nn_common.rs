@@ -146,7 +146,6 @@ pub fn fill_input(input: &mut [f32], pos: &BitPosition, geom: &Precomputed) {
 mod tests {
     use super::*;
     use crate::board::Board;
-    use crate::board::constants::SQS;
     use crate::board::position_export::BitPosition;
     use crate::board::types::{Piece, Side};
     use crate::board::utils::get_square_from_algebraic;
@@ -163,8 +162,8 @@ mod tests {
         input
     }
 
-    fn pv(input: &[f32], plane: usize, square: usize) -> f32 {
-        input[plane * SQS + square]
+    fn pv(input: &[f32], plane: usize, square: usize, board: &Board) -> f32 {
+        input[plane * board.sqs() + square]
     }
 
     #[test]
@@ -175,12 +174,12 @@ mod tests {
         board.set_piece(sq("c3"), Piece::KING).unwrap();
         let input = make_input(&board, 1);
 
-        assert_eq!(pv(&input, 0, sq("a1")), 1.0);
-        assert_eq!(pv(&input, 0, sq("b2")), 0.0);
-        assert_eq!(pv(&input, 1, sq("b2")), 1.0);
-        assert_eq!(pv(&input, 1, sq("a1")), 0.0);
-        assert_eq!(pv(&input, 2, sq("c3")), 1.0);
-        assert_eq!(pv(&input, 2, sq("a1")), 0.0);
+        assert_eq!(pv(&input, 0, sq("a1"), &board), 1.0);
+        assert_eq!(pv(&input, 0, sq("b2"), &board), 0.0);
+        assert_eq!(pv(&input, 1, sq("b2"), &board), 1.0);
+        assert_eq!(pv(&input, 1, sq("a1"), &board), 0.0);
+        assert_eq!(pv(&input, 2, sq("c3"), &board), 1.0);
+        assert_eq!(pv(&input, 2, sq("a1"), &board), 0.0);
     }
 
     #[test]
@@ -190,22 +189,22 @@ mod tests {
 
         // Attackers to move (default, stm=0) → plane 3 all 0
         let input = make_input(&board, 1);
-        assert_eq!(pv(&input, 3, sq("a1")), 0.0);
-        assert_eq!(pv(&input, 3, sq("k11")), 0.0);
+        assert_eq!(pv(&input, 3, sq("a1"), &board), 0.0);
+        assert_eq!(pv(&input, 3, sq("k11"), &board), 0.0);
 
         // Defenders to move (stm=1) → plane 3 all 1
         board.side_to_move = Side::DEFENDERS;
         let input = make_input(&board, 1);
-        assert_eq!(pv(&input, 3, sq("a1")), 1.0);
-        assert_eq!(pv(&input, 3, sq("k11")), 1.0);
+        assert_eq!(pv(&input, 3, sq("a1"), &board), 1.0);
+        assert_eq!(pv(&input, 3, sq("k11"), &board), 1.0);
     }
 
     #[test]
     fn throne_plane() {
         let board = Board::new();
         let input = make_input(&board, 1);
-        assert_eq!(pv(&input, 4, board.precomputed().throne_sq), 1.0);
-        assert_eq!(pv(&input, 4, sq("a1")), 0.0);
+        assert_eq!(pv(&input, 4, board.precomputed().throne_sq, &board), 1.0);
+        assert_eq!(pv(&input, 4, sq("a1"), &board), 0.0);
     }
 
     #[test]
@@ -213,9 +212,9 @@ mod tests {
         let board = Board::new();
         let input = make_input(&board, 1);
         for &csq in &board.precomputed().corners_sq {
-            assert_eq!(pv(&input, 5, csq), 1.0);
+            assert_eq!(pv(&input, 5, csq, &board), 1.0);
         }
-        assert_eq!(pv(&input, 5, sq("b1")), 0.0);
+        assert_eq!(pv(&input, 5, sq("b1"), &board), 0.0);
     }
 
     #[test]
@@ -223,9 +222,9 @@ mod tests {
         let board = Board::new();
         let input = make_input(&board, 1);
         for &esq in &board.precomputed().edges_sq {
-            assert_eq!(pv(&input, 6, esq), 1.0);
+            assert_eq!(pv(&input, 6, esq, &board), 1.0);
         }
-        assert_eq!(pv(&input, 6, board.precomputed().throne_sq), 0.0);
+        assert_eq!(pv(&input, 6, board.precomputed().throne_sq, &board), 0.0);
     }
 
     // Validates the bug fix: before the fix, king BFS only lit up the king's own
@@ -236,12 +235,12 @@ mod tests {
         board.set_piece(sq("d4"), Piece::KING).unwrap();
         let input = make_input(&board, 1);
 
-        assert_eq!(pv(&input, 8, sq("d4")), 1.0); // king's own square
-        assert_eq!(pv(&input, 8, sq("c4")), 1.0); // left
-        assert_eq!(pv(&input, 8, sq("e4")), 1.0); // right
-        assert_eq!(pv(&input, 8, sq("d3")), 1.0); // down
-        assert_eq!(pv(&input, 8, sq("d5")), 1.0); // up
-        assert_eq!(pv(&input, 8, sq("a1")), 1.0); // far corner reachable on empty board
+        assert_eq!(pv(&input, 8, sq("d4"), &board), 1.0); // king's own square
+        assert_eq!(pv(&input, 8, sq("c4"), &board), 1.0); // left
+        assert_eq!(pv(&input, 8, sq("e4"), &board), 1.0); // right
+        assert_eq!(pv(&input, 8, sq("d3"), &board), 1.0); // down
+        assert_eq!(pv(&input, 8, sq("d5"), &board), 1.0); // up
+        assert_eq!(pv(&input, 8, sq("a1"), &board), 1.0); // far corner reachable on empty board
     }
 
     #[test]
@@ -251,9 +250,9 @@ mod tests {
         board.set_piece(sq("a4"), Piece::ATTACKER).unwrap();
         let input = make_input(&board, 1);
 
-        assert_eq!(pv(&input, 8, sq("b4")), 1.0); // reachable (between king and attacker)
-        assert_eq!(pv(&input, 8, sq("a4")), 0.0); // attacker itself not passable
-        assert_eq!(pv(&input, 8, sq("k4")), 1.0); // other direction still open
+        assert_eq!(pv(&input, 8, sq("b4"), &board), 1.0); // reachable (between king and attacker)
+        assert_eq!(pv(&input, 8, sq("a4"), &board), 0.0); // attacker itself not passable
+        assert_eq!(pv(&input, 8, sq("k4"), &board), 1.0); // other direction still open
     }
 
     #[test]
@@ -263,8 +262,8 @@ mod tests {
         board.set_piece(sq("a4"), Piece::DEFENDER).unwrap();
         let input = make_input(&board, 1);
 
-        assert_eq!(pv(&input, 8, sq("b4")), 1.0); // reachable
-        assert_eq!(pv(&input, 8, sq("a4")), 0.0); // defender blocks king sliding
+        assert_eq!(pv(&input, 8, sq("b4"), &board), 1.0); // reachable
+        assert_eq!(pv(&input, 8, sq("a4"), &board), 0.0); // defender blocks king sliding
     }
 
     #[test]
@@ -275,10 +274,10 @@ mod tests {
         board.set_piece(sq("b1"), Piece::ATTACKER).unwrap();
         let input = make_input(&board, 1);
 
-        assert_eq!(pv(&input, 7, sq("a1")), 1.0); // king — passable (not attacker)
-        assert_eq!(pv(&input, 7, sq("a2")), 1.0); // defender — passable in group BFS
-        assert_eq!(pv(&input, 7, sq("a3")), 1.0); // reachable past defender
-        assert_eq!(pv(&input, 7, sq("b1")), 0.0); // attacker blocks
+        assert_eq!(pv(&input, 7, sq("a1"), &board), 1.0); // king — passable (not attacker)
+        assert_eq!(pv(&input, 7, sq("a2"), &board), 1.0); // defender — passable in group BFS
+        assert_eq!(pv(&input, 7, sq("a3"), &board), 1.0); // reachable past defender
+        assert_eq!(pv(&input, 7, sq("b1"), &board), 0.0); // attacker blocks
     }
 
     #[test]
@@ -291,9 +290,9 @@ mod tests {
         }
         let input = make_input(&board, 1);
 
-        assert_eq!(pv(&input, 7, sq("c3")), 1.0); // king reachable
+        assert_eq!(pv(&input, 7, sq("c3"), &board), 1.0); // king reachable
         // Squares below the attacker wall are cut off from king
-        assert_eq!(pv(&input, 7, sq("c1")), 0.0);
+        assert_eq!(pv(&input, 7, sq("c1"), &board), 0.0);
     }
 
     #[test]
@@ -302,16 +301,16 @@ mod tests {
         board.set_piece(sq("b2"), Piece::KING).unwrap();
 
         let i1 = make_input(&board, 1);
-        assert_eq!(pv(&i1, 9, 0), 0.0);
-        assert_eq!(pv(&i1, 10, 0), 0.0);
+        assert_eq!(pv(&i1, 9, 0, &board), 0.0);
+        assert_eq!(pv(&i1, 10, 0, &board), 0.0);
 
         let i2 = make_input(&board, 2);
-        assert_eq!(pv(&i2, 9, 0), 1.0);
-        assert_eq!(pv(&i2, 10, 0), 0.0);
+        assert_eq!(pv(&i2, 9, 0, &board), 1.0);
+        assert_eq!(pv(&i2, 10, 0, &board), 0.0);
 
         let i3 = make_input(&board, 3);
-        assert_eq!(pv(&i3, 9, 0), 1.0);
-        assert_eq!(pv(&i3, 10, 0), 1.0);
+        assert_eq!(pv(&i3, 9, 0, &board), 1.0);
+        assert_eq!(pv(&i3, 10, 0, &board), 1.0);
     }
 }
 

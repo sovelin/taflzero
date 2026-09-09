@@ -42,7 +42,6 @@ pub fn bfs(
 #[cfg(test)]
 mod tests {
     use super::bfs;
-    use crate::board::constants::SQS;
     use crate::board::types::{Piece, Square};
     use crate::board::utils::get_square_from_algebraic;
     use crate::board::{Board, PRECOMPUTED};
@@ -63,6 +62,7 @@ mod tests {
     #[test]
     fn go_to_cornets_from_restricted_areas() {
         let mut board = Board::new();
+
         board
             .set_piece(get_square_from_algebraic("d4"), Piece::ATTACKER)
             .unwrap();
@@ -138,7 +138,7 @@ mod tests {
             ],
         );
 
-        expect_res_size(&res, SQS - 7);
+        expect_res_size(&res, board.sqs() - 7);
     }
 
     #[test]

@@ -12,7 +12,7 @@ mod zobrist;
 pub use precompute::*;
 pub use utils::get_side_by_piece;
 
-use crate::board::constants::{ATTACKERS_MAX, DEFENDERS_MAX, HOLE};
+use crate::board::constants::HOLE;
 use crate::board::fen::FenError;
 use crate::board::rules::{Rules, RulesEnum};
 use crate::board::types::{OptionalSquare, Piece, Side, Square, ZobristHash};
@@ -102,7 +102,7 @@ impl Board {
     }
 
     fn set_attacker(&mut self, sq: Square) -> Result<(), &'static str> {
-        if self.attackers_count >= ATTACKERS_MAX as u8 {
+        if self.attackers_count >= self.sqs() as u8 {
             return Err("Exceeded maximum attackers capacity");
         }
 
@@ -114,7 +114,7 @@ impl Board {
     }
 
     fn set_defender(&mut self, sq: Square) -> Result<(), &'static str> {
-        if self.defenders_count >= DEFENDERS_MAX as u8 {
+        if self.defenders_count >= self.sqs() as u8 {
             return Err("Exceeded maximum defenders capacity");
         }
 
@@ -217,6 +217,10 @@ impl Board {
 
     pub fn board_size(&self) -> usize {
         self.rules.rules().board_size
+    }
+
+    pub fn sqs(&self) -> usize {
+        self.board_size() * self.board_size()
     }
 }
 

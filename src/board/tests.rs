@@ -3,7 +3,6 @@ mod tests {
     use std::error::Error;
 
     use crate::board::Board;
-    use crate::board::constants::SQS;
     use crate::board::rules::RulesEnum;
     use crate::board::types::Piece;
     use crate::board::utils::get_square_from_algebraic;
@@ -154,8 +153,8 @@ mod tests {
             let sqs = board_size * board_size;
 
             assert!(
-                sqs <= SQS,
-                "{board_size}x{board_size} needs {sqs} squares but Board is fixed at {SQS}"
+                sqs <= 121,
+                "{board_size}x{board_size} needs {sqs} squares but Board is fixed at 121"
             );
         }
     }
