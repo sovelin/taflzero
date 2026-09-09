@@ -34,6 +34,7 @@ function parseArgs(argv) {
         candidateNet: null,
         engineBin: null,
         nodes: 200,
+        movetime: 0,
         openingMoves: 16,
         workers: 24,
         maxPairs: 2500,
@@ -54,6 +55,7 @@ function parseArgs(argv) {
         else if (a === "--candidate-net") args.candidateNet = next();
         else if (a === "--engine-bin") args.engineBin = next();
         else if (a === "--nodes") args.nodes = parseInt(next(), 10);
+        else if (a === "--movetime") args.movetime = parseInt(next(), 10);
         else if (a === "--opening-moves") args.openingMoves = parseInt(next(), 10);
         else if (a === "--workers") args.workers = parseInt(next(), 10);
         else if (a === "--max-pairs") args.maxPairs = parseInt(next(), 10);
@@ -245,8 +247,8 @@ class UciEngine {
         await this.waitFor((l) => l === "readyok");
     }
 
-    async goNodes(nodes) {
-        this.send(`go nodes ${nodes}`);
+    async go(limit) {
+        this.send(limit.movetime ? `go movetime ${limit.movetime}` : `go nodes ${limit.nodes}`);
         const line = await this.waitFor((l) => l.startsWith("bestmove"), 120000);
         const match = line.match(/bestmove\s+(\S+)/);
         if (!match) return null;
@@ -336,7 +338,7 @@ class GameController {
  * Play a single game between two engines.
  * Returns: 'main' | 'candidate' | 'draw'
  */
-async function playGame(ctrl, mainEngine, candidateEngine, opening, nodes, attackerRole, defenderRole) {
+async function playGame(ctrl, mainEngine, candidateEngine, opening, limit, attackerRole, defenderRole) {
     const gameMoves = [];         // numeric move values
     const gameMoveStrings = [];   // algebraic strings
     let pieceCount = ctrl.getPieceCount(opening, []);
@@ -357,7 +359,7 @@ async function playGame(ctrl, mainEngine, candidateEngine, opening, nodes, attac
         const moveAlgTokens = gameMoveStrings;
         await engineToMove.setPosition(opening, moveAlgTokens);
 
-        const bestMoveStr = await engineToMove.goNodes(nodes);
+        const bestMoveStr = await engineToMove.go(limit);
         if (!bestMoveStr || bestMoveStr === "(none)") {
             // No legal moves — opponent wins
             return stm === Side.ATTACKERS ? defenderRole : attackerRole;
@@ -394,11 +396,11 @@ async function playGame(ctrl, mainEngine, candidateEngine, opening, nodes, attac
  * Play a pair of games from the same opening with swapped colors.
  * Returns pair score for candidate: 1.0, 0.75, 0.5, 0.25, 0.0
  */
-async function playPair(ctrl, mainEngine, candidateEngine, opening, nodes) {
+async function playPair(ctrl, mainEngine, candidateEngine, opening, limit) {
     // Game 1: candidate = attacker, main = defender
-    const result1 = await playGame(ctrl, mainEngine, candidateEngine, opening, nodes, "candidate", "main");
+    const result1 = await playGame(ctrl, mainEngine, candidateEngine, opening, limit, "candidate", "main");
     // Game 2: candidate = defender, main = attacker
-    const result2 = await playGame(ctrl, mainEngine, candidateEngine, opening, nodes, "main", "candidate");
+    const result2 = await playGame(ctrl, mainEngine, candidateEngine, opening, limit, "main", "candidate");
 
     const score1 = result1 === "candidate" ? 1 : result1 === "draw" ? 0.5 : 0;
     const score2 = result2 === "candidate" ? 1 : result2 === "draw" ? 0.5 : 0;
@@ -449,7 +451,8 @@ async function main() {
     console.log(`[SPRT] elo0=${args.sprtElo0}, elo1=${args.sprtElo1}, alpha=${args.sprtAlpha}, beta=${args.sprtBeta}`);
     console.log(`[SPRT] bounds: B=${initialStatus.lowerBound.toFixed(3)}, A=${initialStatus.upperBound.toFixed(3)}`);
     console.log(`[Match] main=${args.mainNet}, candidate=${args.candidateNet}`);
-    console.log(`[Match] nodes=${args.nodes}, openingMoves=${args.openingMoves}, workers=${args.workers}, maxPairs=${args.maxPairs}, variant=${args.variant}`);
+    const limit = args.movetime > 0 ? { movetime: args.movetime } : { nodes: args.nodes };
+    console.log(`[Match] limit=${args.movetime > 0 ? args.movetime + "ms/move" : args.nodes + " nodes"}, openingMoves=${args.openingMoves}, workers=${args.workers}, maxPairs=${args.maxPairs}, variant=${args.variant}`);
 
     // Spawn worker pairs
     const workerPairs = [];
@@ -481,7 +484,7 @@ async function main() {
 
             let pairScore;
             try {
-                pairScore = await playPair(worker.ctrl, worker.mainEngine, worker.candidateEngine, opening, args.nodes);
+                pairScore = await playPair(worker.ctrl, worker.mainEngine, worker.candidateEngine, opening, limit);
             } catch (err) {
                 console.error(`[Worker] pair failed: ${err.message}`);
                 break;
