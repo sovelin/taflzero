@@ -414,7 +414,7 @@ fn expand_node(
 ) -> f32 {
     let rep = board.rep_table.get(&board.zobrist).copied().unwrap_or(1);
     let position = BitPosition::from_board(board, rep);
-    let nn_out = nn.evaluate_position(&position);
+    let nn_out = nn.evaluate_position(&position, &board);
 
     let moves = get_left_moves(board, move_gen);
 
@@ -913,7 +913,7 @@ pub fn mcts_search(
                 .iter()
                 .map(|&i| pending_leaves[i].position.as_ref().unwrap())
                 .collect();
-            nn.evaluate_batch(&positions)
+            nn.evaluate_batch(&positions, &board)
         } else {
             vec![]
         };

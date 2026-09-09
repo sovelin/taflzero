@@ -1,4 +1,5 @@
 use super::nn_common::{NUM_PLANES, NnOutput, POLICY_SIZE, SAMPLE_SIZE, build_input_data};
+use crate::board::Board;
 use crate::board::constants::BOARD_SIZE;
 use crate::board::position_export::BitPosition;
 use ndarray::{Array, IxDyn};
@@ -105,13 +106,13 @@ impl NeuralNet {
         Self { session }
     }
 
-    pub fn evaluate_position(&mut self, pos: &BitPosition) -> NnOutput {
-        self.evaluate_batch(&[pos]).pop().unwrap()
+    pub fn evaluate_position(&mut self, pos: &BitPosition, board: &Board) -> NnOutput {
+        self.evaluate_batch(&[pos], &board).pop().unwrap()
     }
 
-    pub fn evaluate_batch(&mut self, positions: &[&BitPosition]) -> Vec<NnOutput> {
+    pub fn evaluate_batch(&mut self, positions: &[&BitPosition], board: &Board) -> Vec<NnOutput> {
         let batch_size = positions.len();
-        let input_data = build_input_data(positions);
+        let input_data = build_input_data(positions, &board);
 
         let input_tensor = Array::from_shape_vec(
             IxDyn(&[batch_size, NUM_PLANES, BOARD_SIZE, BOARD_SIZE]),

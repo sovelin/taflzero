@@ -1,7 +1,7 @@
 use crate::board::types::OptionalSquare;
 use crate::board::types::{Piece, Side, Square};
 use crate::board::utils::{get_col, get_row};
-use crate::board::{Board, PRECOMPUTED, Precomputed, get_side_by_piece};
+use crate::board::{Board, Precomputed, get_side_by_piece};
 use crate::moves::undo::{CapturedPiece, UndoMove};
 
 #[derive(Copy, Clone)]

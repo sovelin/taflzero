@@ -239,9 +239,9 @@ fn main() {
 
         let bit_pos = BitPosition::from_board(&board, 1);
         let mut input = vec![0f32; SAMPLE_SIZE];
-        fill_input(&mut input, &bit_pos);
+        fill_input(&mut input, &bit_pos, &board);
 
-        let out = nn.evaluate_position(&bit_pos);
+        let out = nn.evaluate_position(&bit_pos, &board);
 
         let f2s = |xs: &[f32]| {
             xs.iter()

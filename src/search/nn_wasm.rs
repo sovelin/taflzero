@@ -56,9 +56,9 @@ impl NeuralNet {
         self.evaluate_batch(&[pos]).pop().unwrap()
     }
 
-    pub fn evaluate_batch(&mut self, positions: &[&BitPosition]) -> Vec<NnOutput> {
+    pub fn evaluate_batch(&mut self, positions: &[&BitPosition], board: &Board) -> Vec<NnOutput> {
         let batch = positions.len();
-        let input = build_input_data(positions); // batch * SAMPLE_SIZE, NCHW
+        let input = build_input_data(positions, &board); // batch * SAMPLE_SIZE, NCHW
 
         // 1. write input into the shared input buffer
         NN_INPUT.with(|b| {
