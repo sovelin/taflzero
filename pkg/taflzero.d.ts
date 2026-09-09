@@ -10,6 +10,10 @@ export class Engine {
 export class EngineClient {
     free(): void;
     [Symbol.dispose](): void;
+    /**
+     * Board side of the current variant.
+     */
+    board_size(): number;
     check_terminal_state(): Side | undefined;
     check_terminal_state_for_fen(fen: string): Side | undefined;
     create_move_from_algebraic(mv_str: string): Move;
@@ -27,9 +31,17 @@ export class EngineClient {
     constructor();
     set_fen(fen: string): void;
     set_position_and_moves(fen: string, moves: Uint32Array): void;
+    /**
+     * Fails on an unknown variant instead of silently keeping the old one — a caller
+     * that mistypes it would otherwise adjudicate the wrong game.
+     */
     set_variant(variant: string): void;
     setup_initial_position(): void;
     side_to_move(): Side;
+    /**
+     * Number of squares on the current variant's board.
+     */
+    total_squares(): number;
 }
 
 export class Move {
@@ -166,6 +178,7 @@ export interface InitOutput {
     readonly __wbg_timer_free: (a: number, b: number) => void;
     readonly __wbg_wasmclient_free: (a: number, b: number) => void;
     readonly build_info: (a: number) => void;
+    readonly engineclient_board_size: (a: number) => number;
     readonly engineclient_check_terminal_state: (a: number) => number;
     readonly engineclient_check_terminal_state_for_fen: (a: number, b: number, c: number) => number;
     readonly engineclient_create_move_from_algebraic: (a: number, b: number, c: number) => number;
@@ -183,9 +196,10 @@ export interface InitOutput {
     readonly engineclient_new: () => number;
     readonly engineclient_set_fen: (a: number, b: number, c: number) => void;
     readonly engineclient_set_position_and_moves: (a: number, b: number, c: number, d: number, e: number) => void;
-    readonly engineclient_set_variant: (a: number, b: number, c: number) => void;
+    readonly engineclient_set_variant: (a: number, b: number, c: number, d: number) => void;
     readonly engineclient_setup_initial_position: (a: number) => void;
     readonly engineclient_side_to_move: (a: number) => number;
+    readonly engineclient_total_squares: (a: number) => number;
     readonly get_col: (a: number, b: number) => number;
     readonly get_initial_board_fen: (a: number) => void;
     readonly get_row: (a: number, b: number) => number;

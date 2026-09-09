@@ -153,11 +153,25 @@ impl EngineClient {
             .unwrap();
     }
 
+    /// Fails on an unknown variant instead of silently keeping the old one — a caller
+    /// that mistypes it would otherwise adjudicate the wrong game.
     #[wasm_bindgen]
-    pub fn set_variant(&mut self, variant: &str) {
-        let variant = get_rules_enum_from_str(variant);
-        if let Some(variant) = variant {
-            self.engine.set_variant(variant);
-        }
+    pub fn set_variant(&mut self, variant: &str) -> Result<(), String> {
+        let rules = get_rules_enum_from_str(variant)
+            .ok_or_else(|| format!("unknown variant '{variant}'"))?;
+        self.engine.set_variant(rules);
+        Ok(())
+    }
+
+    /// Board side of the current variant.
+    #[wasm_bindgen]
+    pub fn board_size(&self) -> usize {
+        self.engine.board().board_size()
+    }
+
+    /// Number of squares on the current variant's board.
+    #[wasm_bindgen]
+    pub fn total_squares(&self) -> usize {
+        self.engine.board().sqs()
     }
 }

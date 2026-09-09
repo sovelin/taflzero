@@ -26,6 +26,14 @@ export class EngineClient {
         wasm.__wbg_engineclient_free(ptr, 0);
     }
     /**
+     * Board side of the current variant.
+     * @returns {number}
+     */
+    board_size() {
+        const ret = wasm.engineclient_board_size(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
      * @returns {Side | undefined}
      */
     check_terminal_state() {
@@ -238,12 +246,24 @@ export class EngineClient {
         wasm.engineclient_set_position_and_moves(this.__wbg_ptr, ptr0, len0, ptr1, len1);
     }
     /**
+     * Fails on an unknown variant instead of silently keeping the old one — a caller
+     * that mistypes it would otherwise adjudicate the wrong game.
      * @param {string} variant
      */
     set_variant(variant) {
-        const ptr0 = passStringToWasm0(variant, wasm.__wbindgen_export, wasm.__wbindgen_export2);
-        const len0 = WASM_VECTOR_LEN;
-        wasm.engineclient_set_variant(this.__wbg_ptr, ptr0, len0);
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            const ptr0 = passStringToWasm0(variant, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+            const len0 = WASM_VECTOR_LEN;
+            wasm.engineclient_set_variant(retptr, this.__wbg_ptr, ptr0, len0);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            if (r1) {
+                throw takeObject(r0);
+            }
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
     }
     setup_initial_position() {
         wasm.engineclient_setup_initial_position(this.__wbg_ptr);
@@ -254,6 +274,14 @@ export class EngineClient {
     side_to_move() {
         const ret = wasm.engineclient_side_to_move(this.__wbg_ptr);
         return ret;
+    }
+    /**
+     * Number of squares on the current variant's board.
+     * @returns {number}
+     */
+    total_squares() {
+        const ret = wasm.engineclient_total_squares(this.__wbg_ptr);
+        return ret >>> 0;
     }
 }
 if (Symbol.dispose) EngineClient.prototype[Symbol.dispose] = EngineClient.prototype.free;
