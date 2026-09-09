@@ -1,7 +1,13 @@
 {
   "name": "taflzero",
   "type": "module",
+  "description": "Artificial intelligence that plays Copenhagen Hnefatafl and Historical Hnefatafl",
   "version": "0.1.0",
+  "license": "GPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sovelin/taflzero"
+  },
   "files": [
     "taflzero_bg.wasm",
     "taflzero.js",
@@ -11,5 +17,9 @@
   "types": "taflzero.d.ts",
   "sideEffects": [
     "./snippets/*"
+  ],
+  "keywords": [
+    "ai",
+    "hnefatafl"
   ]
 }

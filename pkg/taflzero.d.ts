@@ -120,21 +120,17 @@ export class WasmClient {
 
 export function build_info(): string;
 
-export function get_board_size(): number;
-
-export function get_col(sq: number): number;
+export function get_col(sq: number, board_size: number): number;
 
 export function get_initial_board_fen(): string;
 
-export function get_row(sq: number): number;
+export function get_row(sq: number, board_size: number): number;
 
 export function get_sq_algebraic(sq: number): string;
 
-export function get_square(row: number, col: number): number;
+export function get_square(row: number, col: number, board_size: number): number;
 
 export function get_square_from_algebraic(coord: string): number;
-
-export function get_total_squares(): number;
 
 export function hello(): string;
 
@@ -190,18 +186,15 @@ export interface InitOutput {
     readonly engineclient_set_variant: (a: number, b: number, c: number) => void;
     readonly engineclient_setup_initial_position: (a: number) => void;
     readonly engineclient_side_to_move: (a: number) => number;
-    readonly get_board_size: () => number;
-    readonly get_col: (a: number) => number;
+    readonly get_col: (a: number, b: number) => number;
     readonly get_initial_board_fen: (a: number) => void;
-    readonly get_row: (a: number) => number;
+    readonly get_row: (a: number, b: number) => number;
     readonly get_sq_algebraic: (a: number, b: number) => void;
-    readonly get_square: (a: number, b: number) => number;
+    readonly get_square: (a: number, b: number, c: number) => number;
     readonly get_square_from_algebraic: (a: number, b: number) => number;
-    readonly get_total_squares: () => number;
     readonly hello: (a: number) => void;
     readonly move_create_null: () => number;
     readonly move_from: (a: number) => number;
-    readonly move_from_u32: (a: number) => number;
     readonly move_is_null: (a: number) => number;
     readonly move_new: (a: number, b: number) => number;
     readonly move_raw: (a: number) => number;
@@ -215,6 +208,7 @@ export interface InitOutput {
     readonly wasmclient_set_nn: (a: number, b: number, c: number) => void;
     readonly wasmclient_set_nn_buffers: (a: number, b: number, c: number, d: number) => void;
     readonly wasmclient_set_stop_buffer: (a: number, b: number) => void;
+    readonly move_from_u32: (a: number) => number;
     readonly main_js: () => void;
     readonly __wbindgen_export: (a: number, b: number) => number;
     readonly __wbindgen_export2: (a: number, b: number, c: number, d: number) => number;

@@ -14,6 +14,7 @@
 //! blocking is allowed) until the NN worker sets RESP and notifies back.
 
 use super::nn_common::{NnOutput, POLICY_SIZE, build_input_data};
+use crate::board::Board;
 use crate::board::position_export::BitPosition;
 use js_sys::{Atomics, Float32Array, Int32Array};
 use std::cell::RefCell;
@@ -52,8 +53,8 @@ impl NeuralNet {
         NeuralNet
     }
 
-    pub fn evaluate_position(&mut self, pos: &BitPosition) -> NnOutput {
-        self.evaluate_batch(&[pos]).pop().unwrap()
+    pub fn evaluate_position(&mut self, pos: &BitPosition, board: &Board) -> NnOutput {
+        self.evaluate_batch(&[pos], &board).pop().unwrap()
     }
 
     pub fn evaluate_batch(&mut self, positions: &[&BitPosition], board: &Board) -> Vec<NnOutput> {

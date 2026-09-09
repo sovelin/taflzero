@@ -617,19 +617,12 @@ export function build_info() {
 }
 
 /**
- * @returns {number}
- */
-export function get_board_size() {
-    const ret = wasm.get_board_size();
-    return ret >>> 0;
-}
-
-/**
  * @param {number} sq
+ * @param {number} board_size
  * @returns {number}
  */
-export function get_col(sq) {
-    const ret = wasm.get_col(sq);
+export function get_col(sq, board_size) {
+    const ret = wasm.get_col(sq, board_size);
     return ret >>> 0;
 }
 
@@ -655,10 +648,11 @@ export function get_initial_board_fen() {
 
 /**
  * @param {number} sq
+ * @param {number} board_size
  * @returns {number}
  */
-export function get_row(sq) {
-    const ret = wasm.get_row(sq);
+export function get_row(sq, board_size) {
+    const ret = wasm.get_row(sq, board_size);
     return ret >>> 0;
 }
 
@@ -686,10 +680,11 @@ export function get_sq_algebraic(sq) {
 /**
  * @param {number} row
  * @param {number} col
+ * @param {number} board_size
  * @returns {number}
  */
-export function get_square(row, col) {
-    const ret = wasm.get_square(row, col);
+export function get_square(row, col, board_size) {
+    const ret = wasm.get_square(row, col, board_size);
     return ret >>> 0;
 }
 
@@ -701,14 +696,6 @@ export function get_square_from_algebraic(coord) {
     const ptr0 = passStringToWasm0(coord, wasm.__wbindgen_export, wasm.__wbindgen_export2);
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.get_square_from_algebraic(ptr0, len0);
-    return ret >>> 0;
-}
-
-/**
- * @returns {number}
- */
-export function get_total_squares() {
-    const ret = wasm.get_total_squares();
     return ret >>> 0;
 }
 
