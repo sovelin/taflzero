@@ -1,6 +1,5 @@
 use crate::board::types::OptionalSquare;
 
-pub const BOARD_SIZE: usize = 11;
 pub const HOLE: OptionalSquare = -1;
 
 pub const INITIAL_FEN: &str =
