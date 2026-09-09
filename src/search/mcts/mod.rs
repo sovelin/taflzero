@@ -809,7 +809,10 @@ pub fn mcts_search(
     let mut move_stack = MovesStack::new();
     let mut iteration: u64 = 0;
     let mut last_report_ms: u64 = 0;
-    let mut sys = System::new_all();
+    // Only the memory reading is needed, and only when a limit is set. `System::new_all`
+    // enumerates every process, disk and sensor on the machine — half a second on a busy
+    // Windows box, paid on every single search.
+    let mut sys = tree.memory_limit.map(|_| System::new());
 
     let root_id = tree.get_root_id();
     let batch_size = config.batch_size.max(1);
@@ -834,7 +837,10 @@ pub fn mcts_search(
 
     loop {
         // Check memory limit
-        if check_memory && let Some(memory_limit) = tree.memory_limit {
+        if check_memory
+            && let Some(memory_limit) = tree.memory_limit
+            && let Some(sys) = sys.as_mut()
+        {
             check_memory = false;
             sys.refresh_memory();
             let used_memory = sys.used_memory() as f64 / sys.total_memory() as f64;
