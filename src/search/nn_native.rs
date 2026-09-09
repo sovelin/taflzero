@@ -57,6 +57,15 @@ impl NeuralNet {
 
         let mut builder = Session::builder().unwrap();
 
+        // Parallelism in datagen comes from running many engine processes, so let each
+        // session use a single intra-op thread; the ORT default is one per core, which
+        // oversubscribes the machine badly once several workers run at once.
+        let intra_threads = std::env::var("TAFLZERO_ORT_THREADS")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(1);
+        builder = builder.with_intra_threads(intra_threads).unwrap();
+
         #[cfg(all(feature = "cuda", feature = "directml"))]
         {
             builder = builder
