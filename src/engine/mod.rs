@@ -43,7 +43,8 @@ impl Engine {
             .setup_initial_position()
             .expect("Setup initial position failed");
 
-        let nn = NeuralNet::new(config.net_path.as_str(), board.board_size());
+        let nn = NeuralNet::new(config.net_path.as_str(), board.board_size())
+            .unwrap_or_else(|err| panic!("{err}"));
 
         Self {
             search_data: SearchData::new(),
@@ -62,15 +63,35 @@ impl Engine {
 
     pub fn set_variant(&mut self, rules: RulesEnum) {
         self.board.set_rules(rules);
+        self.tree = MCTSTree::new();
     }
 
-    pub fn set_nn(&mut self, path: String) {
+    /// Board and net must agree before a search can run. Setting the variant and the net
+    /// are independent, so this is what catches a half-finished switch.
+    pub fn check_nn_matches_board(&self) -> Result<(), String> {
+        let board_size = self.board.board_size();
+        let nn_size = self.nn.board_size();
+
+        if nn_size != board_size {
+            return Err(format!(
+                "loaded neural net is for a {nn_size}x{nn_size} board but the variant needs {board_size}x{board_size}"
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Loads a net. The previous one is kept on failure.
+    pub fn set_nn(&mut self, path: String) -> Result<(), String> {
+        let nn = NeuralNet::new(path.as_str(), self.board.board_size())?;
         self.config.net_path = path;
-        self.nn = NeuralNet::new(self.config.net_path.as_str(), self.board.board_size());
+        self.nn = nn;
+        Ok(())
     }
 
-    pub fn set_nn_bytes(&mut self, data: &[u8]) {
-        self.nn = NeuralNet::from_bytes(data);
+    pub fn set_nn_bytes(&mut self, data: &[u8]) -> Result<(), String> {
+        self.nn = NeuralNet::from_bytes(data, self.board.board_size())?;
+        Ok(())
     }
 
     pub fn set_multi_pv(&mut self, multi_pv: usize) {

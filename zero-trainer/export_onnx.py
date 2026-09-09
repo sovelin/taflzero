@@ -14,7 +14,9 @@ def export_model_to_onnx(model: nn.Module, onnx_path: Path) -> None:
     model.eval()
     onnx_path.parent.mkdir(parents=True, exist_ok=True)
 
-    dummy = torch.randn(1, 11, 11, 11)
+    board_size = getattr(model, "board_size", 11)
+    in_channels = model.model_kwargs["in_channels"]
+    dummy = torch.randn(1, in_channels, board_size, board_size)
 
     # Export FP32 to a temp file, then convert to FP16 in-place
     with tempfile.NamedTemporaryFile(suffix=".onnx", delete=False) as tmp:
@@ -58,6 +60,7 @@ def main() -> None:
         default=Path("weights/random_init.onnx"),
         help="Output ONNX model path.",
     )
+    parser.add_argument("--board-size", type=int, default=11, help="Board side (11 = Hnefatafl, 9 = Tablut)")
     parser.add_argument("--channels", type=int, default=None, help="Trunk channels")
     parser.add_argument("--blocks", type=int, default=None, help="Residual blocks")
     parser.add_argument("--value-channels", type=int, default=None, help="Value head channels")
@@ -69,7 +72,7 @@ def main() -> None:
 
     from az_micro_net import TaflAlphaZeroNet
 
-    kwargs = {}
+    kwargs = {"board_size": args.board_size}
     if args.channels is not None:
         kwargs["trunk_channels"] = args.channels
     if args.blocks is not None:

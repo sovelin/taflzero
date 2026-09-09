@@ -42,16 +42,24 @@ pub fn set_nn_buffers(control: Int32Array, input: Float32Array, output: Float32A
     NN_OUTPUT.with(|c| *c.borrow_mut() = Some(output));
 }
 
-pub struct NeuralNet;
+pub struct NeuralNet {
+    board_size: usize,
+}
 
 impl NeuralNet {
-    /// No model is loaded in Rust anymore — the JS NN worker owns it.
-    pub fn new(_path: &str, _board_size: usize) -> Self {
-        NeuralNet
+    /// No model is loaded in Rust anymore — the JS NN worker owns it, so there is no
+    /// shape to validate here; the board size is recorded for symmetry with native.
+    pub fn new(_path: &str, board_size: usize) -> Result<Self, String> {
+        Ok(NeuralNet { board_size })
     }
 
-    pub fn from_bytes(_data: &[u8]) -> Self {
-        NeuralNet
+    pub fn from_bytes(_data: &[u8], board_size: usize) -> Result<Self, String> {
+        Ok(NeuralNet { board_size })
+    }
+
+    /// Board side this net can evaluate.
+    pub fn board_size(&self) -> usize {
+        self.board_size
     }
 
     pub fn evaluate_position(&mut self, pos: &BitPosition, geom: &Precomputed) -> NnOutput {

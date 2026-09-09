@@ -119,6 +119,24 @@ function parseArgs(argv) {
     return args;
 }
 
+// Board side per variant. The trainer needs it to size the policy head and to
+// parse the self-play records, which are laid out per board size.
+const BOARD_SIZE_BY_VARIANT = {
+    copenhagen11x11: 11,
+    historical11x11: 11,
+    tablut9x9: 9,
+};
+
+function boardSizeForVariant(variant) {
+    const size = BOARD_SIZE_BY_VARIANT[variant];
+    if (!size) {
+        throw new Error(
+            `Unknown variant '${variant}'. Known: ${Object.keys(BOARD_SIZE_BY_VARIANT).join(", ")}`,
+        );
+    }
+    return size;
+}
+
 function required(value, name) {
     if (value == null || value === "") {
         throw new Error(`Missing value for ${name}`);
@@ -183,7 +201,7 @@ function printHelp() {
             "  --anchor-pairs <N>        Pairs to play against anchor (default: 100)",
             "",
             "Variant:",
-            "  --variant <name>          Game variant: copenhagen11x11 | historical11x11 (default: copenhagen11x11)",
+            "  --variant <name>          Game variant: copenhagen11x11 | historical11x11 | tablut9x9 (default: copenhagen11x11)",
             "",
             "Runtime:",
             "  --workers <N>             Parallel engine processes for datagen (default: 1)",
@@ -350,6 +368,8 @@ async function main() {
         console.log(`Training -> candidate: ${candidateOnnx}`);
         const trainArgs = [
             path.join(projectRoot, "zero-trainer", "train.py"),
+            "--board-size",
+            String(boardSizeForVariant(args.variant)),
             "--data",
             path.normalize(args.data),
             "--out",

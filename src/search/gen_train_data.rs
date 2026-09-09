@@ -209,6 +209,12 @@ fn play_game(
                 let result = check_terminal(&mut board).unwrap();
                 println!("{}", board);
                 terminal_str = Some(terminal_type_str(&terminal));
+
+                if terminal == TerminalType::ThreefoldRepetition {
+                    game_result = None;
+                    break;
+                }
+
                 game_result = Some(result);
                 break;
             }

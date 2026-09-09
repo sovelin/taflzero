@@ -331,6 +331,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="AlphaZero training for Tafl")
     parser.add_argument("--data", type=Path, required=True, help="Path to binary self-play data")
     parser.add_argument("--checkpoint", type=Path, default=None, help="Resume from .qnxx checkpoint")
+    parser.add_argument("--board-size", type=int, default=11, help="Board side of the self-play data (11 = Hnefatafl, 9 = Tablut); ignored if --checkpoint given")
     parser.add_argument("--channels", type=int, default=None, help="Trunk channels for a fresh model (default: az_micro_net.py default; ignored if --checkpoint given)")
     parser.add_argument("--blocks", type=int, default=None, help="Residual blocks for a fresh model (default: az_micro_net.py default; ignored if --checkpoint given)")
     parser.add_argument("--value-channels", type=int, default=None, help="Value head channels for a fresh model (default 1; ignored if --checkpoint given)")
@@ -372,6 +373,7 @@ def main() -> None:
             model_kwargs["trunk_channels"] = args.channels
         if args.blocks is not None:
             model_kwargs["num_blocks"] = args.blocks
+        model_kwargs["board_size"] = args.board_size
         if args.value_channels is not None:
             model_kwargs["value_channels"] = args.value_channels
         if args.se:
@@ -385,9 +387,11 @@ def main() -> None:
 
     # Load dataset
     print(f"Loading data: {args.data}")
+    # A checkpoint carries its own board size; a fresh run takes it from the flag.
+    board_size = model.model_kwargs.get("board_size", 11)
     dataset = SelfPlayDataset(
         args.data, window_size=args.window, z_lambda=args.value_lambda,
-        legacy=args.legacy_data,
+        legacy=args.legacy_data, board_size=board_size,
     )
     print(f"Loaded {len(dataset)} samples" + (f" (window={args.window})" if args.window > 0 else ""))
 

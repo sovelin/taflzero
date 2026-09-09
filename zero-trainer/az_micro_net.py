@@ -81,11 +81,16 @@ class ResidualBlock(nn.Module):
 
 
 class TaflAlphaZeroNet(nn.Module):
-    """Input: (B, in_channels, 11, 11). Outputs: policy logits (B, 4840), value (B, 1)."""
+    """Input: (B, in_channels, N, N). Outputs: policy logits (B, N*N*4*(N-1)), value (B, 1).
+
+    `board_size` is the side of the board (11 for Hnefatafl, 9 for Tablut). It sets the
+    policy head width and the flattened size of the value/corner MLPs.
+    """
 
     def __init__(
         self,
         in_channels: int = 11,
+        board_size: int = 11,
         trunk_channels: int = 48,
         num_blocks: int = 4,
         value_channels: int = 1,
@@ -95,8 +100,14 @@ class TaflAlphaZeroNet(nn.Module):
     ) -> None:
         super().__init__()
 
+        self.board_size = board_size
+        self.sqs = board_size * board_size
+        # 4 directions x (board_size - 1) possible slide distances
+        self.policy_channels = 4 * (board_size - 1)
+
         self.model_kwargs = {
             "in_channels": in_channels,
+            "board_size": board_size,
             "trunk_channels": trunk_channels,
             "num_blocks": num_blocks,
             "value_channels": value_channels,
@@ -122,12 +133,13 @@ class TaflAlphaZeroNet(nn.Module):
             for i in range(num_blocks)
         ])
 
-        # Policy head: Conv1x1 -> BN -> ReLU -> Conv1x1, flatten 40 * 11 * 11 = 4840
+        # Policy head: Conv1x1 -> BN -> ReLU -> Conv1x1, flattened to
+        # policy_channels * board_size * board_size (4840 on an 11x11 board).
         self.policy_head = nn.Sequential(
             nn.Conv2d(trunk_channels, trunk_channels, kernel_size=1, bias=False),
             nn.BatchNorm2d(trunk_channels),
             nn.ReLU(inplace=True),
-            nn.Conv2d(trunk_channels, 40, kernel_size=1, bias=True),
+            nn.Conv2d(trunk_channels, self.policy_channels, kernel_size=1, bias=True),
         )
 
         # Value head: Conv1x1 -> BN -> ReLU -> flatten -> MLP -> tanh
@@ -137,7 +149,7 @@ class TaflAlphaZeroNet(nn.Module):
             nn.ReLU(inplace=True),
         )
         self.value_mlp = nn.Sequential(
-            nn.Linear(value_channels * 11 * 11, 64),
+            nn.Linear(value_channels * self.sqs, 64),
             nn.ReLU(inplace=True),
             nn.Linear(64, 1),
             nn.Tanh(),
@@ -146,12 +158,12 @@ class TaflAlphaZeroNet(nn.Module):
         # Training-only auxiliary heads: not referenced by forward(), so they
         # never appear in the exported ONNX graph.
         if aux_heads:
-            # Opponent reply policy over the same 4840 action space
+            # Opponent reply policy over the same action space
             self.aux_policy_head = nn.Sequential(
                 nn.Conv2d(trunk_channels, trunk_channels, kernel_size=1, bias=False),
                 nn.BatchNorm2d(trunk_channels),
                 nn.ReLU(inplace=True),
-                nn.Conv2d(trunk_channels, 40, kernel_size=1, bias=True),
+                nn.Conv2d(trunk_channels, self.policy_channels, kernel_size=1, bias=True),
             )
             # King escape corner: 4 corners + "no corner escape"
             self.aux_corner_head = nn.Sequential(
@@ -160,7 +172,7 @@ class TaflAlphaZeroNet(nn.Module):
                 nn.ReLU(inplace=True),
             )
             self.aux_corner_mlp = nn.Sequential(
-                nn.Linear(2 * 11 * 11, 32),
+                nn.Linear(2 * self.sqs, 32),
                 nn.ReLU(inplace=True),
                 nn.Linear(32, 5),
             )
@@ -169,8 +181,8 @@ class TaflAlphaZeroNet(nn.Module):
         return self.trunk(self.stem(x))
 
     def _policy_from(self, head: nn.Module, x: Tensor) -> Tensor:
-        # permute to square-major order: (B,40,11,11) -> (B,11,11,40) -> (B,4840)
-        # matches Rust index: from_square * 40 + move_type
+        # permute to square-major order: (B,C,N,N) -> (B,N,N,C) -> (B,N*N*C)
+        # matches Rust index: from_square * policy_channels + move_type
         return head(x).permute(0, 2, 3, 1).flatten(start_dim=1)
 
     def _value_from(self, x: Tensor) -> Tensor:

@@ -216,6 +216,27 @@ fn parse_args() -> CliArgs {
     }
 }
 
+/// Loads a net and refuses to continue unless it fits the board this run will play on.
+fn load_net_for(path: &str, board_size: usize) -> NeuralNet {
+    let nn = match NeuralNet::new(path, board_size) {
+        Ok(nn) => nn,
+        Err(err) => {
+            eprintln!("{err}");
+            std::process::exit(2);
+        }
+    };
+
+    if nn.board_size() != board_size {
+        eprintln!(
+            "neural net '{path}' is built for a {0}x{0} board but this run needs {board_size}x{board_size}",
+            nn.board_size()
+        );
+        std::process::exit(2);
+    }
+
+    nn
+}
+
 fn main() {
     let cli = parse_args();
 
@@ -236,7 +257,7 @@ fn main() {
         board.set_rules(cli.variant);
         board.set_fen(&fen).expect("Invalid FEN");
 
-        let mut nn = NeuralNet::new(&cli.net_path, board.board_size());
+        let mut nn = load_net_for(&cli.net_path, board.board_size());
 
         let bit_pos = BitPosition::from_board(&board, 1);
         let mut input = vec![0f32; get_sample_size(board.board_size())];
@@ -267,7 +288,7 @@ fn main() {
     }
 
     if let Some(path) = cli.datagen_path {
-        let mut nn = NeuralNet::new(&cli.net_path, cli.variant.rules().board_size);
+        let mut nn = load_net_for(&cli.net_path, cli.variant.rules().board_size);
 
         let log_path = cli
             .gamelog_path

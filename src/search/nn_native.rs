@@ -10,14 +10,38 @@ use ort::execution_providers::DirectMLExecutionProvider;
 #[cfg(feature = "openvino")]
 use ort::execution_providers::OpenVINO;
 use ort::session::Session;
-use ort::value::Value;
+use ort::value::{Value, ValueType};
 
 pub struct NeuralNet {
     session: Session,
+    board_size: usize,
+}
+
+/// Board side the model was built for, read from its input shape `[_, planes, N, N]`.
+/// `None` when the model leaves the spatial dimensions dynamic, in which case there is
+/// nothing to check against.
+fn model_board_size(session: &Session) -> Option<usize> {
+    let input = session.inputs().first()?;
+
+    let ValueType::Tensor { shape, .. } = input.dtype() else {
+        return None;
+    };
+
+    let height = *shape.get(2)?;
+    let width = *shape.get(3)?;
+
+    if height < 1 || width < 1 || height != width {
+        return None;
+    }
+
+    Some(height as usize)
 }
 
 impl NeuralNet {
-    pub fn new(path: &str, board_size: usize) -> Self {
+    /// Loads a net and records the board size it was built for. `board_size` is only a
+    /// fallback for models that leave their spatial dimensions dynamic — the model's own
+    /// shape wins. Whether that size fits the current board is checked at search time.
+    pub fn new(path: &str, board_size: usize) -> Result<Self, String> {
         println!("[NN] Loading model: {}", path);
 
         #[cfg(all(feature = "cuda", feature = "directml"))]
@@ -63,7 +87,9 @@ impl NeuralNet {
 
         let mut session = builder
             .commit_from_file(path)
-            .expect("Unable to commit neural net");
+            .map_err(|err| format!("cannot load neural net '{path}': {err}"))?;
+
+        let board_size = model_board_size(&session).unwrap_or(board_size);
 
         // Warmup + benchmark
         let warmup_input = vec![0.0f32; get_sample_size(board_size) * 8];
@@ -95,15 +121,29 @@ impl NeuralNet {
             bench_runs
         );
 
-        Self { session }
+        Ok(Self {
+            session,
+            board_size,
+        })
     }
 
-    pub fn from_bytes(data: &[u8]) -> Self {
+    pub fn from_bytes(data: &[u8], board_size: usize) -> Result<Self, String> {
         let session = Session::builder()
-            .unwrap()
+            .map_err(|err| format!("cannot create ONNX session: {err}"))?
             .commit_from_memory(data)
-            .expect("Unable to load neural net from bytes");
-        Self { session }
+            .map_err(|err| format!("cannot load neural net from bytes: {err}"))?;
+
+        let board_size = model_board_size(&session).unwrap_or(board_size);
+
+        Ok(Self {
+            session,
+            board_size,
+        })
+    }
+
+    /// Board side this net can evaluate.
+    pub fn board_size(&self) -> usize {
+        self.board_size
     }
 
     pub fn evaluate_position(&mut self, pos: &BitPosition, geom: &Precomputed) -> NnOutput {
