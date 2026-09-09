@@ -51,6 +51,7 @@ pub fn check_terminal(board: &mut Board) -> Option<Side> {
     None
 }
 
+#[derive(PartialEq, Eq)]
 pub enum TerminalType {
     KingCaptured = 1,
     ThreefoldRepetition = 2,
