@@ -23,7 +23,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const wasmPath = path.join(__dirname, "node_modules/taflzero/taflzero_bg.wasm");
 const wasmBytes = readFileSync(wasmPath);
 
-const { default: init, EngineClient, Side, get_total_squares } = await import("taflzero");
+const { default: init, EngineClient, Side } = await import("taflzero");
 await init(wasmBytes);
 
 // ─── CLI args ────────────────────────────────────────────────────────────────
@@ -276,7 +276,7 @@ function createOpening(movesCount, variant) {
     const engine = createEngineClient(variant);
 
     for (let i = 0; i < movesCount; i++) {
-        const totalSq = get_total_squares();
+        const totalSq = engine.total_squares();
         const moves = [];
         for (let sq = 0; sq < totalSq; sq++) {
             const sqMoves = engine.get_available_moves_from_square(sq);
