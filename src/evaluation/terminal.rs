@@ -1,6 +1,6 @@
+use crate::board::Board;
 use crate::board::types::{Side, Square};
 use crate::board::utils::is_edge_square;
-use crate::board::{Board, PRECOMPUTED};
 use crate::evaluation::check_fort::check_fort;
 use crate::evaluation::defenders_is_surrounded::defenders_is_surrounded;
 
@@ -13,7 +13,10 @@ pub fn is_threefold_repetition(board: &Board) -> bool {
 }
 
 fn has_corners_win(board: &Board) -> bool {
-    PRECOMPUTED.corners_sq.contains(&(board.king_sq as Square))
+    board
+        .precomputed()
+        .corners_sq
+        .contains(&(board.king_sq as Square))
 }
 
 fn has_edge_win(board: &Board) -> bool {
@@ -65,7 +68,11 @@ pub fn get_terminal(board: &mut Board) -> Option<TerminalType> {
         return Some(TerminalType::ThreefoldRepetition);
     }
 
-    if PRECOMPUTED.corners_sq.contains(&(board.king_sq as Square)) {
+    if board
+        .precomputed()
+        .corners_sq
+        .contains(&(board.king_sq as Square))
+    {
         return Some(TerminalType::KingOnCorner);
     }
 

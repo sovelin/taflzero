@@ -1,7 +1,7 @@
+use crate::board::Board;
 use crate::board::constants::HOLE;
 use crate::board::types::{Piece, Square};
 use crate::board::utils::is_edge_square;
-use crate::board::{Board, PRECOMPUTED};
 use crate::utils::bfs::bfs;
 
 fn is_calculate_needed(board: &Board) -> bool {
@@ -17,7 +17,7 @@ fn is_calculate_needed(board: &Board) -> bool {
         return true;
     }
 
-    let all_neighbors = &PRECOMPUTED.all_neighbors[board.last_move_to as usize];
+    let all_neighbors = &board.precomputed().all_neighbors[board.last_move_to as usize];
 
     let mut attackers_nearby_count = 0;
 
@@ -52,7 +52,7 @@ pub fn defenders_is_surrounded(board: &Board) -> bool {
 
     let inner_squares = bfs(
         |sq| board.board[sq] != Piece::ATTACKER,
-        &PRECOMPUTED.vertical_horizontal_neighbors,
+        &board.precomputed().vertical_horizontal_neighbors,
         &start_sqs,
     );
 

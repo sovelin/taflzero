@@ -1,25 +1,23 @@
 use crate::board::types::{Piece, Square};
-use crate::board::{Board, PRECOMPUTED, get_side_by_piece};
-use std::sync::LazyLock;
-
-pub static HOSTILE_CORNERS_SQS: LazyLock<[usize; 5]> = LazyLock::new(|| {
-    [
-        PRECOMPUTED.corners_sq[0],
-        PRECOMPUTED.corners_sq[1],
-        PRECOMPUTED.corners_sq[2],
-        PRECOMPUTED.corners_sq[3],
-        PRECOMPUTED.throne_sq,
-    ]
-});
-
-pub static NOT_HOSTILE_SQS: LazyLock<[usize; 1]> = LazyLock::new(|| [PRECOMPUTED.throne_sq]);
+use crate::board::{Board, get_side_by_piece};
 
 pub fn is_potential_thread(board: &Board, target_sq: Square, enemy_sq: Square) -> bool {
     let is_hostile_corners = board.get_rules().is_corners_hostile;
+    let precomputed = board.precomputed();
+
+    let hostile = [
+        precomputed.corners_sq[0],
+        precomputed.corners_sq[1],
+        precomputed.corners_sq[2],
+        precomputed.corners_sq[3],
+        precomputed.throne_sq,
+    ];
+
+    let not_hostile = [precomputed.throne_sq];
 
     if board.board[enemy_sq] == Piece::EMPTY
-        && ((is_hostile_corners && HOSTILE_CORNERS_SQS.contains(&enemy_sq))
-            || (!is_hostile_corners && NOT_HOSTILE_SQS.contains(&enemy_sq)))
+        && ((is_hostile_corners && hostile.contains(&enemy_sq))
+            || (!is_hostile_corners && not_hostile.contains(&enemy_sq)))
     {
         return true;
     }
