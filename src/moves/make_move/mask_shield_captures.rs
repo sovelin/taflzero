@@ -1,4 +1,3 @@
-use crate::board::constants::BOARD_SIZE;
 use crate::board::types::OptionalSquare;
 use crate::board::types::{Piece, Side, Square};
 use crate::board::utils::{get_col, get_row};
@@ -14,22 +13,22 @@ pub enum ShieldSide {
 }
 
 #[inline]
-fn shield_sides(to_sq: Square) -> Vec<ShieldSide> {
+fn shield_sides(to_sq: Square, board: &Board) -> Vec<ShieldSide> {
     use ShieldSide::*;
     let mut v = Vec::<ShieldSide>::new();
-    let r = PRECOMPUTED.row[to_sq];
-    let c = PRECOMPUTED.col[to_sq];
+    let r = board.precomputed().row[to_sq];
+    let c = board.precomputed().col[to_sq];
 
     if r <= 1 {
         v.push(Bottom);
     }
-    if r >= BOARD_SIZE - 2 {
+    if r >= board.board_size() - 2 {
         v.push(Top);
     }
     if c <= 1 {
         v.push(Left);
     }
-    if c >= BOARD_SIZE - 2 {
+    if c >= board.board_size() - 2 {
         v.push(Right);
     }
     v
@@ -158,7 +157,7 @@ pub fn make_shield_wall_captures(board: &mut Board, to_sq: Square, undo: &mut Un
         return;
     }
 
-    let sides = shield_sides(to_sq);
+    let sides = shield_sides(to_sq, &board);
     if sides.is_empty() {
         return;
     }

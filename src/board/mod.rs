@@ -89,7 +89,7 @@ impl Board {
 
         self.precomputed = Arc::new(Precomputed::new(board_size));
         self.row_occ.resize(board_size, 0);
-        self.row_occ.resize(board_size, 0);
+        self.col_occ.resize(board_size, 0);
         self.clear();
     }
 
@@ -170,8 +170,8 @@ impl Board {
         self.board[sq] = piece;
         self.zobrist ^= ZOBRIST_DATA.table[piece as usize][sq];
 
-        let row = PRECOMPUTED.row[sq];
-        let col = PRECOMPUTED.col[sq];
+        let row = self.precomputed.row[sq];
+        let col = self.precomputed.col[sq];
 
         self.row_occ[row] |= 1 << col;
         self.col_occ[col] |= 1 << row;
@@ -193,8 +193,8 @@ impl Board {
         self.zobrist ^= ZOBRIST_DATA.table[piece as usize][sq];
         self.board[sq] = Piece::EMPTY;
 
-        let row = PRECOMPUTED.row[sq];
-        let col = PRECOMPUTED.col[sq];
+        let row = self.precomputed.row[sq];
+        let col = self.precomputed.col[sq];
 
         self.row_occ[row] &= !(1 << col);
         self.col_occ[col] &= !(1 << row);

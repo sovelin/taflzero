@@ -3,6 +3,7 @@ mod tests {
     use std::error::Error;
 
     use crate::board::Board;
+    use crate::board::rules::RulesEnum;
     use crate::board::types::Piece;
     use crate::board::utils::get_square_from_algebraic;
     use crate::tests::*;
@@ -76,5 +77,43 @@ mod tests {
         // expect_defenders_count(&b, 1);
 
         Ok(())
+    }
+
+    // Both occupancy vectors are indexed by row/column, so each must be exactly as long
+    // as the side of the board the variant asks for.
+    #[test]
+    fn set_rules_resizes_both_occupancy_vectors() {
+        for variant in [
+            RulesEnum::Copenhagen11x11,
+            RulesEnum::Historical11x11,
+            RulesEnum::Tablut9x9,
+        ] {
+            let mut board = Board::new();
+            board.set_rules(variant);
+
+            let board_size = board.board_size();
+
+            assert_eq!(
+                board.row_occ.len(),
+                board_size,
+                "row_occ length on a {board_size}x{board_size} board"
+            );
+            assert_eq!(
+                board.col_occ.len(),
+                board_size,
+                "col_occ length on a {board_size}x{board_size} board"
+            );
+        }
+    }
+
+    // Switching back to a bigger board must leave both vectors long enough to index.
+    #[test]
+    fn set_rules_grows_occupancy_when_switching_back_to_11x11() {
+        let mut board = Board::new();
+        board.set_rules(RulesEnum::Tablut9x9);
+        board.set_rules(RulesEnum::Copenhagen11x11);
+
+        assert_eq!(board.row_occ.len(), 11);
+        assert_eq!(board.col_occ.len(), 11);
     }
 }
