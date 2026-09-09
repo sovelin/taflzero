@@ -17,23 +17,21 @@ use crate::board::fen::FenError;
 use crate::board::rules::{Rules, RulesEnum};
 use crate::board::types::{OptionalSquare, Piece, Side, Square, ZobristHash};
 use crate::board::utils::get_square;
-use crate::board::zobrist::ZOBRIST_DATA;
+use crate::board::zobrist::ZobristData;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 use std::sync::Arc;
 
 pub struct Board {
-    // TODO(board-size): these stay SQS-sized arrays while PRECOMPUTED moved to Vecs.
-    // They are indexed by the same squares, so both must be built for the same size.
-    pub board: [Piece; SQS],
-    pub attackers: [Square; ATTACKERS_MAX],
-    pub defenders: [Square; DEFENDERS_MAX],
+    pub board: Vec<Piece>,
+    pub attackers: Vec<Square>,
+    pub defenders: Vec<Square>,
+    pub piece_index_by_square: Vec<u8>,
     pub king_sq: OptionalSquare,
     pub attackers_count: u8,
     pub defenders_count: u8,
     pub row_occ: Vec<u16>,
     pub col_occ: Vec<u16>,
-    pub piece_index_by_square: [u8; SQS],
     pub side_to_move: Side,
     pub zobrist: ZobristHash,
     pub rep_table: HashMap<ZobristHash, u8>,
@@ -41,6 +39,7 @@ pub struct Board {
     pub was_capture: bool,
     pub rules: RulesEnum,
     precomputed: Arc<Precomputed>,
+    zobrist_data: ZobristData,
 }
 
 impl Default for Board {
@@ -51,26 +50,31 @@ impl Default for Board {
 
 impl Board {
     pub fn new() -> Self {
-        let rules = RulesEnum::Copenhagen11x11;
+        Self::from_rules(RulesEnum::Copenhagen11x11)
+    }
+
+    pub fn from_rules(rules: RulesEnum) -> Self {
         let board_size = rules.rules().board_size;
+        let sqs = board_size * board_size;
 
         Self {
-            board: [Piece::EMPTY; SQS],
-            attackers: [0; ATTACKERS_MAX],
-            defenders: [0; DEFENDERS_MAX],
+            board: vec![Piece::EMPTY; sqs],
+            attackers: vec![0; sqs],
+            defenders: vec![0; sqs],
             king_sq: HOLE,
             attackers_count: 0,
             defenders_count: 0,
             row_occ: vec![0; board_size],
             col_occ: vec![0; board_size],
-            piece_index_by_square: [0; SQS],
+            piece_index_by_square: vec![0; sqs],
             side_to_move: Side::ATTACKERS,
             zobrist: 0,
             rep_table: HashMap::new(),
             last_move_to: HOLE,
             was_capture: false,
             rules,
-            precomputed: Arc::new(Precomputed::default()),
+            precomputed: Arc::new(Precomputed::new(board_size)),
+            zobrist_data: ZobristData::new(board_size),
         }
     }
 
@@ -84,30 +88,13 @@ impl Board {
     }
 
     pub fn set_rules(&mut self, rules: RulesEnum) {
-        self.rules = rules;
-        let board_size = rules.rules().board_size;
-
-        self.precomputed = Arc::new(Precomputed::new(board_size));
-        self.row_occ.resize(board_size, 0);
-        self.col_occ.resize(board_size, 0);
-        self.clear();
+        let brd = Board::from_rules(rules);
+        *self = brd;
     }
 
     pub fn clear(&mut self) {
-        self.board.fill(Piece::EMPTY);
-        self.attackers.fill(0);
-        self.defenders.fill(0);
-        self.king_sq = HOLE;
-        self.attackers_count = 0;
-        self.defenders_count = 0;
-        self.row_occ.fill(0);
-        self.col_occ.fill(0);
-        self.piece_index_by_square.fill(0);
-        self.side_to_move = Side::ATTACKERS;
-        self.zobrist = 0;
-        self.rep_table.clear();
-        self.last_move_to = HOLE;
-        self.set_side_to_move(Side::ATTACKERS);
+        let brd = Board::from_rules(self.rules);
+        *self = brd;
     }
 
     fn set_side_to_move(&mut self, side: Side) {
@@ -168,7 +155,7 @@ impl Board {
 
     pub fn set_piece(&mut self, sq: Square, piece: Piece) -> Result<(), &'static str> {
         self.board[sq] = piece;
-        self.zobrist ^= ZOBRIST_DATA.table[piece as usize][sq];
+        self.zobrist ^= self.zobrist_data.table[piece as usize][sq];
 
         let row = self.precomputed.row[sq];
         let col = self.precomputed.col[sq];
@@ -190,7 +177,7 @@ impl Board {
     pub fn clear_piece(&mut self, sq: Square) {
         let piece = self.board[sq];
 
-        self.zobrist ^= ZOBRIST_DATA.table[piece as usize][sq];
+        self.zobrist ^= self.zobrist_data.table[piece as usize][sq];
         self.board[sq] = Piece::EMPTY;
 
         let row = self.precomputed.row[sq];
@@ -210,7 +197,7 @@ impl Board {
 
     pub fn flip_side(&mut self) {
         self.set_side_to_move(Side::opposite(self.side_to_move));
-        self.zobrist ^= ZOBRIST_DATA.side;
+        self.zobrist ^= self.zobrist_data.side;
     }
 
     pub fn setup_initial_position(&mut self) -> Result<(), FenError> {
@@ -224,7 +211,7 @@ impl Board {
         }
     }
 
-    pub fn board(&self) -> &[Piece; SQS] {
+    pub fn board(&self) -> &Vec<Piece> {
         &self.board
     }
 

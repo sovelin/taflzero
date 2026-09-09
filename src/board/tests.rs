@@ -3,6 +3,7 @@ mod tests {
     use std::error::Error;
 
     use crate::board::Board;
+    use crate::board::constants::SQS;
     use crate::board::rules::RulesEnum;
     use crate::board::types::Piece;
     use crate::board::utils::get_square_from_algebraic;
@@ -115,5 +116,47 @@ mod tests {
 
         assert_eq!(board.row_occ.len(), 11);
         assert_eq!(board.col_occ.len(), 11);
+    }
+
+    const ALL_VARIANTS: [RulesEnum; 3] = [
+        RulesEnum::Copenhagen11x11,
+        RulesEnum::Historical11x11,
+        RulesEnum::Tablut9x9,
+    ];
+
+    // The piece buffer handed out by `Board::board()` is what `EngineClient::get_board_state`
+    // forwards to the UI, so it must describe exactly the squares the variant has — no
+    // phantom cells past the end of a smaller board.
+    #[test]
+    fn exported_board_state_matches_variant_square_count() {
+        for variant in ALL_VARIANTS {
+            let mut board = Board::new();
+            board.set_rules(variant);
+
+            let board_size = board.board_size();
+            let sqs = board_size * board_size;
+
+            assert_eq!(
+                board.board().len(),
+                sqs,
+                "board state exported for a {board_size}x{board_size} variant"
+            );
+        }
+    }
+
+    // Guard, not a bug report: the fixed-size arrays inside `Board` are sized by the SQS
+    // constant. They are wide enough for every variant that exists today, and this test
+    // fires the moment a variant larger than 11x11 is added.
+    #[test]
+    fn fixed_size_arrays_cover_every_variant() {
+        for variant in ALL_VARIANTS {
+            let board_size = variant.rules().board_size;
+            let sqs = board_size * board_size;
+
+            assert!(
+                sqs <= SQS,
+                "{board_size}x{board_size} needs {sqs} squares but Board is fixed at {SQS}"
+            );
+        }
     }
 }
