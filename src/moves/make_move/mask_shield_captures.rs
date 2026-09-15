@@ -110,7 +110,7 @@ fn captures_on_side(board: &mut Board, side: Side, which: ShieldSide, undo: &mut
 
     let mut start_sq: usize = 0;
 
-    while let Some(next_sq) = it.and_then(|sq| next(sq, &precomputed)) {
+    while let Some(next_sq) = it.and_then(|sq| next(sq, precomputed)) {
         if is_last(next_sq, precomputed) {
             if seq.len() > 1 {
                 if board.last_move_to == start_sq as OptionalSquare
@@ -167,7 +167,7 @@ pub fn make_shield_wall_captures(board: &mut Board, to_sq: Square, undo: &mut Un
         return;
     }
 
-    let sides = shield_sides(to_sq, &board);
+    let sides = shield_sides(to_sq, board);
     if sides.is_empty() {
         return;
     }

@@ -69,7 +69,7 @@ pub fn check_fort(board: &mut Board) -> bool {
         return false;
     }
 
-    if !king_has_moves(board) || !king_contacts_edge(&board) {
+    if !king_has_moves(board) || !king_contacts_edge(board) {
         return false;
     }
 

@@ -1,4 +1,5 @@
-target
+target*
+az-dataset
 node_modules
 
 # Models

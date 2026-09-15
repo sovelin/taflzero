@@ -127,8 +127,7 @@ impl Precomputed {
         let mut vertical_horizontal_neighbors: Vec<Vec<Square>> = Vec::with_capacity(sqs);
         let mut all_neighbors: Vec<Vec<Square>> = Vec::with_capacity(sqs);
         let mut manhattan_distance: Vec<Vec<usize>> = vec![vec![0; sqs]; sqs];
-        let mut sandwich_captures: Vec<Vec<SandwichCapture>> =
-            (0..sqs).map(|_| Vec::new()).collect();
+        let mut sandwich_captures: Vec<Vec<SandwichCapture>> = Vec::with_capacity(sqs);
 
         for i in 0..sqs {
             row.push(get_row(i, board_size));
@@ -143,7 +142,9 @@ impl Precomputed {
             bottom_left_neighbor.push(get_bottom_left_neighbor(i, board_size));
             vertical_horizontal_neighbors.push(get_vertical_horizontal_neighbors(i, board_size));
             all_neighbors.push(get_all_neighbors(i, board_size));
-            precompute_sandwich_captures(&mut sandwich_captures[i], i, board_size);
+            let mut captures = Vec::new();
+            precompute_sandwich_captures(&mut captures, i, board_size);
+            sandwich_captures.push(captures);
         }
 
         for i in 0..sqs {
