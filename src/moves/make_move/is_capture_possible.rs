@@ -38,9 +38,10 @@ pub fn is_capture_possible(
     enemy_sq_1: Square,
     enemy_sq_2: Square,
 ) -> bool {
-    if board.rules.rules().is_king_strong && board.board[target_sq] == Piece::KING
-        || board.board[target_sq] == Piece::EMPTY
-    {
+    // The king never falls to the ordinary sandwich rule — `make_move` decides its fate
+    // separately, because the throne acts as a hostile side for it and the number of
+    // attackers required depends on the variant.
+    if board.board[target_sq] == Piece::KING || board.board[target_sq] == Piece::EMPTY {
         return false;
     }
 

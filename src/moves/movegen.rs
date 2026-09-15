@@ -6,9 +6,6 @@ use crate::moves::mv::Move;
 
 pub static MAX_MOVES: usize = 1024;
 
-static THRONE_MASK: u16 = 1 << 5;
-static BOUNDARY_MASK: u16 = 1 | (1 << 10);
-
 pub struct MoveGen {
     pub moves: [Move; MAX_MOVES],
     pub move_scores: [i32; MAX_MOVES],
@@ -48,12 +45,18 @@ impl MoveGen {
     ) -> u16 {
         let mut beam = beam;
         if piece == Piece::ATTACKER || piece == Piece::DEFENDER {
-            if row_or_col_index == 5 {
-                beam &= !THRONE_MASK;
+            // The line index is the row for a horizontal slide and the column for a
+            // vertical one, so the throne lies on it exactly when the index is the
+            // centre — and then it sits at the centre bit of the line.
+            let centre = (board.board_size() - 1) / 2;
+            let last = board.board_size() - 1;
+
+            if row_or_col_index == centre {
+                beam &= !(1 << centre);
             } else if board.get_rules().is_corners_hostile
-                && (row_or_col_index == 0 || row_or_col_index == 10)
+                && (row_or_col_index == 0 || row_or_col_index == last)
             {
-                beam &= !BOUNDARY_MASK;
+                beam &= !(1 | (1 << last));
             }
         }
 

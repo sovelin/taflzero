@@ -14,16 +14,25 @@ pub fn king_is_surrounded(board: &Board) -> bool {
             .count();
         surround_count >= 4
     } else {
-        // Historical: weak king
-        // On throne: all 4 neighbors must be attackers
-        // Off throne: 2 attackers on the same axis (left+right or top+bottom)
+        // Weak king. Must stay in step with the capture check in `make_move`, which owns
+        // the extra condition this predicate cannot express: that the move just played is
+        // the one closing the surround.
+        //   on the throne        -> all four sides
+        //   beside an empty one  -> the three remaining sides, the throne being the fourth
+        //   anywhere else        -> two attackers on one axis
         let is_attacker =
             |sq_opt: Option<usize>| sq_opt.is_some_and(|sq| board.board[sq] == Piece::ATTACKER);
+        let neighbors = &precomputed.vertical_horizontal_neighbors[king_sq];
+        let throne = precomputed.throne_sq;
 
-        if king_sq == precomputed.throne_sq {
-            precomputed.vertical_horizontal_neighbors[king_sq]
+        if king_sq == throne {
+            neighbors
                 .iter()
                 .all(|&sq| board.board[sq] == Piece::ATTACKER)
+        } else if neighbors.contains(&throne) && board.board[throne] == Piece::EMPTY {
+            neighbors
+                .iter()
+                .all(|&sq| sq == throne || board.board[sq] == Piece::ATTACKER)
         } else {
             let left_right = is_attacker(precomputed.left_neighbor[king_sq])
                 && is_attacker(precomputed.right_neighbor[king_sq]);

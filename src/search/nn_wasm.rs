@@ -49,11 +49,11 @@ pub struct NeuralNet {
 impl NeuralNet {
     /// No model is loaded in Rust anymore — the JS NN worker owns it, so there is no
     /// shape to validate here; the board size is recorded for symmetry with native.
-    pub fn new(_path: &str, board_size: usize) -> Result<Self, String> {
+    pub fn new(_path: &str, board_size: usize, _batch_size: usize) -> Result<Self, String> {
         Ok(NeuralNet { board_size })
     }
 
-    pub fn from_bytes(_data: &[u8], board_size: usize) -> Result<Self, String> {
+    pub fn from_bytes(_data: &[u8], board_size: usize, _batch_size: usize) -> Result<Self, String> {
         Ok(NeuralNet { board_size })
     }
 

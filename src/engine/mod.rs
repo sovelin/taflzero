@@ -5,7 +5,7 @@ use wasm_bindgen::prelude::*;
 use crate::board::Board;
 use crate::board::rules::RulesEnum;
 use crate::board::types::Side;
-use crate::mcts::MCTSTree;
+use crate::mcts::{MCTSConfig, MCTSTree};
 use crate::mv::Move;
 use crate::search::nn::NeuralNet;
 use crate::search::search_data::SearchData;
@@ -43,8 +43,12 @@ impl Engine {
             .setup_initial_position()
             .expect("Setup initial position failed");
 
-        let nn = NeuralNet::new(config.net_path.as_str(), board.board_size())
-            .unwrap_or_else(|err| panic!("{err}"));
+        let nn = NeuralNet::new(
+            config.net_path.as_str(),
+            board.board_size(),
+            MCTSConfig::default_play().batch_size,
+        )
+        .unwrap_or_else(|err| panic!("{err}"));
 
         Self {
             search_data: SearchData::new(),
@@ -83,14 +87,22 @@ impl Engine {
 
     /// Loads a net. The previous one is kept on failure.
     pub fn set_nn(&mut self, path: String) -> Result<(), String> {
-        let nn = NeuralNet::new(path.as_str(), self.board.board_size())?;
+        let nn = NeuralNet::new(
+            path.as_str(),
+            self.board.board_size(),
+            MCTSConfig::default_play().batch_size,
+        )?;
         self.config.net_path = path;
         self.nn = nn;
         Ok(())
     }
 
     pub fn set_nn_bytes(&mut self, data: &[u8]) -> Result<(), String> {
-        self.nn = NeuralNet::from_bytes(data, self.board.board_size())?;
+        self.nn = NeuralNet::from_bytes(
+            data,
+            self.board.board_size(),
+            MCTSConfig::default_play().batch_size,
+        )?;
         Ok(())
     }
 

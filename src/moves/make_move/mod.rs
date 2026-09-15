@@ -59,19 +59,34 @@ impl Board {
                 precomputed.vertical_horizontal_neighbors[king_sq].contains(&to)
                     && king_is_surrounded(self)
             } else {
-                // Historical: weak king captured when the moving piece completes a sandwich
-                // on one axis (left+right or top+bottom). Pre-existing pairs don't trigger capture.
+                // Weak king: captured when the move just played completes the surround.
+                // Pre-existing pairs don't trigger it — a king that stepped between two
+                // attackers of its own accord is safe until one of them moves.
                 let is_attacker = |sq_opt: Option<Square>| {
                     sq_opt.is_some_and(|sq| self.board[sq] == Piece::ATTACKER)
                 };
-                (precomputed.left_neighbor[king_sq] == Some(to)
-                    && is_attacker(precomputed.right_neighbor[king_sq]))
-                    || (precomputed.right_neighbor[king_sq] == Some(to)
-                        && is_attacker(precomputed.left_neighbor[king_sq]))
-                    || (precomputed.top_neighbor[king_sq] == Some(to)
-                        && is_attacker(precomputed.bottom_neighbor[king_sq]))
-                    || (precomputed.bottom_neighbor[king_sq] == Some(to)
-                        && is_attacker(precomputed.top_neighbor[king_sq]))
+                let neighbors = &precomputed.vertical_horizontal_neighbors[king_sq];
+                let throne = precomputed.throne_sq;
+
+                // On the throne, or beside it while it stands empty, the throne itself
+                // acts as one hostile side — so every other side must hold an attacker.
+                if king_sq == throne
+                    || (neighbors.contains(&throne) && self.board[throne] == Piece::EMPTY)
+                {
+                    neighbors.contains(&to)
+                        && neighbors
+                            .iter()
+                            .all(|&sq| sq == throne || self.board[sq] == Piece::ATTACKER)
+                } else {
+                    (precomputed.left_neighbor[king_sq] == Some(to)
+                        && is_attacker(precomputed.right_neighbor[king_sq]))
+                        || (precomputed.right_neighbor[king_sq] == Some(to)
+                            && is_attacker(precomputed.left_neighbor[king_sq]))
+                        || (precomputed.top_neighbor[king_sq] == Some(to)
+                            && is_attacker(precomputed.bottom_neighbor[king_sq]))
+                        || (precomputed.bottom_neighbor[king_sq] == Some(to)
+                            && is_attacker(precomputed.top_neighbor[king_sq]))
+                }
             };
 
             if should_capture {

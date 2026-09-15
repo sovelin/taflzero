@@ -33,6 +33,7 @@ function parseArgs(argv) {
         mainNet: null,
         candidateNet: null,
         engineBin: null,
+        candidateBin: null,
         nodes: 200,
         movetime: 0,
         openingMoves: 16,
@@ -54,6 +55,7 @@ function parseArgs(argv) {
         if (a === "--main-net") args.mainNet = next();
         else if (a === "--candidate-net") args.candidateNet = next();
         else if (a === "--engine-bin") args.engineBin = next();
+        else if (a === "--candidate-bin") args.candidateBin = next();
         else if (a === "--nodes") args.nodes = parseInt(next(), 10);
         else if (a === "--movetime") args.movetime = parseInt(next(), 10);
         else if (a === "--opening-moves") args.openingMoves = parseInt(next(), 10);
@@ -411,12 +413,12 @@ async function playPair(ctrl, mainEngine, candidateEngine, opening, limit) {
 
 // ─── Worker ──────────────────────────────────────────────────────────────────
 
-async function createWorkerPair(engineBin, mainNet, candidateNet, variant) {
+async function createWorkerPair(engineBin, mainNet, candidateNet, variant, candidateBin) {
     const mainArgs = ["--net", path.normalize(mainNet)];
     const candidateArgs = ["--net", path.normalize(candidateNet)];
 
     const mainEngine = new UciEngine(engineBin, mainArgs, "main");
-    const candidateEngine = new UciEngine(engineBin, candidateArgs, "candidate");
+    const candidateEngine = new UciEngine(candidateBin || engineBin, candidateArgs, "candidate");
     const ctrl = new GameController(variant);
 
     await mainEngine.init();
@@ -457,7 +459,7 @@ async function main() {
     // Spawn worker pairs
     const workerPairs = [];
     for (let i = 0; i < args.workers; i++) {
-        workerPairs.push(await createWorkerPair(args.engineBin, args.mainNet, args.candidateNet, args.variant));
+        workerPairs.push(await createWorkerPair(args.engineBin, args.mainNet, args.candidateNet, args.variant, args.candidateBin));
     }
 
     let pairsCompleted = 0;

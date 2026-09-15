@@ -17,7 +17,8 @@ import struct
 from pathlib import Path
 
 BIT_POSITION_BYTES = 49  # 48 planes + 1 stm
-LEGAL_MASK_BYTES = 605   # ceil(4840 / 8)
+import os as _os
+LEGAL_MASK_BYTES = int(_os.environ.get("TZ_MASK_BYTES", 605))   # ceil(4840 / 8)
 
 
 def classify_outcome(stm: int, value: int) -> str:

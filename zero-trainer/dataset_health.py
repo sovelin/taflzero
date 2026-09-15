@@ -27,7 +27,8 @@ import struct
 from collections import deque
 
 BIT_POSITION_BYTES = 50   # 48 planes + stm + rep
-LEGAL_MASK_BYTES = 605
+import os as _os
+LEGAL_MASK_BYTES = int(_os.environ.get("TZ_MASK_BYTES", 605))
 
 FLAG_POLICY_VALID = 1 << 0
 FLAG_LAST_OF_GAME = 1 << 1

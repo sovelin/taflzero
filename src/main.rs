@@ -2,6 +2,7 @@ use taflzero::board::Board;
 use taflzero::board::position_export::BitPosition;
 use taflzero::board::rules::{RulesEnum, get_rules_enum_from_str};
 use taflzero::gen_train_data::{DatagenConfig, SearchConfig, gen_train_data};
+use taflzero::mcts::MCTSConfig;
 use taflzero::search::nn::{NeuralNet, fill_input};
 use taflzero::{ConsoleClient, UciRunState, get_sample_size};
 
@@ -217,8 +218,9 @@ fn parse_args() -> CliArgs {
 }
 
 /// Loads a net and refuses to continue unless it fits the board this run will play on.
-fn load_net_for(path: &str, board_size: usize) -> NeuralNet {
-    let nn = match NeuralNet::new(path, board_size) {
+/// `batch_size` is the shape the session is warmed up on — see `NeuralNet::batch_size`.
+fn load_net_for(path: &str, board_size: usize, batch_size: usize) -> NeuralNet {
+    let nn = match NeuralNet::new(path, board_size, batch_size) {
         Ok(nn) => nn,
         Err(err) => {
             eprintln!("{err}");
@@ -257,7 +259,11 @@ fn main() {
         board.set_rules(cli.variant);
         board.set_fen(&fen).expect("Invalid FEN");
 
-        let mut nn = load_net_for(&cli.net_path, board.board_size());
+        let mut nn = load_net_for(
+            &cli.net_path,
+            board.board_size(),
+            MCTSConfig::default_play().batch_size,
+        );
 
         let bit_pos = BitPosition::from_board(&board, 1);
         let mut input = vec![0f32; get_sample_size(board.board_size())];
@@ -288,7 +294,11 @@ fn main() {
     }
 
     if let Some(path) = cli.datagen_path {
-        let mut nn = load_net_for(&cli.net_path, cli.variant.rules().board_size);
+        let mut nn = load_net_for(
+            &cli.net_path,
+            cli.variant.rules().board_size,
+            MCTSConfig::default_train().batch_size,
+        );
 
         let log_path = cli
             .gamelog_path

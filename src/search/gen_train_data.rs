@@ -144,10 +144,10 @@ fn play_game(
         // Temperature schedule: 1.0 for the opening, then linear decay to a
         // small floor so late-game move selection stays mostly greedy but can
         // still deviate when candidates are nearly equal.
-        let temperature = if move_number < 30 {
+        let temperature = if move_number < 8 {
             1.0
-        } else if move_number < 80 {
-            1.0 - 0.85 * ((move_number - 30) as f32 / 50.0)
+        } else if move_number < 22 {
+            1.0 - 0.85 * ((move_number - 8) as f32 / 14.0)
         } else {
             0.15
         };

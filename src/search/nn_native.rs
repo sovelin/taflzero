@@ -15,6 +15,10 @@ use ort::value::{Value, ValueType};
 pub struct NeuralNet {
     session: Session,
     board_size: usize,
+    /// Every call is padded to this many samples. ORT plans execution per input
+    /// shape, and a shape it has not seen pays that cost on every run, so the search
+    /// must always hand it the one shape the session was warmed up on.
+    batch_size: usize,
 }
 
 /// Board side the model was built for, read from its input shape `[_, planes, N, N]`.
@@ -41,7 +45,7 @@ impl NeuralNet {
     /// Loads a net and records the board size it was built for. `board_size` is only a
     /// fallback for models that leave their spatial dimensions dynamic — the model's own
     /// shape wins. Whether that size fits the current board is checked at search time.
-    pub fn new(path: &str, board_size: usize) -> Result<Self, String> {
+    pub fn new(path: &str, board_size: usize, batch_size: usize) -> Result<Self, String> {
         println!("[NN] Loading model: {}", path);
 
         #[cfg(all(feature = "cuda", feature = "directml"))]
@@ -101,9 +105,9 @@ impl NeuralNet {
         let board_size = model_board_size(&session).unwrap_or(board_size);
 
         // Warmup + benchmark
-        let warmup_input = vec![0.0f32; get_sample_size(board_size) * 8];
+        let warmup_input = vec![0.0f32; get_sample_size(board_size) * batch_size];
         let warmup_tensor = Array::from_shape_vec(
-            IxDyn(&[8, NUM_PLANES, board_size, board_size]),
+            IxDyn(&[batch_size, NUM_PLANES, board_size, board_size]),
             warmup_input,
         )
         .unwrap();
@@ -116,10 +120,12 @@ impl NeuralNet {
         let bench_runs = 10;
         let start = std::time::Instant::now();
         for _ in 0..bench_runs {
-            let input = vec![0.0f32; get_sample_size(board_size) * 8];
-            let tensor =
-                Array::from_shape_vec(IxDyn(&[8, NUM_PLANES, board_size, board_size]), input)
-                    .unwrap();
+            let input = vec![0.0f32; get_sample_size(board_size) * batch_size];
+            let tensor = Array::from_shape_vec(
+                IxDyn(&[batch_size, NUM_PLANES, board_size, board_size]),
+                input,
+            )
+            .unwrap();
             let val = Value::from_array(tensor).unwrap();
             let _ = session.run(ort::inputs![val]).unwrap();
         }
@@ -133,10 +139,11 @@ impl NeuralNet {
         Ok(Self {
             session,
             board_size,
+            batch_size,
         })
     }
 
-    pub fn from_bytes(data: &[u8], board_size: usize) -> Result<Self, String> {
+    pub fn from_bytes(data: &[u8], board_size: usize, batch_size: usize) -> Result<Self, String> {
         let session = Session::builder()
             .map_err(|err| format!("cannot create ONNX session: {err}"))?
             .commit_from_memory(data)
@@ -147,6 +154,7 @@ impl NeuralNet {
         Ok(Self {
             session,
             board_size,
+            batch_size,
         })
     }
 
@@ -165,10 +173,13 @@ impl NeuralNet {
         geom: &Precomputed,
     ) -> Vec<NnOutput> {
         let batch_size = positions.len();
-        let input_data = build_input_data(positions, geom);
+        // Pad up to the warmed-up shape; the tail samples are zeros and discarded.
+        let padded = self.batch_size.max(batch_size);
+        let mut input_data = build_input_data(positions, geom);
+        input_data.resize(padded * get_sample_size(geom.board_size), 0.0);
 
         let input_tensor = Array::from_shape_vec(
-            IxDyn(&[batch_size, NUM_PLANES, geom.board_size, geom.board_size]),
+            IxDyn(&[padded, NUM_PLANES, geom.board_size, geom.board_size]),
             input_data,
         )
         .unwrap();
