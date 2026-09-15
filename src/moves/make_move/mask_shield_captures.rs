@@ -1,8 +1,7 @@
-use crate::board::constants::BOARD_SIZE;
 use crate::board::types::OptionalSquare;
 use crate::board::types::{Piece, Side, Square};
 use crate::board::utils::{get_col, get_row};
-use crate::board::{Board, PRECOMPUTED, get_side_by_piece};
+use crate::board::{Board, Precomputed, get_side_by_piece};
 use crate::moves::undo::{CapturedPiece, UndoMove};
 
 #[derive(Copy, Clone)]
@@ -14,64 +13,72 @@ pub enum ShieldSide {
 }
 
 #[inline]
-fn shield_sides(to_sq: Square) -> Vec<ShieldSide> {
+fn shield_sides(to_sq: Square, board: &Board) -> Vec<ShieldSide> {
     use ShieldSide::*;
     let mut v = Vec::<ShieldSide>::new();
-    let r = PRECOMPUTED.row[to_sq];
-    let c = PRECOMPUTED.col[to_sq];
+    let r = board.precomputed().row[to_sq];
+    let c = board.precomputed().col[to_sq];
 
     if r <= 1 {
         v.push(Bottom);
     }
-    if r >= BOARD_SIZE - 2 {
+    if r >= board.board_size() - 2 {
         v.push(Top);
     }
     if c <= 1 {
         v.push(Left);
     }
-    if c >= BOARD_SIZE - 2 {
+    if c >= board.board_size() - 2 {
         v.push(Right);
     }
     v
 }
 
 type ShieldItertor = (
-    fn() -> Square,
-    fn(Square) -> bool,
-    fn(Square) -> Option<Square>,
-    fn(Square) -> Option<Square>,
-    fn(Square) -> bool,
+    fn(&Precomputed) -> Square,
+    fn(Square, &Precomputed) -> bool,
+    fn(Square, &Precomputed) -> Option<Square>,
+    fn(Square, &Precomputed) -> Option<Square>,
+    fn(Square, &Precomputed) -> bool,
 );
 
 fn captures_on_side(board: &mut Board, side: Side, which: ShieldSide, undo: &mut UndoMove) {
     let (start, is_last, next, roof, is_always_friend): ShieldItertor = match which {
         ShieldSide::Top => (
-            || PRECOMPUTED.top_left_sq,
-            |sq: Square| sq == PRECOMPUTED.top_right_sq,
-            |sq: Square| PRECOMPUTED.right_neighbor[sq],
-            |sq: Square| PRECOMPUTED.bottom_neighbor[sq],
-            |sq: Square| sq == PRECOMPUTED.top_left_sq || sq == PRECOMPUTED.top_right_sq,
+            |precomputed| precomputed.top_left_sq,
+            |sq: Square, precomputed| sq == precomputed.top_right_sq,
+            |sq: Square, precomputed| precomputed.right_neighbor[sq],
+            |sq: Square, precomputed| precomputed.bottom_neighbor[sq],
+            |sq: Square, precomputed| {
+                sq == precomputed.top_left_sq || sq == precomputed.top_right_sq
+            },
         ),
         ShieldSide::Bottom => (
-            || PRECOMPUTED.bottom_left_sq,
-            |sq: Square| sq == PRECOMPUTED.bottom_right_sq,
-            |sq: Square| PRECOMPUTED.right_neighbor[sq],
-            |sq: Square| PRECOMPUTED.top_neighbor[sq],
-            |sq: Square| sq == PRECOMPUTED.bottom_left_sq || sq == PRECOMPUTED.bottom_right_sq,
+            |precomputed| precomputed.bottom_left_sq,
+            |sq: Square, precomputed| sq == precomputed.bottom_right_sq,
+            |sq: Square, precomputed| precomputed.right_neighbor[sq],
+            |sq: Square, precomputed| precomputed.top_neighbor[sq],
+            |sq: Square, precomputed| {
+                sq == precomputed.bottom_left_sq || sq == precomputed.bottom_right_sq
+            },
         ),
         ShieldSide::Left => (
-            || PRECOMPUTED.top_left_sq,
-            |sq: Square| sq == PRECOMPUTED.bottom_left_sq,
-            |sq: Square| PRECOMPUTED.bottom_neighbor[sq],
-            |sq: Square| PRECOMPUTED.right_neighbor[sq],
-            |sq: Square| sq == PRECOMPUTED.top_left_sq || sq == PRECOMPUTED.bottom_left_sq,
+            |precomputed| precomputed.top_left_sq,
+            |sq: Square, precomputed| sq == precomputed.bottom_left_sq,
+            |sq: Square, precomputed| precomputed.bottom_neighbor[sq],
+            |sq: Square, precomputed| precomputed.right_neighbor[sq],
+            |sq: Square, precomputed| {
+                sq == precomputed.top_left_sq || sq == precomputed.bottom_left_sq
+            },
         ),
         ShieldSide::Right => (
-            || PRECOMPUTED.top_right_sq,
-            |sq: Square| sq == PRECOMPUTED.bottom_right_sq,
-            |sq: Square| PRECOMPUTED.bottom_neighbor[sq],
-            |sq: Square| PRECOMPUTED.left_neighbor[sq],
-            |sq: Square| sq == PRECOMPUTED.top_right_sq || sq == PRECOMPUTED.bottom_right_sq,
+            |precomputed| precomputed.top_right_sq,
+            |sq: Square, precomputed| sq == precomputed.bottom_right_sq,
+            |sq: Square, precomputed| precomputed.bottom_neighbor[sq],
+            |sq: Square, precomputed| precomputed.left_neighbor[sq],
+            |sq: Square, precomputed| {
+                sq == precomputed.top_right_sq || sq == precomputed.bottom_right_sq
+            },
         ),
     };
 
@@ -87,7 +94,9 @@ fn captures_on_side(board: &mut Board, side: Side, which: ShieldSide, undo: &mut
     let mut seq: Vec<Square> = Vec::new();
     let mut seq_started = true;
 
-    let mut it = Some(start());
+    let precomputed = board.precomputed();
+
+    let mut it = Some(start(precomputed));
 
     fn add_to_undo_and_remove(sq: Square, board: &mut Board, undo: &mut UndoMove) {
         if board.board[sq] == Piece::KING {
@@ -101,8 +110,8 @@ fn captures_on_side(board: &mut Board, side: Side, which: ShieldSide, undo: &mut
 
     let mut start_sq: usize = 0;
 
-    while let Some(next_sq) = it.and_then(next) {
-        if is_last(next_sq) {
+    while let Some(next_sq) = it.and_then(|sq| next(sq, precomputed)) {
+        if is_last(next_sq, precomputed) {
             if seq.len() > 1 {
                 if board.last_move_to == start_sq as OptionalSquare
                     || board.last_move_to == next_sq as OptionalSquare
@@ -111,10 +120,10 @@ fn captures_on_side(board: &mut Board, side: Side, which: ShieldSide, undo: &mut
                 }
                 seq.clear();
             }
-        } else if board.board[next_sq] == Piece::EMPTY && !is_always_friend(next_sq) {
+        } else if board.board[next_sq] == Piece::EMPTY && !is_always_friend(next_sq, precomputed) {
             seq.clear();
             seq_started = false;
-        } else if is_friend(board, side, next_sq) || is_always_friend(next_sq) {
+        } else if is_friend(board, side, next_sq) || is_always_friend(next_sq, precomputed) {
             if seq.len() > 1 {
                 if board.last_move_to == start_sq as OptionalSquare
                     || board.last_move_to == next_sq as OptionalSquare
@@ -126,7 +135,7 @@ fn captures_on_side(board: &mut Board, side: Side, which: ShieldSide, undo: &mut
             seq_started = true;
             start_sq = next_sq;
         } else if !seq_started {
-        } else if let Some(roof_sq) = roof(next_sq) {
+        } else if let Some(roof_sq) = roof(next_sq, precomputed) {
             if is_friend(board, side, roof_sq) {
                 seq.push(next_sq);
             } else {
@@ -146,19 +155,19 @@ fn captures_on_side(board: &mut Board, side: Side, which: ShieldSide, undo: &mut
     }
 }
 
-fn is_edged_sq(sq: Square) -> bool {
-    let row = get_row(sq);
-    let col = get_col(sq);
+fn is_edged_sq(sq: Square, board_size: usize) -> bool {
+    let row = get_row(sq, board_size);
+    let col = get_col(sq, board_size);
 
-    row == 0 || row == BOARD_SIZE - 1 || col == 0 || col == BOARD_SIZE - 1
+    row == 0 || row == board_size - 1 || col == 0 || col == board_size - 1
 }
 
 pub fn make_shield_wall_captures(board: &mut Board, to_sq: Square, undo: &mut UndoMove) {
-    if !is_edged_sq(to_sq) {
+    if !is_edged_sq(to_sq, board.board_size()) {
         return;
     }
 
-    let sides = shield_sides(to_sq);
+    let sides = shield_sides(to_sq, board);
     if sides.is_empty() {
         return;
     }

@@ -1,5 +1,6 @@
 pub mod constants;
 mod fen;
+mod masks;
 pub mod position_export;
 mod precompute;
 pub mod rules;
@@ -11,31 +12,34 @@ mod zobrist;
 pub use precompute::*;
 pub use utils::get_side_by_piece;
 
-use crate::board::constants::{ATTACKERS_MAX, BOARD_SIZE, DEFENDERS_MAX, HOLE, SQS};
+use crate::board::constants::HOLE;
 use crate::board::fen::FenError;
 use crate::board::rules::{Rules, RulesEnum};
 use crate::board::types::{OptionalSquare, Piece, Side, Square, ZobristHash};
-use crate::board::utils::get_square;
-use crate::board::zobrist::ZOBRIST_DATA;
+use crate::board::utils::{get_sq_algebraic, get_square, get_square_from_algebraic};
+use crate::board::zobrist::ZobristData;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
+use std::sync::Arc;
 
 pub struct Board {
-    pub board: [Piece; SQS],
-    pub attackers: [Square; ATTACKERS_MAX],
-    pub defenders: [Square; DEFENDERS_MAX],
+    pub board: Vec<Piece>,
+    pub attackers: Vec<Square>,
+    pub defenders: Vec<Square>,
+    pub piece_index_by_square: Vec<u8>,
     pub king_sq: OptionalSquare,
     pub attackers_count: u8,
     pub defenders_count: u8,
-    pub row_occ: [u16; BOARD_SIZE],
-    pub col_occ: [u16; BOARD_SIZE],
-    pub piece_index_by_square: [u8; SQS],
+    pub row_occ: Vec<u16>,
+    pub col_occ: Vec<u16>,
     pub side_to_move: Side,
     pub zobrist: ZobristHash,
     pub rep_table: HashMap<ZobristHash, u8>,
     pub last_move_to: OptionalSquare,
     pub was_capture: bool,
     pub rules: RulesEnum,
+    precomputed: Arc<Precomputed>,
+    zobrist_data: ZobristData,
 }
 
 impl Default for Board {
@@ -46,23 +50,37 @@ impl Default for Board {
 
 impl Board {
     pub fn new() -> Self {
+        Self::from_rules(RulesEnum::Copenhagen11x11)
+    }
+
+    pub fn from_rules(rules: RulesEnum) -> Self {
+        let board_size = rules.rules().board_size;
+        let sqs = board_size * board_size;
+
         Self {
-            board: [Piece::EMPTY; SQS],
-            attackers: [0; ATTACKERS_MAX],
-            defenders: [0; DEFENDERS_MAX],
+            board: vec![Piece::EMPTY; sqs],
+            attackers: vec![0; sqs],
+            defenders: vec![0; sqs],
             king_sq: HOLE,
             attackers_count: 0,
             defenders_count: 0,
-            row_occ: [0; BOARD_SIZE],
-            col_occ: [0; BOARD_SIZE],
-            piece_index_by_square: [0; SQS],
+            row_occ: vec![0; board_size],
+            col_occ: vec![0; board_size],
+            piece_index_by_square: vec![0; sqs],
             side_to_move: Side::ATTACKERS,
             zobrist: 0,
             rep_table: HashMap::new(),
             last_move_to: HOLE,
             was_capture: false,
-            rules: RulesEnum::Copenhagen11x11,
+            rules,
+            precomputed: Arc::new(Precomputed::new(board_size)),
+            zobrist_data: ZobristData::new(board_size),
         }
+    }
+
+    #[inline]
+    pub fn precomputed(&self) -> &Arc<Precomputed> {
+        &self.precomputed
     }
 
     pub fn get_rules(&self) -> Rules {
@@ -70,24 +88,13 @@ impl Board {
     }
 
     pub fn set_rules(&mut self, rules: RulesEnum) {
-        self.rules = rules;
+        let brd = Board::from_rules(rules);
+        *self = brd;
     }
 
     pub fn clear(&mut self) {
-        self.board.fill(Piece::EMPTY);
-        self.attackers.fill(0);
-        self.defenders.fill(0);
-        self.king_sq = HOLE;
-        self.attackers_count = 0;
-        self.defenders_count = 0;
-        self.row_occ.fill(0);
-        self.col_occ.fill(0);
-        self.piece_index_by_square.fill(0);
-        self.side_to_move = Side::ATTACKERS;
-        self.zobrist = 0;
-        self.rep_table.clear();
-        self.last_move_to = HOLE;
-        self.set_side_to_move(Side::ATTACKERS);
+        let brd = Board::from_rules(self.rules);
+        *self = brd;
     }
 
     fn set_side_to_move(&mut self, side: Side) {
@@ -95,7 +102,7 @@ impl Board {
     }
 
     fn set_attacker(&mut self, sq: Square) -> Result<(), &'static str> {
-        if self.attackers_count >= ATTACKERS_MAX as u8 {
+        if self.attackers_count >= self.sqs() as u8 {
             return Err("Exceeded maximum attackers capacity");
         }
 
@@ -107,7 +114,7 @@ impl Board {
     }
 
     fn set_defender(&mut self, sq: Square) -> Result<(), &'static str> {
-        if self.defenders_count >= DEFENDERS_MAX as u8 {
+        if self.defenders_count >= self.sqs() as u8 {
             return Err("Exceeded maximum defenders capacity");
         }
 
@@ -148,10 +155,10 @@ impl Board {
 
     pub fn set_piece(&mut self, sq: Square, piece: Piece) -> Result<(), &'static str> {
         self.board[sq] = piece;
-        self.zobrist ^= ZOBRIST_DATA.table[piece as usize][sq];
+        self.zobrist ^= self.zobrist_data.table[piece as usize][sq];
 
-        let row = PRECOMPUTED.row[sq];
-        let col = PRECOMPUTED.col[sq];
+        let row = self.precomputed.row[sq];
+        let col = self.precomputed.col[sq];
 
         self.row_occ[row] |= 1 << col;
         self.col_occ[col] |= 1 << row;
@@ -170,11 +177,11 @@ impl Board {
     pub fn clear_piece(&mut self, sq: Square) {
         let piece = self.board[sq];
 
-        self.zobrist ^= ZOBRIST_DATA.table[piece as usize][sq];
+        self.zobrist ^= self.zobrist_data.table[piece as usize][sq];
         self.board[sq] = Piece::EMPTY;
 
-        let row = PRECOMPUTED.row[sq];
-        let col = PRECOMPUTED.col[sq];
+        let row = self.precomputed.row[sq];
+        let col = self.precomputed.col[sq];
 
         self.row_occ[row] &= !(1 << col);
         self.col_occ[col] &= !(1 << row);
@@ -190,7 +197,7 @@ impl Board {
 
     pub fn flip_side(&mut self) {
         self.set_side_to_move(Side::opposite(self.side_to_move));
-        self.zobrist ^= ZOBRIST_DATA.side;
+        self.zobrist ^= self.zobrist_data.side;
     }
 
     pub fn setup_initial_position(&mut self) -> Result<(), FenError> {
@@ -204,14 +211,30 @@ impl Board {
         }
     }
 
-    pub fn board(&self) -> &[Piece; SQS] {
+    pub fn board(&self) -> &Vec<Piece> {
         &self.board
+    }
+
+    pub fn board_size(&self) -> usize {
+        self.rules.rules().board_size
+    }
+
+    pub fn get_square_from_algebraic(&self, coord: &str) -> Square {
+        get_square_from_algebraic(coord, self.board_size())
+    }
+
+    pub fn get_sq_algebraic(&self, sq: Square) -> String {
+        get_sq_algebraic(sq, self.board_size())
+    }
+
+    pub fn sqs(&self) -> usize {
+        self.board_size() * self.board_size()
     }
 }
 
 impl Debug for Board {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let size = BOARD_SIZE;
+        let size = self.board_size();
         let cell_gap = "  ";
 
         write!(f, "    ")?;
@@ -275,10 +298,12 @@ impl Display for Board {
 pub fn set_board_from_str(board: &mut Board, position: &str) {
     board.clear();
 
+    let board_size = board.board_size();
+
     for (r, line) in position.lines().enumerate() {
         let mut index = 0;
         for ch in line.chars() {
-            let sq = get_square(BOARD_SIZE - 1 - r, index);
+            let sq = get_square(board_size - 1 - r, index, board_size);
             let piece = match ch {
                 'A' => Some(Piece::ATTACKER),
                 'D' => Some(Piece::DEFENDER),

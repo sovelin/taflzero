@@ -2,8 +2,9 @@ use taflzero::board::Board;
 use taflzero::board::position_export::BitPosition;
 use taflzero::board::rules::{RulesEnum, get_rules_enum_from_str};
 use taflzero::gen_train_data::{DatagenConfig, SearchConfig, gen_train_data};
-use taflzero::search::nn::{NeuralNet, POLICY_SIZE, SAMPLE_SIZE, fill_input};
-use taflzero::{ConsoleClient, UciRunState};
+use taflzero::mcts::MCTSConfig;
+use taflzero::search::nn::{NeuralNet, fill_input};
+use taflzero::{ConsoleClient, UciRunState, get_sample_size};
 
 struct CliArgs {
     net_path: String,
@@ -216,6 +217,28 @@ fn parse_args() -> CliArgs {
     }
 }
 
+/// Loads a net and refuses to continue unless it fits the board this run will play on.
+/// `batch_size` is the shape the session is warmed up on — see `NeuralNet::batch_size`.
+fn load_net_for(path: &str, board_size: usize, batch_size: usize) -> NeuralNet {
+    let nn = match NeuralNet::new(path, board_size, batch_size) {
+        Ok(nn) => nn,
+        Err(err) => {
+            eprintln!("{err}");
+            std::process::exit(2);
+        }
+    };
+
+    if nn.board_size() != board_size {
+        eprintln!(
+            "neural net '{path}' is built for a {0}x{0} board but this run needs {board_size}x{board_size}",
+            nn.board_size()
+        );
+        std::process::exit(2);
+    }
+
+    nn
+}
+
 fn main() {
     let cli = parse_args();
 
@@ -232,16 +255,21 @@ fn main() {
     // Debug: dump NN input tensor + raw policy/value for one FEN, as JSON to stdout.
     // Used to cross-check the Rust inference pipeline against the Python model.
     if let Some(fen) = cli.nn_eval_fen {
-        let mut nn = NeuralNet::new(&cli.net_path);
         let mut board = Board::new();
         board.set_rules(cli.variant);
         board.set_fen(&fen).expect("Invalid FEN");
 
-        let bit_pos = BitPosition::from_board(&board, 1);
-        let mut input = vec![0f32; SAMPLE_SIZE];
-        fill_input(&mut input, &bit_pos);
+        let mut nn = load_net_for(
+            &cli.net_path,
+            board.board_size(),
+            MCTSConfig::default_play().batch_size,
+        );
 
-        let out = nn.evaluate_position(&bit_pos);
+        let bit_pos = BitPosition::from_board(&board, 1);
+        let mut input = vec![0f32; get_sample_size(board.board_size())];
+        fill_input(&mut input, &bit_pos, board.precomputed());
+
+        let out = nn.evaluate_position(&bit_pos, board.precomputed());
 
         let f2s = |xs: &[f32]| {
             xs.iter()
@@ -260,13 +288,17 @@ fn main() {
         println!("  \"bitpos_bytes\": [{bytes}],");
         println!("  \"input\": [{}],", f2s(&input));
         println!("  \"value\": {},", out.value);
-        println!("  \"policy\": [{}]", f2s(&out.policy[..POLICY_SIZE]));
+        println!("  \"policy\": [{}]", f2s(&out.policy));
         println!("}}");
         return;
     }
 
     if let Some(path) = cli.datagen_path {
-        let mut nn = NeuralNet::new(&cli.net_path);
+        let mut nn = load_net_for(
+            &cli.net_path,
+            cli.variant.rules().board_size,
+            MCTSConfig::default_train().batch_size,
+        );
 
         let log_path = cli
             .gamelog_path

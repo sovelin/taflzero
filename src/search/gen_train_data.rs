@@ -102,6 +102,7 @@ fn terminal_type_str(t: &TerminalType) -> &'static str {
         TerminalType::KingOnCorner => "def_corner",
         TerminalType::DefendersSurrounded => "atk_surrounded",
         TerminalType::FortCheck => "def_fort",
+        TerminalType::KingOnEdge => "def_edge",
     }
 }
 
@@ -143,10 +144,10 @@ fn play_game(
         // Temperature schedule: 1.0 for the opening, then linear decay to a
         // small floor so late-game move selection stays mostly greedy but can
         // still deviate when candidates are nearly equal.
-        let temperature = if move_number < 30 {
+        let temperature = if move_number < 8 {
             1.0
-        } else if move_number < 80 {
-            1.0 - 0.85 * ((move_number - 30) as f32 / 50.0)
+        } else if move_number < 22 {
+            1.0 - 0.85 * ((move_number - 8) as f32 / 14.0)
         } else {
             0.15
         };
@@ -206,10 +207,20 @@ fn play_game(
             }
 
             if let Some(terminal) = get_terminal(&mut board) {
-                let result = check_terminal(&mut board).unwrap();
                 println!("{}", board);
                 terminal_str = Some(terminal_type_str(&terminal));
-                game_result = Some(result);
+
+                // Repetitions are dropped, not stored as draws: they teach nothing and
+                // dilute the value target.
+                if terminal == TerminalType::ThreefoldRepetition {
+                    game_result = None;
+                    break;
+                }
+
+                game_result = Some(
+                    check_terminal(&mut board)
+                        .expect("get_terminal and check_terminal disagree on a terminal position"),
+                );
                 break;
             }
         } else {
@@ -464,12 +475,12 @@ pub fn dump_single_sample(output_path: &str) {
     }
 
     let first_mv = move_gen.moves[0];
-    let move_index = move_to_policy_index(first_mv);
+    let move_index = move_to_policy_index(first_mv, board.board_size());
 
-    let mut legal_mask = LegalMask::new();
+    let mut legal_mask = LegalMask::new(board.board_size());
     for i in 0..move_gen.count {
         let mv = move_gen.moves[i];
-        let idx = move_to_policy_index(mv);
+        let idx = move_to_policy_index(mv, board.board_size());
         legal_mask.set(idx as usize);
     }
 

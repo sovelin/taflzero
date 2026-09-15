@@ -4,7 +4,7 @@ use crate::Engine;
 use crate::board::rules::get_rules_enum_from_str;
 use crate::board::types::{Piece, Side, Square};
 use crate::movegen::MoveGen;
-use crate::mv::{Move, create_move_from_algebraic};
+use crate::mv::Move;
 use crate::terminal::check_terminal;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -82,19 +82,22 @@ impl EngineClient {
 
     #[wasm_bindgen]
     pub fn move_str_to_num(&self, mv_str: &str) -> Result<u32, String> {
-        let mv = create_move_from_algebraic(mv_str)?;
+        let mv = self.engine.board().create_move_from_algebraic(mv_str)?;
         Ok(mv.raw())
     }
 
     #[wasm_bindgen]
     pub fn move_num_to_str(&self, mv_num: u32) -> String {
         let mv = Move::from_u32(mv_num);
-        format!("{}", mv)
+        self.engine.board().move_to_algebraic(mv)
     }
 
     #[wasm_bindgen]
     pub fn create_move_from_algebraic(&self, mv_str: &str) -> Move {
-        create_move_from_algebraic(mv_str).unwrap()
+        self.engine
+            .board()
+            .create_move_from_algebraic(mv_str)
+            .unwrap()
     }
 
     #[wasm_bindgen]
@@ -150,11 +153,25 @@ impl EngineClient {
             .unwrap();
     }
 
+    /// Fails on an unknown variant instead of silently keeping the old one — a caller
+    /// that mistypes it would otherwise adjudicate the wrong game.
     #[wasm_bindgen]
-    pub fn set_variant(&mut self, variant: &str) {
-        let variant = get_rules_enum_from_str(variant);
-        if let Some(variant) = variant {
-            self.engine.set_variant(variant);
-        }
+    pub fn set_variant(&mut self, variant: &str) -> Result<(), String> {
+        let rules = get_rules_enum_from_str(variant)
+            .ok_or_else(|| format!("unknown variant '{variant}'"))?;
+        self.engine.set_variant(rules);
+        Ok(())
+    }
+
+    /// Board side of the current variant.
+    #[wasm_bindgen]
+    pub fn board_size(&self) -> usize {
+        self.engine.board().board_size()
+    }
+
+    /// Number of squares on the current variant's board.
+    #[wasm_bindgen]
+    pub fn total_squares(&self) -> usize {
+        self.engine.board().sqs()
     }
 }

@@ -414,14 +414,14 @@ fn expand_node(
 ) -> f32 {
     let rep = board.rep_table.get(&board.zobrist).copied().unwrap_or(1);
     let position = BitPosition::from_board(board, rep);
-    let nn_out = nn.evaluate_position(&position);
+    let nn_out = nn.evaluate_position(&position, board.precomputed());
 
     let moves = get_left_moves(board, move_gen);
 
     if !moves.is_empty() {
         let logits: Vec<f32> = moves
             .iter()
-            .map(|mv| nn_out.policy[move_to_policy_index(*mv) as usize])
+            .map(|mv| nn_out.policy[move_to_policy_index(*mv, board.board_size()) as usize])
             .collect();
         let priors = softmax(&logits);
 
@@ -713,14 +713,15 @@ fn select_leaf(
 fn expand_with_nn_output(
     tree: &mut MCTSTree,
     node_id: NodeId,
-    policy: &[f32; 4840],
+    policy: &[f32],
     legal_moves: &[Move],
     child_zobrists: &[ZobristHash],
+    board_size: usize,
 ) {
     if !legal_moves.is_empty() {
         let logits: Vec<f32> = legal_moves
             .iter()
-            .map(|mv| policy[move_to_policy_index(*mv) as usize])
+            .map(|mv| policy[move_to_policy_index(*mv, board_size) as usize])
             .collect();
         let priors = softmax(&logits);
 
@@ -808,7 +809,10 @@ pub fn mcts_search(
     let mut move_stack = MovesStack::new();
     let mut iteration: u64 = 0;
     let mut last_report_ms: u64 = 0;
-    let mut sys = System::new_all();
+    // Only the memory reading is needed, and only when a limit is set. `System::new_all`
+    // enumerates every process, disk and sensor on the machine — half a second on a busy
+    // Windows box, paid on every single search.
+    let mut sys = tree.memory_limit.map(|_| System::new());
 
     let root_id = tree.get_root_id();
     let batch_size = config.batch_size.max(1);
@@ -833,7 +837,10 @@ pub fn mcts_search(
 
     loop {
         // Check memory limit
-        if check_memory && let Some(memory_limit) = tree.memory_limit {
+        if check_memory
+            && let Some(memory_limit) = tree.memory_limit
+            && let Some(sys) = sys.as_mut()
+        {
             check_memory = false;
             sys.refresh_memory();
             let used_memory = sys.used_memory() as f64 / sys.total_memory() as f64;
@@ -913,7 +920,7 @@ pub fn mcts_search(
                 .iter()
                 .map(|&i| pending_leaves[i].position.as_ref().unwrap())
                 .collect();
-            nn.evaluate_batch(&positions)
+            nn.evaluate_batch(&positions, board.precomputed())
         } else {
             vec![]
         };
@@ -944,6 +951,7 @@ pub fn mcts_search(
                         &nn_out.policy,
                         &leaf.legal_moves,
                         &leaf.child_zobrists,
+                        board.board_size(),
                     );
                 }
 

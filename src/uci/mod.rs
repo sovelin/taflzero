@@ -2,7 +2,7 @@ pub mod constants;
 pub mod engine_client;
 
 use crate::Engine;
-use crate::mv::create_move_from_algebraic;
+use crate::mv::move_to_algebraic;
 use crate::search::search_root::SearchIterationResponse;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,11 +35,11 @@ pub struct UciController<O: UciOutput> {
     search_thread: Option<SearchThread>,
 }
 
-fn format_info_message(iteration: SearchIterationResponse) -> String {
+fn format_info_message(iteration: SearchIterationResponse, board_size: usize) -> String {
     let pv_str = iteration
         .pv()
         .iter()
-        .map(|m| format!("{:?}", m))
+        .map(|m| move_to_algebraic(*m, board_size))
         .collect::<Vec<_>>()
         .join(" ");
 
@@ -107,7 +107,10 @@ impl<O: UciOutput> UciController<O> {
 
         if send_bestmove && !thread.bestmove_sent.swap(true, Ordering::SeqCst) {
             if let Some(mv) = engine.best_move() {
-                self.output.send(&format!("bestmove {:?}", mv));
+                self.output.send(&format!(
+                    "bestmove {}",
+                    engine.board().move_to_algebraic(mv)
+                ));
             } else {
                 self.output.send("bestmove (none)");
             }
@@ -137,7 +140,10 @@ impl<O: UciOutput> UciController<O> {
 
             if !bestmove_sent_clone.swap(true, Ordering::SeqCst) {
                 if let Some(mv) = engine.best_move() {
-                    output.send(&format!("bestmove {:?}", mv));
+                    output.send(&format!(
+                        "bestmove {}",
+                        engine.board().move_to_algebraic(mv)
+                    ));
                 } else {
                     output.send("bestmove (none)");
                 }
@@ -186,7 +192,7 @@ impl<O: UciOutput> UciController<O> {
                 ));
                 self.send("option name NNFile type string default ./default_nn.onnx");
                 self.send("option name MultiPV type spin default 1 min 1 max 1000");
-                self.send("option name Variant type combo default copenhagen11x11 var copenhagen11x11 var historical11x11");
+                self.send("option name Variant type combo default copenhagen11x11 var copenhagen11x11 var historical11x11 var tablut9x9");
                 self.send("option name MemoryLimit type string default None");
                 UciRunState::Continue
             }
@@ -199,8 +205,10 @@ impl<O: UciOutput> UciController<O> {
                     let path = tokens[4];
                     #[cfg(not(target_arch = "wasm32"))]
                     self.collect_search(false);
-                    self.engine_mut().set_nn(path.to_string());
-                    self.send(&format!("NN file set to '{}'", path));
+                    match self.engine_mut().set_nn(path.to_string()) {
+                        Ok(()) => self.send(&format!("NN file set to '{}'", path)),
+                        Err(err) => self.send(&format!("cannot set NN file: {err}")),
+                    }
                 } else if tokens.len() >= 5
                     && tokens[1] == "name"
                     && tokens[2] == "MultiPV"
@@ -227,6 +235,10 @@ impl<O: UciOutput> UciController<O> {
                     return if let Some(rules) = rules {
                         self.engine_mut().set_variant(rules);
                         self.send(&format!("variant set to {}", variant));
+
+                        if let Err(err) = self.engine().check_nn_matches_board() {
+                            self.send(&format!("warning: {err}; load a matching NNFile"));
+                        }
                         UciRunState::Continue
                     } else {
                         self.send("unknown variant");
@@ -337,7 +349,7 @@ impl<O: UciOutput> UciController<O> {
         let mut legal_moves = Vec::with_capacity(moves_str.len());
 
         for mv_str in moves_str {
-            match create_move_from_algebraic(mv_str) {
+            match self.engine().board().create_move_from_algebraic(mv_str) {
                 Ok(mv) => legal_moves.push(mv),
                 Err(err) => {
                     self.send(&format!("invalid move '{}': {}", mv_str, err));
@@ -353,7 +365,7 @@ impl<O: UciOutput> UciController<O> {
         let mut legal_moves = Vec::with_capacity(moves_str.len());
 
         for mv_str in moves_str {
-            match create_move_from_algebraic(mv_str) {
+            match self.engine().board().create_move_from_algebraic(mv_str) {
                 Ok(mv) => legal_moves.push(mv),
                 Err(err) => {
                     self.send(&format!("invalid move '{}': {}", mv_str, err));
@@ -380,7 +392,22 @@ impl<O: UciOutput> UciController<O> {
         }
     }
 
+    /// Refuses to start a search when the loaded net does not fit the current board,
+    /// answering in the protocol instead of letting the search thread panic.
+    fn reject_if_nn_mismatched(&mut self) -> bool {
+        if let Err(err) = self.engine().check_nn_matches_board() {
+            self.send(&format!("cannot search: {err}"));
+            self.send("bestmove (none)");
+            return true;
+        }
+        false
+    }
+
     fn handle_go_nodes(&mut self, args: &[&str]) {
+        if self.reject_if_nn_mismatched() {
+            return;
+        }
+
         if args.is_empty() {
             self.send("nodes value missing");
             return;
@@ -395,12 +422,13 @@ impl<O: UciOutput> UciController<O> {
 
         #[cfg(not(target_arch = "wasm32"))]
         {
+            let board_size = self.engine().board().board_size();
             let output = self.output.clone();
             self.spawn_search(move |engine| {
                 engine.make_search_nodes(
                     nodes,
                     Some(&|iteration: SearchIterationResponse| {
-                        output.send(&format_info_message(iteration));
+                        output.send(&format_info_message(iteration, board_size));
                     }),
                 );
             });
@@ -408,15 +436,17 @@ impl<O: UciOutput> UciController<O> {
 
         #[cfg(target_arch = "wasm32")]
         {
+            let board_size = self.engine().board().board_size();
             let output = self.output.clone();
             self.engine_mut().make_search_nodes(
                 nodes,
                 Some(&|iteration: SearchIterationResponse| {
-                    output.send(&format_info_message(iteration));
+                    output.send(&format_info_message(iteration, board_size));
                 }),
             );
             if let Some(mv) = self.engine().best_move() {
-                self.send(&format!("bestmove {:?}", mv));
+                let bestmove = self.engine().board().move_to_algebraic(mv);
+                self.send(&format!("bestmove {}", bestmove));
             } else {
                 self.send("bestmove (none)");
             }
@@ -424,6 +454,10 @@ impl<O: UciOutput> UciController<O> {
     }
 
     fn handle_go_movetime(&mut self, args: &[&str]) {
+        if self.reject_if_nn_mismatched() {
+            return;
+        }
+
         if args.is_empty() {
             self.send("movetime value missing");
             return;
@@ -438,12 +472,13 @@ impl<O: UciOutput> UciController<O> {
 
         #[cfg(not(target_arch = "wasm32"))]
         {
+            let board_size = self.engine().board().board_size();
             let output = self.output.clone();
             self.spawn_search(move |engine| {
                 engine.make_search(
                     movetime,
                     Some(&|iteration: SearchIterationResponse| {
-                        output.send(&format_info_message(iteration));
+                        output.send(&format_info_message(iteration, board_size));
                     }),
                 );
             });
@@ -451,15 +486,17 @@ impl<O: UciOutput> UciController<O> {
 
         #[cfg(target_arch = "wasm32")]
         {
+            let board_size = self.engine().board().board_size();
             let output = self.output.clone();
             self.engine_mut().make_search(
                 movetime,
                 Some(&|iteration: SearchIterationResponse| {
-                    output.send(&format_info_message(iteration));
+                    output.send(&format_info_message(iteration, board_size));
                 }),
             );
             if let Some(mv) = self.engine().best_move() {
-                self.send(&format!("bestmove {:?}", mv));
+                let bestmove = self.engine().board().move_to_algebraic(mv);
+                self.send(&format!("bestmove {}", bestmove));
             } else {
                 self.send("bestmove (none)");
             }
@@ -467,25 +504,32 @@ impl<O: UciOutput> UciController<O> {
     }
 
     fn handle_go_infinite(&mut self) {
+        if self.reject_if_nn_mismatched() {
+            return;
+        }
+
         #[cfg(not(target_arch = "wasm32"))]
         {
+            let board_size = self.engine().board().board_size();
             let output = self.output.clone();
             self.spawn_search(move |engine| {
                 engine.make_search_infinite(Some(&|iteration: SearchIterationResponse| {
-                    output.send(&format_info_message(iteration));
+                    output.send(&format_info_message(iteration, board_size));
                 }));
             });
         }
 
         #[cfg(target_arch = "wasm32")]
         {
+            let board_size = self.engine().board().board_size();
             let output = self.output.clone();
             self.engine_mut()
                 .make_search_infinite(Some(&|iteration: SearchIterationResponse| {
-                    output.send(&format_info_message(iteration));
+                    output.send(&format_info_message(iteration, board_size));
                 }));
             if let Some(mv) = self.engine().best_move() {
-                self.send(&format!("bestmove {:?}", mv));
+                let bestmove = self.engine().board().move_to_algebraic(mv);
+                self.send(&format!("bestmove {}", bestmove));
             } else {
                 self.send("bestmove (none)");
             }
@@ -590,8 +634,11 @@ impl WasmClient {
         self.controller.run(cmd);
     }
 
-    pub fn set_nn(&mut self, data: &[u8]) {
-        self.controller.engine_mut().set_nn_bytes(data);
+    pub fn set_nn(&mut self, data: &[u8]) -> Result<(), JsValue> {
+        self.controller
+            .engine_mut()
+            .set_nn_bytes(data)
+            .map_err(|e| JsValue::from_str(&e))
     }
 
     /// Register a SharedArrayBuffer-backed Int32Array as the stop signal.

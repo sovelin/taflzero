@@ -5,6 +5,7 @@ pub mod board;
 pub mod engine;
 pub mod evaluation;
 pub mod moves;
+mod rules_tests;
 pub mod search;
 mod tests;
 mod timer;

@@ -9,7 +9,8 @@ import struct
 from statistics import mean, median
 
 BIT_POSITION_BYTES = 49
-LEGAL_MASK_BYTES = 605
+import os as _os
+LEGAL_MASK_BYTES = int(_os.environ.get("TZ_MASK_BYTES", 605))
 FIXED_HEADER = BIT_POSITION_BYTES + LEGAL_MASK_BYTES + 2
 
 

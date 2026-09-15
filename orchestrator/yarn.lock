@@ -4,5 +4,4 @@
 
 taflzero@../pkg:
   version "0.1.0"
-  dependencies:
-    taflzero "../pkg"
+  resolved "file:../pkg"

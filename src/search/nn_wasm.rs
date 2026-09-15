@@ -13,8 +13,10 @@
 //! bumps REQ + notifies, then `Atomics.wait`s (this runs in a Web Worker, so
 //! blocking is allowed) until the NN worker sets RESP and notifies back.
 
-use super::nn_common::{NnOutput, POLICY_SIZE, build_input_data};
+use super::nn_common::{NnOutput, build_input_data};
+use crate::board::Precomputed;
 use crate::board::position_export::BitPosition;
+use crate::get_policy_size;
 use js_sys::{Atomics, Float32Array, Int32Array};
 use std::cell::RefCell;
 
@@ -40,25 +42,38 @@ pub fn set_nn_buffers(control: Int32Array, input: Float32Array, output: Float32A
     NN_OUTPUT.with(|c| *c.borrow_mut() = Some(output));
 }
 
-pub struct NeuralNet;
+pub struct NeuralNet {
+    board_size: usize,
+}
 
 impl NeuralNet {
-    /// No model is loaded in Rust anymore — the JS NN worker owns it.
-    pub fn new(_path: &str) -> Self {
-        NeuralNet
+    /// No model is loaded in Rust anymore — the JS NN worker owns it, so there is no
+    /// shape to validate here; the board size is recorded for symmetry with native.
+    pub fn new(_path: &str, board_size: usize, _batch_size: usize) -> Result<Self, String> {
+        Ok(NeuralNet { board_size })
     }
 
-    pub fn from_bytes(_data: &[u8]) -> Self {
-        NeuralNet
+    pub fn from_bytes(_data: &[u8], board_size: usize, _batch_size: usize) -> Result<Self, String> {
+        Ok(NeuralNet { board_size })
     }
 
-    pub fn evaluate_position(&mut self, pos: &BitPosition) -> NnOutput {
-        self.evaluate_batch(&[pos]).pop().unwrap()
+    /// Board side this net can evaluate.
+    pub fn board_size(&self) -> usize {
+        self.board_size
     }
 
-    pub fn evaluate_batch(&mut self, positions: &[&BitPosition]) -> Vec<NnOutput> {
+    pub fn evaluate_position(&mut self, pos: &BitPosition, geom: &Precomputed) -> NnOutput {
+        self.evaluate_batch(&[pos], geom).pop().unwrap()
+    }
+
+    pub fn evaluate_batch(
+        &mut self,
+        positions: &[&BitPosition],
+        geom: &Precomputed,
+    ) -> Vec<NnOutput> {
         let batch = positions.len();
-        let input = build_input_data(positions); // batch * SAMPLE_SIZE, NCHW
+        let policy_size = get_policy_size(geom.board_size);
+        let input = build_input_data(positions, geom); // batch * SAMPLE_SIZE, NCHW
 
         // 1. write input into the shared input buffer
         NN_INPUT.with(|b| {
@@ -98,15 +113,14 @@ impl NeuralNet {
             let arr = b
                 .as_ref()
                 .expect("NN output buffer not registered (set_nn_buffers)");
-            let policy_len = batch * POLICY_SIZE;
+            let policy_len = batch * policy_size;
             let mut policy_all = vec![0.0f32; policy_len];
             arr.subarray(0, policy_len as u32).copy_to(&mut policy_all);
             let mut value_all = vec![0.0f32; batch];
             arr.subarray(policy_len as u32, (policy_len + batch) as u32)
                 .copy_to(&mut value_all);
             for i in 0..batch {
-                let mut policy = [0.0f32; POLICY_SIZE];
-                policy.copy_from_slice(&policy_all[i * POLICY_SIZE..(i + 1) * POLICY_SIZE]);
+                let policy = policy_all[i * policy_size..(i + 1) * policy_size].to_vec();
                 results.push(NnOutput {
                     policy,
                     value: value_all[i],

@@ -1,14 +1,10 @@
+use crate::board::Board;
 use crate::board::constants::HOLE;
 use crate::board::types::{Piece, Side, Square};
 use crate::board::utils::get_square;
-use crate::board::{Board, PRECOMPUTED};
-use crate::moves::masks::LINE_MOVES;
 use crate::moves::mv::Move;
 
 pub static MAX_MOVES: usize = 1024;
-
-static THRONE_MASK: u16 = 1 << 5;
-static BOUNDARY_MASK: u16 = 1 | (1 << 10);
 
 pub struct MoveGen {
     pub moves: [Move; MAX_MOVES],
@@ -49,12 +45,18 @@ impl MoveGen {
     ) -> u16 {
         let mut beam = beam;
         if piece == Piece::ATTACKER || piece == Piece::DEFENDER {
-            if row_or_col_index == 5 {
-                beam &= !THRONE_MASK;
+            // The line index is the row for a horizontal slide and the column for a
+            // vertical one, so the throne lies on it exactly when the index is the
+            // centre — and then it sits at the centre bit of the line.
+            let centre = (board.board_size() - 1) / 2;
+            let last = board.board_size() - 1;
+
+            if row_or_col_index == centre {
+                beam &= !(1 << centre);
             } else if board.get_rules().is_corners_hostile
-                && (row_or_col_index == 0 || row_or_col_index == 10)
+                && (row_or_col_index == 0 || row_or_col_index == last)
             {
-                beam &= !BOUNDARY_MASK;
+                beam &= !(1 | (1 << last));
             }
         }
 
@@ -62,11 +64,12 @@ impl MoveGen {
     }
 
     fn generate_horizontal_moves(&mut self, board: &Board, from: usize) {
-        let row = PRECOMPUTED.row[from];
-        let col = PRECOMPUTED.col[from];
+        let precomputed = board.precomputed().clone();
+        let row = precomputed.row[from];
+        let col = precomputed.col[from];
         let row_occ = board.row_occ[row];
 
-        let horizontal = LINE_MOVES[col][row_occ as usize] & !(1 << col);
+        let horizontal = board.precomputed().line_moves[col][row_occ as usize] & !(1 << col);
         let mut horizontal_moves =
             self.disable_blocked_squares(board, horizontal, board.board[from], row);
 
@@ -74,7 +77,7 @@ impl MoveGen {
 
         while horizontal_moves != 0 {
             if cur & horizontal_moves != 0 {
-                let to = get_square(row, cur.trailing_zeros() as usize);
+                let to = get_square(row, cur.trailing_zeros() as usize, precomputed.board_size);
 
                 self.add_move(Move::new(from, to));
             }
@@ -84,11 +87,12 @@ impl MoveGen {
     }
 
     fn generate_vertical_moves(&mut self, board: &Board, from: usize) {
-        let col = PRECOMPUTED.col[from];
-        let row = PRECOMPUTED.row[from];
+        let precomputed = board.precomputed().clone();
+        let col = precomputed.col[from];
+        let row = precomputed.row[from];
         let col_occ = board.col_occ[col];
 
-        let vertical = LINE_MOVES[row][col_occ as usize] & !(1 << row);
+        let vertical = board.precomputed().line_moves[row][col_occ as usize] & !(1 << row);
         let mut vertical_moves =
             self.disable_blocked_squares(board, vertical, board.board[from], col);
 
@@ -96,7 +100,7 @@ impl MoveGen {
 
         while vertical_moves != 0 {
             if cur & vertical_moves != 0 {
-                let to = get_square(cur.trailing_zeros() as usize, col);
+                let to = get_square(cur.trailing_zeros() as usize, col, precomputed.board_size);
                 self.add_move(Move::new(from, to));
             }
             vertical_moves &= !cur;
@@ -151,13 +155,12 @@ mod tests {
 
     use super::*;
     use crate::board::Board;
+    use crate::board::rules::RulesEnum;
     use crate::board::types::{Piece, Side};
-    use crate::board::utils::get_square_from_algebraic;
-    use crate::moves::mv::create_move_from_algebraic;
 
-    fn expect_moves_exists(move_gen: &MoveGen, moves: Vec<&str>) {
+    fn expect_moves_exists(board: &Board, move_gen: &MoveGen, moves: Vec<&str>) {
         for mv_str in moves {
-            let mv = create_move_from_algebraic(mv_str).unwrap();
+            let mv = board.create_move_from_algebraic(mv_str).unwrap();
             assert!(
                 move_gen.moves[..move_gen.count].contains(&mv),
                 "Expected move {} to exist",
@@ -166,9 +169,9 @@ mod tests {
         }
     }
 
-    fn expect_moves_not_exists(move_gen: &MoveGen, moves: Vec<&str>) {
+    fn expect_moves_not_exists(board: &Board, move_gen: &MoveGen, moves: Vec<&str>) {
         for mv_str in moves {
-            let mv = create_move_from_algebraic(mv_str).unwrap();
+            let mv = board.create_move_from_algebraic(mv_str).unwrap();
             assert!(
                 !move_gen.moves[..move_gen.count].contains(&mv),
                 "Expected move {} to NOT exist",
@@ -198,7 +201,7 @@ mod tests {
     fn one_piece_on_b1() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
         board.side_to_move = Side::ATTACKERS;
-        board.set_piece(get_square_from_algebraic("b1"), Piece::ATTACKER)?;
+        board.set_piece(board.get_square_from_algebraic("b1"), Piece::ATTACKER)?;
 
         let mut movegen = MoveGen::new();
         movegen.generate_moves(&board);
@@ -206,6 +209,7 @@ mod tests {
         expect_moves_count(&movegen, 18);
 
         expect_moves_exists(
+            &board,
             &movegen,
             vec![
                 "b1c1", "b1d1", "b1e1", "b1f1", "b1g1", "b1h1", "b1i1", "b1j1", "b1b2", "b1b3",
@@ -213,7 +217,7 @@ mod tests {
             ],
         );
 
-        expect_moves_not_exists(&movegen, vec!["b1a1", "b1a10"]);
+        expect_moves_not_exists(&board, &movegen, vec!["b1a1", "b1a10"]);
 
         Ok(())
     }
@@ -222,8 +226,8 @@ mod tests {
     fn one_piece_on_b1_and_enemy_piece_on_c1() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
         board.side_to_move = Side::ATTACKERS;
-        board.set_piece(get_square_from_algebraic("b1"), Piece::ATTACKER)?;
-        board.set_piece(get_square_from_algebraic("c1"), Piece::DEFENDER)?;
+        board.set_piece(board.get_square_from_algebraic("b1"), Piece::ATTACKER)?;
+        board.set_piece(board.get_square_from_algebraic("c1"), Piece::DEFENDER)?;
 
         let mut movegen = MoveGen::new();
         movegen.generate_moves(&board);
@@ -231,6 +235,7 @@ mod tests {
         expect_moves_count(&movegen, 10);
 
         expect_moves_exists(
+            &board,
             &movegen,
             vec![
                 "b1b2", "b1b3", "b1b4", "b1b5", "b1b6", "b1b7", "b1b8", "b1b9", "b1b10", "b1b11",
@@ -244,8 +249,8 @@ mod tests {
     fn one_piece_on_a2_and_enemy_piece_on_a3() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
         board.side_to_move = Side::ATTACKERS;
-        board.set_piece(get_square_from_algebraic("a2"), Piece::ATTACKER)?;
-        board.set_piece(get_square_from_algebraic("a3"), Piece::DEFENDER)?;
+        board.set_piece(board.get_square_from_algebraic("a2"), Piece::ATTACKER)?;
+        board.set_piece(board.get_square_from_algebraic("a3"), Piece::DEFENDER)?;
 
         let mut movegen = MoveGen::new();
         movegen.generate_moves(&board);
@@ -253,6 +258,7 @@ mod tests {
         expect_moves_count(&movegen, 10);
 
         expect_moves_exists(
+            &board,
             &movegen,
             vec![
                 "a2b2", "a2c2", "a2d2", "a2e2", "a2f2", "a2g2", "a2h2", "a2i2", "a2j2", "a2k2",
@@ -266,12 +272,12 @@ mod tests {
     fn piece_should_not_move_onto_throne_f6() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
         board.side_to_move = Side::DEFENDERS;
-        board.set_piece(get_square_from_algebraic("f5"), Piece::DEFENDER)?;
+        board.set_piece(board.get_square_from_algebraic("f5"), Piece::DEFENDER)?;
 
         let mut movegen = MoveGen::new();
         movegen.generate_moves(&board);
 
-        expect_moves_not_exists(&movegen, vec!["f5f6"]);
+        expect_moves_not_exists(&board, &movegen, vec!["f5f6"]);
 
         Ok(())
     }
@@ -280,12 +286,12 @@ mod tests {
     fn king_could_move_onto_throne_f6() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
         board.side_to_move = Side::DEFENDERS;
-        board.set_piece(get_square_from_algebraic("f5"), Piece::KING)?;
+        board.set_piece(board.get_square_from_algebraic("f5"), Piece::KING)?;
 
         let mut movegen = MoveGen::new();
         movegen.generate_moves(&board);
 
-        expect_moves_exists(&movegen, vec!["f5f6"]);
+        expect_moves_exists(&board, &movegen, vec!["f5f6"]);
 
         Ok(())
     }
@@ -294,13 +300,13 @@ mod tests {
     fn king_could_move_onto_corner_a1() -> Result<(), Box<dyn Error>> {
         let mut board = Board::new();
         board.side_to_move = Side::DEFENDERS;
-        board.set_piece(get_square_from_algebraic("a2"), Piece::KING)?;
+        board.set_piece(board.get_square_from_algebraic("a2"), Piece::KING)?;
 
         let mut movegen = MoveGen::new();
         movegen.generate_moves(&board);
 
         expect_moves_count(&movegen, 20);
-        expect_moves_exists(&movegen, vec!["a2a1"]);
+        expect_moves_exists(&board, &movegen, vec!["a2a1"]);
 
         Ok(())
     }
@@ -310,11 +316,11 @@ mod tests {
         let mut board = Board::new();
         board.side_to_move = Side::DEFENDERS;
 
-        board.set_piece(get_square_from_algebraic("e5"), Piece::KING)?;
-        board.set_piece(get_square_from_algebraic("e4"), Piece::ATTACKER)?;
-        board.set_piece(get_square_from_algebraic("e6"), Piece::ATTACKER)?;
-        board.set_piece(get_square_from_algebraic("d5"), Piece::ATTACKER)?;
-        board.set_piece(get_square_from_algebraic("f5"), Piece::ATTACKER)?;
+        board.set_piece(board.get_square_from_algebraic("e5"), Piece::KING)?;
+        board.set_piece(board.get_square_from_algebraic("e4"), Piece::ATTACKER)?;
+        board.set_piece(board.get_square_from_algebraic("e6"), Piece::ATTACKER)?;
+        board.set_piece(board.get_square_from_algebraic("d5"), Piece::ATTACKER)?;
+        board.set_piece(board.get_square_from_algebraic("f5"), Piece::ATTACKER)?;
 
         let mut movegen = MoveGen::new();
         movegen.generate_moves(&board);
@@ -328,7 +334,6 @@ mod tests {
         use crate::board::Board;
         use crate::board::rules::RulesEnum;
         use crate::board::types::{Piece, Side};
-        use crate::board::utils::get_square_from_algebraic;
         use crate::movegen::MoveGen;
         use crate::movegen::tests::{expect_moves_count, expect_moves_exists};
         use std::error::Error;
@@ -339,7 +344,7 @@ mod tests {
             board.set_rules(RulesEnum::Historical11x11);
             board.side_to_move = Side::DEFENDERS;
             board
-                .set_piece(get_square_from_algebraic("a1"), Piece::DEFENDER)
+                .set_piece(board.get_square_from_algebraic("a1"), Piece::DEFENDER)
                 .unwrap();
 
             let mut movegen = MoveGen::new();
@@ -348,10 +353,47 @@ mod tests {
             println!("{:?}", board);
 
             expect_moves_count(&movegen, 20);
-            expect_moves_exists(&movegen, vec!["a1k1"]);
-            expect_moves_exists(&movegen, vec!["a1a11"]);
+            expect_moves_exists(&board, &movegen, vec!["a1k1"]);
+            expect_moves_exists(&board, &movegen, vec!["a1a11"]);
 
             Ok(())
         }
+    }
+
+    // A lone piece on an empty 9x9 Tablut board can slide to every other square on its
+    // row and column: 8 + 8. Anything else means move generation is still using 11x11
+    // geometry.
+    #[test]
+    fn single_piece_on_9x9_slides_within_the_board() -> Result<(), Box<dyn Error>> {
+        let mut board = Board::new();
+        board.set_rules(RulesEnum::Tablut9x9);
+        board.side_to_move = Side::ATTACKERS;
+
+        let board_size = board.board_size();
+        assert_eq!(board_size, 9);
+
+        // Row 2, column 1 — clear of the throne row and column.
+        let from = 2 * board_size + 1;
+        board.set_piece(from, Piece::ATTACKER)?;
+
+        let mut movegen = MoveGen::new();
+        movegen.generate_moves(&board);
+
+        expect_moves_count(&movegen, (board_size - 1) * 2);
+
+        let sqs = board_size * board_size;
+        for mv in movegen.moves() {
+            assert!(
+                mv.to() < sqs,
+                "move {mv:?} leaves the 9x9 board: to-square {} >= {sqs}",
+                mv.to()
+            );
+            assert!(
+                mv.from() == from,
+                "move {mv:?} starts from an unexpected square"
+            );
+        }
+
+        Ok(())
     }
 }

@@ -11,9 +11,26 @@ except ImportError:
     print("pip install matplotlib")
     sys.exit(1)
 
-csv_path = Path(__file__).parent / "weights" / "anchor-results.csv"
-if len(sys.argv) > 1:
-    csv_path = Path(sys.argv[1])
+# A single generation carries roughly +-30 Elo of match noise, wide enough to hide a
+# trend of a few Elo per generation. The rolling mean is the line to read; the raw
+# points stay faint behind it so an outlier is still visible.
+args = list(sys.argv[1:])
+window = 5
+if "--window" in args:
+    i = args.index("--window")
+    window = max(1, int(args[i + 1]))
+    del args[i : i + 2]
+
+csv_path = Path(args[0]) if args else Path(__file__).parent / "weights" / "anchor-results.csv"
+
+
+def rolling_mean(values, size):
+    """Trailing mean; early points average over whatever is available."""
+    out = []
+    for i in range(len(values)):
+        chunk = values[max(0, i - size + 1) : i + 1]
+        out.append(sum(chunk) / len(chunk))
+    return out
 
 
 def load_data():
@@ -44,11 +61,18 @@ def draw(frame):
 
     x = list(range(len(gens)))
 
+    smooth = rolling_mean(elos, window)
+
     ax1.cla()
-    ax1.plot(x, elos, marker="o", linewidth=2, color="blue", label="Elo vs anchor")
+    ax1.plot(x, elos, marker="o", markersize=4, linewidth=1, color="blue",
+             alpha=0.30, label="Elo vs anchor (per generation)")
+    ax1.plot(x, smooth, linewidth=2.5, color="darkblue",
+             label=f"rolling mean over {window}")
     ax1.axhline(0, color="gray", linestyle="--", alpha=0.5)
-    for xi, e in zip(x, elos):
-        ax1.annotate(f"{e:+.0f}", (xi, e), textcoords="offset points", xytext=(0, 8), ha="center", fontsize=9)
+    if x:
+        ax1.annotate(f"{smooth[-1]:+.0f}", (x[-1], smooth[-1]),
+                     textcoords="offset points", xytext=(6, 0), ha="left",
+                     fontsize=11, fontweight="bold", color="darkblue")
     ax1.set_ylabel("Elo vs anchor")
     ax1.grid(True, alpha=0.3)
     ax1.legend()

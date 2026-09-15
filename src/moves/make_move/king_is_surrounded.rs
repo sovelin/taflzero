@@ -1,33 +1,43 @@
+use crate::board::Board;
 use crate::board::types::Piece;
-use crate::board::{Board, PRECOMPUTED};
 
 pub fn king_is_surrounded(board: &Board) -> bool {
     let king_sq = board.king_sq as usize;
     let rules = board.get_rules();
+    let precomputed = board.precomputed();
 
     if rules.is_king_strong {
         // Copenhagen: king captured when all 4 neighbors are hostile (attacker or throne)
-        let surround_count = PRECOMPUTED.vertical_horizontal_neighbors[king_sq]
+        let surround_count = precomputed.vertical_horizontal_neighbors[king_sq]
             .iter()
-            .filter(|&&sq| sq == PRECOMPUTED.throne_sq || board.board[sq] == Piece::ATTACKER)
+            .filter(|&&sq| sq == precomputed.throne_sq || board.board[sq] == Piece::ATTACKER)
             .count();
         surround_count >= 4
     } else {
-        // Historical: weak king
-        // On throne: all 4 neighbors must be attackers
-        // Off throne: 2 attackers on the same axis (left+right or top+bottom)
+        // Weak king. Must stay in step with the capture check in `make_move`, which owns
+        // the extra condition this predicate cannot express: that the move just played is
+        // the one closing the surround.
+        //   on the throne        -> all four sides
+        //   beside an empty one  -> the three remaining sides, the throne being the fourth
+        //   anywhere else        -> two attackers on one axis
         let is_attacker =
             |sq_opt: Option<usize>| sq_opt.is_some_and(|sq| board.board[sq] == Piece::ATTACKER);
+        let neighbors = &precomputed.vertical_horizontal_neighbors[king_sq];
+        let throne = precomputed.throne_sq;
 
-        if king_sq == PRECOMPUTED.throne_sq {
-            PRECOMPUTED.vertical_horizontal_neighbors[king_sq]
+        if king_sq == throne {
+            neighbors
                 .iter()
                 .all(|&sq| board.board[sq] == Piece::ATTACKER)
+        } else if neighbors.contains(&throne) && board.board[throne] == Piece::EMPTY {
+            neighbors
+                .iter()
+                .all(|&sq| sq == throne || board.board[sq] == Piece::ATTACKER)
         } else {
-            let left_right = is_attacker(PRECOMPUTED.left_neighbor[king_sq])
-                && is_attacker(PRECOMPUTED.right_neighbor[king_sq]);
-            let top_bottom = is_attacker(PRECOMPUTED.top_neighbor[king_sq])
-                && is_attacker(PRECOMPUTED.bottom_neighbor[king_sq]);
+            let left_right = is_attacker(precomputed.left_neighbor[king_sq])
+                && is_attacker(precomputed.right_neighbor[king_sq]);
+            let top_bottom = is_attacker(precomputed.top_neighbor[king_sq])
+                && is_attacker(precomputed.bottom_neighbor[king_sq]);
             left_right || top_bottom
         }
     }
@@ -38,14 +48,13 @@ mod tests {
     use super::*;
     use crate::board::Board;
     use crate::board::types::Piece;
-    use crate::board::utils::get_square_from_algebraic;
 
     #[test]
     fn test_king_is_surrounded() {
         let mut board = Board::new();
         // Set up a scenario where the king is surrounded
         board
-            .set_piece(get_square_from_algebraic("b2"), Piece::KING)
+            .set_piece(board.get_square_from_algebraic("b2"), Piece::KING)
             .unwrap();
         assert_eq!(king_is_surrounded(&board), false);
     }
@@ -54,16 +63,16 @@ mod tests {
     fn surrounded_by_attackers_not_from_all_sides() {
         let mut board = Board::new();
         board
-            .set_piece(get_square_from_algebraic("b2"), Piece::KING)
+            .set_piece(board.get_square_from_algebraic("b2"), Piece::KING)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("a2"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("a2"), Piece::ATTACKER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("b1"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("b1"), Piece::ATTACKER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("c2"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("c2"), Piece::ATTACKER)
             .unwrap();
 
         let is_surrounded = king_is_surrounded(&board);
@@ -74,19 +83,19 @@ mod tests {
     fn surrounded_by_attackers_from_all_sides() {
         let mut board = Board::new();
         board
-            .set_piece(get_square_from_algebraic("b2"), Piece::KING)
+            .set_piece(board.get_square_from_algebraic("b2"), Piece::KING)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("a2"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("a2"), Piece::ATTACKER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("b1"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("b1"), Piece::ATTACKER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("c2"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("c2"), Piece::ATTACKER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("b3"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("b3"), Piece::ATTACKER)
             .unwrap();
 
         let is_surrounded = king_is_surrounded(&board);
@@ -97,19 +106,19 @@ mod tests {
     fn surrounded_by_defenders_from_all_sides() {
         let mut board = Board::new();
         board
-            .set_piece(get_square_from_algebraic("b2"), Piece::KING)
+            .set_piece(board.get_square_from_algebraic("b2"), Piece::KING)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("a2"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("a2"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("b1"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("b1"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("c2"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("c2"), Piece::DEFENDER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("b3"), Piece::DEFENDER)
+            .set_piece(board.get_square_from_algebraic("b3"), Piece::DEFENDER)
             .unwrap();
 
         let is_surrounded = king_is_surrounded(&board);
@@ -120,16 +129,16 @@ mod tests {
     fn surrounded_by_three_attackers_on_board_side() {
         let mut board = Board::new();
         board
-            .set_piece(get_square_from_algebraic("e1"), Piece::KING)
+            .set_piece(board.get_square_from_algebraic("e1"), Piece::KING)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("d1"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("d1"), Piece::ATTACKER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("f1"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("f1"), Piece::ATTACKER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("e2"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("e2"), Piece::ATTACKER)
             .unwrap();
 
         let is_surrounded = king_is_surrounded(&board);
@@ -140,16 +149,16 @@ mod tests {
     fn surrounded_by_three_attackers_and_throne() {
         let mut board = Board::new();
         board
-            .set_piece(get_square_from_algebraic("e6"), Piece::KING)
+            .set_piece(board.get_square_from_algebraic("e6"), Piece::KING)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("e7"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("e7"), Piece::ATTACKER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("e5"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("e5"), Piece::ATTACKER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("d6"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("d6"), Piece::ATTACKER)
             .unwrap();
 
         let is_surrounded = king_is_surrounded(&board);
@@ -160,13 +169,13 @@ mod tests {
     fn surrounded_by_corner_and_by_corner() {
         let mut board = Board::new();
         board
-            .set_piece(get_square_from_algebraic("b1"), Piece::KING)
+            .set_piece(board.get_square_from_algebraic("b1"), Piece::KING)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("b2"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("b2"), Piece::ATTACKER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("c1"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("c1"), Piece::ATTACKER)
             .unwrap();
 
         let is_surrounded = king_is_surrounded(&board);
@@ -177,19 +186,19 @@ mod tests {
     fn on_throne_and_surrounded_by_four_attackers() {
         let mut board = Board::new();
         board
-            .set_piece(get_square_from_algebraic("f6"), Piece::KING)
+            .set_piece(board.get_square_from_algebraic("f6"), Piece::KING)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("f5"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("f5"), Piece::ATTACKER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("f7"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("f7"), Piece::ATTACKER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("e6"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("e6"), Piece::ATTACKER)
             .unwrap();
         board
-            .set_piece(get_square_from_algebraic("g6"), Piece::ATTACKER)
+            .set_piece(board.get_square_from_algebraic("g6"), Piece::ATTACKER)
             .unwrap();
         println!("Board State:\n{:?}", board);
 

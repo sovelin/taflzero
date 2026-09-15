@@ -22,13 +22,22 @@ def main():
     ap.add_argument("--net", type=Path, required=True)
     ap.add_argument("--data", type=Path, default=Path("selfplay-t2.bin"))
     ap.add_argument("--n", type=int, default=512)
+    ap.add_argument(
+        "--board-size",
+        type=int,
+        default=None,
+        help="Board side of the data (default: taken from the net's own board_size)",
+    )
     args = ap.parse_args()
 
     net = load_qnxx(args.net).eval()
 
-    ds = SelfPlayDataset(args.data, window_size=args.n * 4, augment=False)
+    board_size = args.board_size or net.model_kwargs.get("board_size", 11)
+    ds = SelfPlayDataset(
+        args.data, window_size=args.n * 4, augment=False, board_size=board_size
+    )
     idx = np.linspace(0, len(ds) - 1, args.n).astype(int)
-    planes = torch.stack([ds[i][0] for i in idx])  # (N, 11, 11, 11)
+    planes = torch.stack([ds[i][0] for i in idx])  # (N, planes, board, board)
 
     rel = [[] for _ in net.trunk]      # ||out-x|| / ||x||
     absd = [[] for _ in net.trunk]     # ||out-x||
