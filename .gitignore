@@ -9,3 +9,5 @@ zero-trainer/weights
 
 *.tmp
 .idea
+.playwright-mcp
+dedup
