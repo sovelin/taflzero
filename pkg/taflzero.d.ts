@@ -111,6 +111,10 @@ export class WasmClient {
     constructor(event_name: string);
     print_board(): void;
     run(cmd: string): void;
+    /**
+     * Throws on failure: a silently ignored error would leave the engine
+     * searching with the previous (or no) network.
+     */
     set_nn(data: Uint8Array): void;
     /**
      * Register the SharedArrayBuffer-backed views used for NN inference done
@@ -152,8 +156,58 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly get_initial_board_fen: () => [number, number];
     readonly __wbg_engine_free: (a: number, b: number) => void;
     readonly __wbg_engineclient_free: (a: number, b: number) => void;
+    readonly engineclient_board_size: (a: number) => number;
+    readonly engineclient_check_terminal_state: (a: number) => number;
+    readonly engineclient_check_terminal_state_for_fen: (a: number, b: number, c: number) => number;
+    readonly engineclient_create_move_from_algebraic: (a: number, b: number, c: number) => number;
+    readonly engineclient_get_available_moves: (a: number) => [number, number];
+    readonly engineclient_get_available_moves_from_square: (a: number, b: number) => [number, number];
+    readonly engineclient_get_board_state: (a: number) => [number, number];
+    readonly engineclient_get_board_str: (a: number) => [number, number];
+    readonly engineclient_get_fen: (a: number) => [number, number];
+    readonly engineclient_get_zobrist_hash: (a: number) => bigint;
+    readonly engineclient_is_move_available: (a: number, b: number, c: number) => number;
+    readonly engineclient_make_move: (a: number, b: number) => void;
+    readonly engineclient_make_search: (a: number, b: number) => number;
+    readonly engineclient_move_num_to_str: (a: number, b: number) => [number, number];
+    readonly engineclient_move_str_to_num: (a: number, b: number, c: number) => [number, number, number];
+    readonly engineclient_new: () => number;
+    readonly engineclient_set_fen: (a: number, b: number, c: number) => void;
+    readonly engineclient_set_position_and_moves: (a: number, b: number, c: number, d: number, e: number) => void;
+    readonly engineclient_set_variant: (a: number, b: number, c: number) => [number, number];
+    readonly engineclient_setup_initial_position: (a: number) => void;
+    readonly engineclient_side_to_move: (a: number) => number;
+    readonly engineclient_total_squares: (a: number) => number;
+    readonly get_col: (a: number, b: number) => number;
+    readonly get_row: (a: number, b: number) => number;
+    readonly get_sq_algebraic: (a: number, b: number) => [number, number];
+    readonly get_square: (a: number, b: number, c: number) => number;
+    readonly get_square_from_algebraic: (a: number, b: number, c: number) => number;
+    readonly __wbg_wasmclient_free: (a: number, b: number) => void;
+    readonly wasmclient_new: (a: number, b: number) => number;
+    readonly wasmclient_print_board: (a: number) => void;
+    readonly wasmclient_run: (a: number, b: number, c: number) => void;
+    readonly wasmclient_set_nn: (a: number, b: number, c: number) => [number, number];
+    readonly wasmclient_set_nn_buffers: (a: number, b: any, c: any, d: any) => void;
+    readonly wasmclient_set_stop_buffer: (a: number, b: any) => void;
+    readonly build_info: () => [number, number];
+    readonly hello: () => [number, number];
+    readonly main_js: () => void;
+    readonly __wbg_timer_free: (a: number, b: number) => void;
+    readonly timer_elapsed_ms: (a: number) => bigint;
+    readonly timer_new: () => number;
+    readonly timer_start: (a: number) => void;
+    readonly __wbg_move_free: (a: number, b: number) => void;
+    readonly move_create_null: () => number;
+    readonly move_from: (a: number) => number;
+    readonly move_from_u32: (a: number) => number;
+    readonly move_is_null: (a: number) => number;
+    readonly move_new: (a: number, b: number) => number;
+    readonly move_raw: (a: number) => number;
+    readonly move_to: (a: number) => number;
     readonly __wbg_get_searchiterationresponse_mate: (a: number) => number;
     readonly __wbg_get_searchiterationresponse_multi_pv: (a: number) => number;
     readonly __wbg_get_searchiterationresponse_nodes: (a: number) => bigint;
@@ -163,7 +217,6 @@ export interface InitOutput {
     readonly __wbg_get_searchiterationresponse_winrate: (a: number) => number;
     readonly __wbg_get_searchresponse_best_move: (a: number) => number;
     readonly __wbg_get_searchresponse_score: (a: number) => number;
-    readonly __wbg_move_free: (a: number, b: number) => void;
     readonly __wbg_searchiterationresponse_free: (a: number, b: number) => void;
     readonly __wbg_searchresponse_free: (a: number, b: number) => void;
     readonly __wbg_set_searchiterationresponse_mate: (a: number, b: number) => void;
@@ -175,60 +228,14 @@ export interface InitOutput {
     readonly __wbg_set_searchiterationresponse_winrate: (a: number, b: number) => void;
     readonly __wbg_set_searchresponse_best_move: (a: number, b: number) => void;
     readonly __wbg_set_searchresponse_score: (a: number, b: number) => void;
-    readonly __wbg_timer_free: (a: number, b: number) => void;
-    readonly __wbg_wasmclient_free: (a: number, b: number) => void;
-    readonly build_info: (a: number) => void;
-    readonly engineclient_board_size: (a: number) => number;
-    readonly engineclient_check_terminal_state: (a: number) => number;
-    readonly engineclient_check_terminal_state_for_fen: (a: number, b: number, c: number) => number;
-    readonly engineclient_create_move_from_algebraic: (a: number, b: number, c: number) => number;
-    readonly engineclient_get_available_moves: (a: number, b: number) => void;
-    readonly engineclient_get_available_moves_from_square: (a: number, b: number, c: number) => void;
-    readonly engineclient_get_board_state: (a: number, b: number) => void;
-    readonly engineclient_get_board_str: (a: number, b: number) => void;
-    readonly engineclient_get_fen: (a: number, b: number) => void;
-    readonly engineclient_get_zobrist_hash: (a: number) => bigint;
-    readonly engineclient_is_move_available: (a: number, b: number, c: number) => number;
-    readonly engineclient_make_move: (a: number, b: number) => void;
-    readonly engineclient_make_search: (a: number, b: number) => number;
-    readonly engineclient_move_num_to_str: (a: number, b: number, c: number) => void;
-    readonly engineclient_move_str_to_num: (a: number, b: number, c: number, d: number) => void;
-    readonly engineclient_new: () => number;
-    readonly engineclient_set_fen: (a: number, b: number, c: number) => void;
-    readonly engineclient_set_position_and_moves: (a: number, b: number, c: number, d: number, e: number) => void;
-    readonly engineclient_set_variant: (a: number, b: number, c: number, d: number) => void;
-    readonly engineclient_setup_initial_position: (a: number) => void;
-    readonly engineclient_side_to_move: (a: number) => number;
-    readonly engineclient_total_squares: (a: number) => number;
-    readonly get_col: (a: number, b: number) => number;
-    readonly get_initial_board_fen: (a: number) => void;
-    readonly get_row: (a: number, b: number) => number;
-    readonly get_sq_algebraic: (a: number, b: number, c: number) => void;
-    readonly get_square: (a: number, b: number, c: number) => number;
-    readonly get_square_from_algebraic: (a: number, b: number, c: number) => number;
-    readonly hello: (a: number) => void;
-    readonly move_create_null: () => number;
-    readonly move_from: (a: number) => number;
-    readonly move_is_null: (a: number) => number;
-    readonly move_new: (a: number, b: number) => number;
-    readonly move_raw: (a: number) => number;
-    readonly move_to: (a: number) => number;
-    readonly timer_elapsed_ms: (a: number) => bigint;
-    readonly timer_new: () => number;
-    readonly timer_start: (a: number) => void;
-    readonly wasmclient_new: (a: number, b: number) => number;
-    readonly wasmclient_print_board: (a: number) => void;
-    readonly wasmclient_run: (a: number, b: number, c: number) => void;
-    readonly wasmclient_set_nn: (a: number, b: number, c: number) => void;
-    readonly wasmclient_set_nn_buffers: (a: number, b: number, c: number, d: number) => void;
-    readonly wasmclient_set_stop_buffer: (a: number, b: number) => void;
-    readonly move_from_u32: (a: number) => number;
-    readonly main_js: () => void;
-    readonly __wbindgen_export: (a: number, b: number) => number;
-    readonly __wbindgen_export2: (a: number, b: number, c: number, d: number) => number;
-    readonly __wbindgen_export3: (a: number) => void;
-    readonly __wbindgen_export4: (a: number, b: number, c: number) => void;
-    readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
+    readonly __wbindgen_malloc: (a: number, b: number) => number;
+    readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+    readonly __wbindgen_exn_store: (a: number) => void;
+    readonly __externref_table_alloc: () => number;
+    readonly __wbindgen_externrefs: WebAssembly.Table;
+    readonly __wbindgen_free: (a: number, b: number, c: number) => void;
+    readonly __externref_drop_slice: (a: number, b: number) => void;
+    readonly __externref_table_dealloc: (a: number) => void;
     readonly __wbindgen_start: () => void;
 }
 

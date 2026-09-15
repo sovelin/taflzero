@@ -634,8 +634,11 @@ impl WasmClient {
         self.controller.run(cmd);
     }
 
-    pub fn set_nn(&mut self, data: &[u8]) {
-        self.controller.engine_mut().set_nn_bytes(data);
+    pub fn set_nn(&mut self, data: &[u8]) -> Result<(), JsValue> {
+        self.controller
+            .engine_mut()
+            .set_nn_bytes(data)
+            .map_err(|e| JsValue::from_str(&e))
     }
 
     /// Register a SharedArrayBuffer-backed Int32Array as the stop signal.
