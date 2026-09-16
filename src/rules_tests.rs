@@ -225,10 +225,14 @@ mod tablut {
             assert_eq!(check_terminal(&mut board), Some(Side::DEFENDERS));
         }
 
+        // The attacker beside the king is what makes this a test of the escape rule.
+        // A lone king on an empty board trivially satisfies the fort condition — it
+        // touches the edge, has moves and there is nothing to break the fort with — so
+        // without it `has_fort_win` would decide the position and hide the answer.
         #[test]
         fn a_plain_edge_square_is_not_a_win() {
             let mut board = tablut();
-            place(&mut board, &[("e1", Piece::KING)]);
+            place(&mut board, &[("e1", Piece::KING), ("d1", Piece::ATTACKER)]);
 
             assert_eq!(
                 check_terminal(&mut board),

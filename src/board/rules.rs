@@ -68,7 +68,7 @@ impl Rules {
         Rules {
             has_corners_win: true,
             has_edge_win: false,
-            has_fort_win: false,
+            has_fort_win: true,
             has_shield_walls: false,
             initial_fen: "3aaa3/4a4/4d4/a3d3a/aaddkddaa/a3d3a/4d4/4a4/3aaa3 a".to_string(),
             is_king_strong: false,
