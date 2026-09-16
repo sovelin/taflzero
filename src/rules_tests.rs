@@ -218,22 +218,43 @@ mod tablut {
         use crate::terminal::check_terminal;
 
         #[test]
-        fn king_wins_on_any_edge_square() {
+        fn king_wins_in_a_corner() {
             let mut board = tablut();
-            place(&mut board, &[("e1", Piece::KING)]);
+            place(&mut board, &[("a1", Piece::KING)]);
 
             assert_eq!(check_terminal(&mut board), Some(Side::DEFENDERS));
         }
 
         #[test]
-        fn a_corner_is_just_another_edge_square() {
+        fn a_plain_edge_square_is_not_a_win() {
             let mut board = tablut();
-            place(&mut board, &[("a1", Piece::KING)]);
+            place(&mut board, &[("e1", Piece::KING)]);
 
             assert_eq!(
                 check_terminal(&mut board),
-                Some(Side::DEFENDERS),
-                "Tablut has no separate corner rule — the corner wins because it is an edge"
+                None,
+                "only the four corners are escape squares — reaching the edge is not enough"
+            );
+        }
+
+        /// Corners are hostile, so they close a sandwich the way an attacker would.
+        /// This is the other half of `has_corners_win`: an empty corner is not neutral
+        /// ground for a defender standing next to it.
+        #[test]
+        fn a_corner_closes_a_sandwich() {
+            let mut board = tablut();
+            place(
+                &mut board,
+                &[("b1", Piece::DEFENDER), ("d1", Piece::ATTACKER)],
+            );
+
+            play(&mut board, "d1c1");
+
+            let b1 = board.get_square_from_algebraic("b1");
+            assert_eq!(
+                board.board[b1],
+                Piece::EMPTY,
+                "b1 is sandwiched between the attacker on c1 and the hostile corner a1"
             );
         }
 
