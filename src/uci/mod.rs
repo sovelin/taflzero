@@ -287,10 +287,43 @@ impl<O: UciOutput> UciController<O> {
                 self.handle_go(&tokens[1..]);
                 UciRunState::Continue
             }
+            "perft" => {
+                self.handle_perft(&tokens[1..]);
+                UciRunState::Continue
+            }
             _ => {
                 self.send("unknown command");
                 UciRunState::Continue
             }
+        }
+    }
+
+    /// `perft <depth> [divide]` — node counts for cross-checking move generation
+    /// against another engine. `divide` prints the per-root-move breakdown, which is
+    /// what narrows a mismatch down to a single move.
+    fn handle_perft(&mut self, args: &[&str]) {
+        let Some(depth) = args.first().and_then(|d| d.parse::<u32>().ok()) else {
+            self.send("perft command needs a depth");
+            return;
+        };
+
+        #[cfg(not(target_arch = "wasm32"))]
+        self.collect_search(false);
+
+        let divide = args.get(1) == Some(&"divide");
+        let board = self.engine_mut().get_board_mutable();
+
+        if divide {
+            let breakdown = crate::moves::perft::perft_divide(board, depth);
+            let total: u64 = breakdown.iter().map(|(_, n)| n).sum();
+            let board_size = self.engine().board().board_size();
+            for (mv, nodes) in breakdown {
+                self.send(&format!("{} {}", move_to_algebraic(mv, board_size), nodes));
+            }
+            self.send(&format!("nodes {}", total));
+        } else {
+            let nodes = crate::moves::perft::perft(board, depth);
+            self.send(&format!("nodes {}", nodes));
         }
     }
 
@@ -320,23 +353,26 @@ impl<O: UciOutput> UciController<O> {
                 self.send("unsupported startpos format");
             }
             "fen" => {
-                let fen = format!("{} {}", args[1], args[2]);
+                // The FEN is however many tokens precede `moves`, not a fixed two: it
+                // carries the last-to square and the two counters as well, and older
+                // callers still send just the rows and the side.
+                let rest = &args[1..];
+                let (fen_parts, move_parts) = match rest.iter().position(|&t| t == "moves") {
+                    Some(i) => (&rest[..i], &rest[i + 1..]),
+                    None => (rest, &[] as &[&str]),
+                };
 
-                if args.len() < 4 {
-                    self.set_moves(&fen, &[]);
+                if fen_parts.len() < 2 {
+                    self.send("position fen needs at least the rows and the side to move");
                     return;
                 }
 
-                if args[3] != "moves" {
-                    self.send("only 'position fen <fen> moves' is supported");
-                    return;
-                }
-
-                self.set_moves(&fen, &args[4..]);
+                let fen = fen_parts.join(" ");
+                self.set_moves(&fen, move_parts);
                 self.send(&format!(
                     "position set to fen '{}' ({} moves)",
                     fen,
-                    args.len() - 4
+                    move_parts.len()
                 ));
             }
             _ => {

@@ -37,6 +37,8 @@ pub struct Board {
     pub rep_table: HashMap<ZobristHash, u8>,
     pub last_move_to: OptionalSquare,
     pub was_capture: bool,
+    pub halfmove_clock: u32,
+    pub halfmove_count: u32,
     pub rules: RulesEnum,
     precomputed: Arc<Precomputed>,
     zobrist_data: ZobristData,
@@ -72,6 +74,8 @@ impl Board {
             rep_table: HashMap::new(),
             last_move_to: HOLE,
             was_capture: false,
+            halfmove_clock: 0,
+            halfmove_count: 0,
             rules,
             precomputed: Arc::new(Precomputed::new(board_size)),
             zobrist_data: ZobristData::new(board_size),
@@ -284,6 +288,7 @@ impl Debug for Board {
         writeln!(f)?;
 
         writeln!(f, "zobrist: {}", self.zobrist)?;
+        writeln!(f, "FEN: {}", self.get_fen())?;
 
         Ok(())
     }

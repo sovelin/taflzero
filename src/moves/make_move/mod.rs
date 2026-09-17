@@ -25,6 +25,7 @@ impl Board {
         undo.clear_captured_pieces();
         undo.last_move_to = self.last_move_to;
         undo.was_capture = false;
+        undo.halfmove_clock = self.halfmove_clock;
         undo.mv = mv;
 
         let from = mv.from();
@@ -102,6 +103,14 @@ impl Board {
 
         self.add_position_to_rep_table();
         self.was_capture = undo.captured_pieces_count > 0;
+
+        self.halfmove_count += 1;
+        self.halfmove_clock = if self.was_capture {
+            0
+        } else {
+            self.halfmove_clock + 1
+        };
+
         Ok(())
     }
 
