@@ -4,7 +4,8 @@ use std::error::Error;
 use std::fmt::Display;
 
 use crate::board::Board;
-use crate::board::types::{Col, Piece, Row, Side, Square};
+use crate::board::constants::HOLE;
+use crate::board::types::{Col, OptionalSquare, Piece, Row, Side, Square};
 use crate::board::utils::get_square;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -120,8 +121,19 @@ impl Board {
         Ok(())
     }
 
+    /// Reads `<rows> [last-to] <side> [clock] [count]`.
     pub fn set_fen(&mut self, fen: &str) -> Result<(), FenError> {
-        let (rows_part, side_part) = fen.split_once(' ').ok_or(FenError::MissingSide)?;
+        let mut parts = fen.split_whitespace();
+        let rows_part = parts.next().ok_or(FenError::MissingSide)?;
+        let rest: Vec<&str> = parts.collect();
+
+        let is_side = |s: &str| s == "a" || s == "d";
+        let (last_to_part, side_part, counters) = match rest.as_slice() {
+            [side, tail @ ..] if is_side(side) => (None, *side, tail),
+            [last_to, side, tail @ ..] => (Some(*last_to), *side, tail),
+            _ => return Err(FenError::MissingSide),
+        };
+
         let rows: Vec<&str> = rows_part.split('/').collect();
 
         if rows.len() != self.board_size() {
@@ -144,6 +156,14 @@ impl Board {
         if self.side_to_move != desired {
             self.flip_side();
         }
+
+        self.last_move_to = match last_to_part {
+            None | Some("-") => HOLE,
+            Some(sq) => self.get_square_from_algebraic(sq) as OptionalSquare,
+        };
+
+        self.halfmove_clock = counters.first().and_then(|c| c.parse().ok()).unwrap_or(0);
+        self.halfmove_count = counters.get(1).and_then(|c| c.parse().ok()).unwrap_or(0);
 
         Ok(())
     }
@@ -184,6 +204,18 @@ impl Board {
             Side::DEFENDERS => 'd',
         };
 
-        format!("{rows} {side}", rows = rows_out.join("/"), side = side_ch)
+        let last_to = if self.last_move_to == HOLE {
+            "-".to_string()
+        } else {
+            self.get_sq_algebraic(self.last_move_to as Square)
+        };
+
+        format!(
+            "{rows} {last_to} {side} {clock} {count}",
+            rows = rows_out.join("/"),
+            side = side_ch,
+            clock = self.halfmove_clock,
+            count = self.halfmove_count,
+        )
     }
 }

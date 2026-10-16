@@ -23,7 +23,7 @@ struct CliArgs {
 }
 
 fn parse_args() -> CliArgs {
-    let mut net_path = String::from("./default_nn.onnx");
+    let mut net_path = String::from("./copenhagen11x11.onnx");
     let mut datagen_path: Option<String> = None;
     let mut datagen_count: Option<usize> = None;
     let mut gamelog_path: Option<String> = None;

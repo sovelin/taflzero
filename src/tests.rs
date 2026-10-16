@@ -56,7 +56,7 @@ pub fn aagenielsen_dk_game_records() -> Vec<Vec<Move>> {
 
 #[test]
 fn play_outs() -> Result<(), Box<dyn Error>> {
-    let mut client = Engine::new("default_nn.onnx".to_string());
+    let mut client = Engine::new("copenhagen11x11.onnx".to_string());
 
     for mvs in aagenielsen_dk_game_records() {
         client.set_start_position();

@@ -35,6 +35,8 @@ impl Board {
         // Update last move to
         self.last_move_to = undo.last_move_to;
         self.was_capture = undo.was_capture;
+        self.halfmove_clock = undo.halfmove_clock;
+        self.halfmove_count = self.halfmove_count.saturating_sub(1);
 
         Ok(())
     }

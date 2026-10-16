@@ -1,14 +1,14 @@
 [package]
 name = "taflzero"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.91"
-description = "Artificial intelligence that plays Copenhagen Hnefatafl and Historical Hnefatafl"
+description = "Artificial intelligence that plays Copenhagen and Historical Hnefatafl (11x11) and Tablut (9x9)"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/sovelin/taflzero"
 keywords = ["ai", "hnefatafl"]
 categories = ["artificial-intelligence", "game-engines"]
-include = ["src/**/*", "LICENSE", "README.md"]
+include = ["src/**/*", "/LICENSE", "/README.md"]
 
 [lints.clippy]
 cargo = "deny"

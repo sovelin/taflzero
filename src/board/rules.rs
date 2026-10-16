@@ -42,8 +42,9 @@ impl Rules {
             has_edge_win: false,
             has_fort_win: true,
             has_shield_walls: true,
-            initial_fen: "3aaaaa3/5a5/11/a4d4a/a3ddd3a/aa1ddkdd1aa/a3ddd3a/a4d4a/11/5a5/3aaaaa3 a"
-                .to_string(),
+            initial_fen:
+                "3aaaaa3/5a5/11/a4d4a/a3ddd3a/aa1ddkdd1aa/a3ddd3a/a4d4a/11/5a5/3aaaaa3 - a 0 0"
+                    .to_string(),
             is_king_strong: true,
             is_corners_hostile: true,
             board_size: 11,
@@ -56,8 +57,9 @@ impl Rules {
             has_edge_win: true,
             has_fort_win: false,
             has_shield_walls: false,
-            initial_fen: "4aaa4/4aaa4/5d5/5d5/aa3d3aa/aadddkdddaa/aa3d3aa/5d5/5d5/4aaa4/4aaa4 d"
-                .to_string(),
+            initial_fen:
+                "4aaa4/4aaa4/5d5/5d5/aa3d3aa/aadddkdddaa/aa3d3aa/5d5/5d5/4aaa4/4aaa4 - d 0 0"
+                    .to_string(),
             is_king_strong: false,
             is_corners_hostile: false,
             board_size: 11,
@@ -70,7 +72,7 @@ impl Rules {
             has_edge_win: true,
             has_fort_win: false,
             has_shield_walls: false,
-            initial_fen: "3aaa3/4a4/4d4/a3d3a/aaddkddaa/a3d3a/4d4/4a4/3aaa3 a".to_string(),
+            initial_fen: "3aaa3/4a4/4d4/a3d3a/aaddkddaa/a3d3a/4d4/4a4/3aaa3 - a 0 0".to_string(),
             is_king_strong: false,
             is_corners_hostile: false,
             board_size: 9,

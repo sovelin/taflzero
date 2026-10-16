@@ -1,6 +1,7 @@
 mod make_move;
 pub mod movegen;
 pub mod mv;
+pub mod perft;
 pub mod undo;
 mod unmake_move;
 

@@ -28,6 +28,7 @@ pub struct UndoMove {
     pub mv: Move,
     pub last_move_to: OptionalSquare,
     pub was_capture: bool,
+    pub halfmove_clock: u32,
 }
 
 impl Default for UndoMove {
@@ -48,6 +49,7 @@ impl UndoMove {
             last_move_to: HOLE,
             moved_piece: Piece::EMPTY,
             was_capture: false,
+            halfmove_clock: 0,
         }
     }
 

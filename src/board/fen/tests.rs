@@ -77,7 +77,7 @@ mod tests {
             b.side_to_move = Side::ATTACKERS;
 
             let fen = b.get_fen();
-            assert_eq!(fen, "11/4a6/11/11/7d3/5k5/11/1d9/8a2/11/10a a");
+            assert_eq!(fen, "11/4a6/11/11/7d3/5k5/11/1d9/8a2/11/10a - a 0 0");
 
             Ok(())
         }
@@ -99,11 +99,39 @@ mod tests {
 
     #[test]
     fn roundtrip_set_and_get_fen_basic() {
-        let fen = "11/4a6/11/11/7d3/5k5/11/1d9/8a2/11/10a d";
+        let fen = "11/4a6/11/11/7d3/5k5/11/1d9/8a2/11/10a f6 d 7 42";
         let mut b = Board::new();
         b.set_fen(fen).expect("set_fen failed");
 
         let back = b.get_fen();
         assert_eq!(back, fen);
+    }
+
+    // The short `<rows> <side>` layout predates the last-to square and the counters.
+    // Game links, PGN exports and the curriculum buffer are full of it, so it has to
+    // keep loading — filling the missing fields with their empty values.
+    #[test]
+    fn legacy_two_field_fen_still_loads() {
+        let mut b = Board::new();
+        b.set_fen("11/4a6/11/11/7d3/5k5/11/1d9/8a2/11/10a d")
+            .expect("legacy set_fen failed");
+
+        assert_eq!(b.side_to_move, Side::DEFENDERS);
+        assert_eq!(b.last_move_to, crate::board::constants::HOLE);
+        assert_eq!(b.halfmove_clock, 0);
+        assert_eq!(b.halfmove_count, 0);
+    }
+
+    #[test]
+    fn last_to_square_survives_a_roundtrip() {
+        let mut b = Board::new();
+        b.set_fen("11/4a6/11/11/7d3/5k5/11/1d9/8a2/11/10a i3 d 3 11")
+            .expect("set_fen failed");
+
+        assert_eq!(
+            b.last_move_to,
+            b.get_square_from_algebraic("i3") as crate::board::types::OptionalSquare
+        );
+        assert!(b.get_fen().contains(" i3 d 3 11"));
     }
 }
