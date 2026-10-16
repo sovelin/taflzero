@@ -1,8 +1,8 @@
 {
   "name": "taflzero",
   "type": "module",
-  "description": "Artificial intelligence that plays Copenhagen Hnefatafl and Historical Hnefatafl",
-  "version": "0.1.0",
+  "description": "Artificial intelligence that plays Copenhagen and Historical Hnefatafl (11x11) and Tablut (9x9)",
+  "version": "0.2.0",
   "license": "GPL-3.0-or-later",
   "repository": {
     "type": "git",

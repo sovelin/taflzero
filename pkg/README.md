@@ -90,6 +90,13 @@ Cross-Origin-Embedder-Policy: require-corp
 
 TaflZero speaks a UCI-based protocol. Run the binary and communicate via stdin/stdout.
 
+**Networks.** The engine needs an ONNX network next to the binary. They are not part of the crate; download them from the repository:
+
+| Variant | File |
+|---|---|
+| Copenhagen / Historical 11×11 (default) | [copenhagen11x11.onnx](https://github.com/sovelin/taflzero/raw/v0.2.0/copenhagen11x11.onnx) |
+| Tablut 9×9 | [tablut9x9.onnx](https://github.com/sovelin/taflzero/raw/v0.2.0/tablut9x9.onnx) |
+
 **Command-line arguments:**
 
 ```
