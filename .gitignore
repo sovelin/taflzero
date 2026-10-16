@@ -5,6 +5,8 @@ node_modules
 # Models
 zero-trainer/weights
 *.onnx
+!/copenhagen11x11.onnx
+!/tablut9x9.onnx
 *.onxx
 
 *.tmp

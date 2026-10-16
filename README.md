@@ -9,7 +9,7 @@
 
 
 **TaflZero** is an AlphaZero-based engine for 11×11 Hnefatafl (Viking chess) and currently the strongest known engine for this variant. Play it live at **[playtafl.org](https://playtafl.org/)**. It combines Monte Carlo Tree Search (MCTS) with a deep residual neural network, trained entirely through self-play — no human games or handcrafted heuristics.
-This supports 2 variants: Copenhagen and Historical. The variant can be switched at runtime via UCI options.
+This supports 3 variants: Copenhagen and Historical (11×11) and Tablut (9×9). The variant can be switched at runtime via UCI options.
 
 ## How it works
 
@@ -96,7 +96,7 @@ TaflZero speaks a UCI-based protocol. Run the binary and communicate via stdin/s
 taflzero.exe [--net <model.onnx>] [--datagen <output.bin>] [--datagen-count <N>] [--gamelog <path>]
 ```
 
-- `--net <path>` — ONNX network to load (default: `./default_nn.onnx`)
+- `--net <path>` — ONNX network to load (default: `./copenhagen11x11.onnx`, the 11×11 Copenhagen net; for Tablut 9×9 load `./tablut9x9.onnx`)
 - `--datagen <path>` — run self-play data generation, write to binary file
 - `--datagen-count <N>` — number of games for data generation
 - `--gamelog <path>` — game log output path (used with `--datagen`)
