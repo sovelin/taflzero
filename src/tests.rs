@@ -156,3 +156,15 @@ pub fn expect_king_not_exists(board: &Board) {
 pub fn expect_side_to_be(board: &Board, side: Side) {
     assert_eq!(board.side_to_move, side);
 }
+
+// Exact tactics at expansion: with the king one step from a corner, the escape is
+// found when the root is expanded, before a single child has been visited.
+#[test]
+fn corner_escape_in_one_is_proven_at_expansion() {
+    let mut client = Engine::new("copenhagen11x11.onnx".to_string());
+    client.set_position_and_moves("11/11/5a5/11/11/11/11/11/11/11/1k9 - d 0 0", vec![]);
+
+    let res = client.make_search_nodes(1, None);
+
+    assert_eq!(client.board().move_to_algebraic(res.best_move), "b1a1");
+}

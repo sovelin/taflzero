@@ -306,6 +306,33 @@ pub fn get_left_moves(board: &Board, move_gen: &mut MoveGen) -> Vec<Move> {
     move_gen.moves[0..move_gen.count].to_vec()
 }
 
+/// Exact tactics at expansion: what a child position is worth before it is ever
+/// visited. `board` is the child position (its move already made). +1 if the side to
+/// move there has won, -1 if it has lost (king taken or escaped, repetition, or no
+/// legal move), 0 if the game goes on. Marking this at expansion is what lets a
+/// low-prior killer move count at all: PUCT alone may never visit it.
+fn child_proof(board: &mut Board, move_gen: &mut MoveGen) -> i8 {
+    if let Some(winner) = check_terminal(board) {
+        return if winner == board.side_to_move { 1 } else { -1 };
+    }
+    move_gen.generate_moves(board);
+    if move_gen.count == 0 { -1 } else { 0 }
+}
+
+/// Marks the children just added to `node_id` that are already decided.
+fn seal_proven_children(tree: &mut MCTSTree, node_id: NodeId, proofs: &[i8]) {
+    let children = tree.get_node(node_id).children.clone();
+    let added = &children[children.len() - proofs.len()..];
+    for (&c, &proof) in added.iter().zip(proofs) {
+        if proof != 0 {
+            let child = tree.get_node_mut(c);
+            child.proven = proof;
+            child.proven_dist = 0;
+            child.expanded = true;
+        }
+    }
+}
+
 /// PUCT child selection. `forced_k` > 0 (root only, self-play) enables forced
 /// playouts: a child whose visits are below sqrt(k * prior * parent_visits) is
 /// selected unconditionally (largest deficit first), so root Dirichlet noise
@@ -426,12 +453,15 @@ fn expand_node(
         let priors = softmax(&logits);
 
         let mut undo = UndoMove::new();
+        let mut proofs = Vec::with_capacity(moves.len());
         for (i, &mv) in moves.iter().enumerate() {
             board.make_move(mv, &mut undo).expect("Failed to make move");
             let zobrist = board.zobrist;
+            proofs.push(child_proof(board, move_gen));
             board.unmake_move(&mut undo).expect("Failed to unmake move");
             tree.new_child(mv, node_id, priors[i], zobrist);
         }
+        seal_proven_children(tree, node_id, &proofs);
     }
 
     tree.get_node_mut(node_id).expanded = true;
@@ -608,6 +638,7 @@ struct PendingLeaf {
     position: Option<BitPosition>,
     legal_moves: Vec<Move>,
     child_zobrists: Vec<ZobristHash>,
+    child_proofs: Vec<i8>,
 }
 
 /// Apply virtual loss along the path (makes nodes look worse to encourage diversity).
@@ -639,7 +670,10 @@ fn select_leaf(
     let mut path = vec![cur];
 
     // Descend via PUCT until we hit a leaf or a newly-terminal node
-    while !tree.get_node(cur).is_leaf() && !tree.get_node(cur).children.is_empty() {
+    while !tree.get_node(cur).is_leaf()
+        && !tree.get_node(cur).children.is_empty()
+        && tree.get_node(cur).proven == 0
+    {
         // Forced playouts apply at the root only
         let forced_k = if cur == tree.get_root_id() {
             root_forced_k
@@ -652,10 +686,25 @@ fn select_leaf(
         move_stack.make_move(board, node.mv.expect("Move not found"));
     }
 
-    // Check if this is a terminal position
-    let is_terminal = check_terminal(board);
+    // A proven node is as good as a terminal: back up its exact value and stop.
+    let proven = tree.get_node(cur).proven;
+    let is_terminal = if proven != 0 {
+        None
+    } else {
+        check_terminal(board)
+    };
 
-    let pending = if let Some(winner) = is_terminal {
+    let pending = if proven != 0 {
+        PendingLeaf {
+            node_id: cur,
+            path,
+            terminal_value: Some(proven as f32),
+            position: None,
+            legal_moves: vec![],
+            child_zobrists: vec![],
+            child_proofs: vec![],
+        }
+    } else if let Some(winner) = is_terminal {
         let value = if board.side_to_move == winner {
             1.0
         } else {
@@ -668,6 +717,7 @@ fn select_leaf(
             position: None,
             legal_moves: vec![],
             child_zobrists: vec![],
+            child_proofs: vec![],
         }
     } else if tree.get_node(cur).children.is_empty() && tree.get_node(cur).expanded {
         // Expanded but no legal moves — loss
@@ -678,6 +728,7 @@ fn select_leaf(
             position: None,
             legal_moves: vec![],
             child_zobrists: vec![],
+            child_proofs: vec![],
         }
     } else {
         // Need NN evaluation — collect position and legal moves
@@ -686,10 +737,12 @@ fn select_leaf(
         let moves = get_left_moves(board, move_gen);
 
         let mut child_zobrists = Vec::with_capacity(moves.len());
+        let mut child_proofs = Vec::with_capacity(moves.len());
         let mut undo = UndoMove::new();
         for &mv in &moves {
             board.make_move(mv, &mut undo).expect("Failed to make move");
             child_zobrists.push(board.zobrist);
+            child_proofs.push(child_proof(board, move_gen));
             board.unmake_move(&mut undo).expect("Failed to unmake move");
         }
 
@@ -700,6 +753,7 @@ fn select_leaf(
             position: Some(position),
             legal_moves: moves,
             child_zobrists,
+            child_proofs,
         }
     };
 
@@ -716,6 +770,7 @@ fn expand_with_nn_output(
     policy: &[f32],
     legal_moves: &[Move],
     child_zobrists: &[ZobristHash],
+    child_proofs: &[i8],
     board_size: usize,
 ) {
     if !legal_moves.is_empty() {
@@ -728,6 +783,7 @@ fn expand_with_nn_output(
         for (i, &mv) in legal_moves.iter().enumerate() {
             tree.new_child(mv, node_id, priors[i], child_zobrists[i]);
         }
+        seal_proven_children(tree, node_id, child_proofs);
     }
     tree.get_node_mut(node_id).expanded = true;
 }
@@ -935,8 +991,10 @@ pub fn mcts_search(
                 // Terminal — mark expanded and record the proven result (mate in 0).
                 let node = tree.get_node_mut(leaf.node_id);
                 node.expanded = true;
-                node.proven = if terminal_val > 0.0 { 1 } else { -1 };
-                node.proven_dist = 0;
+                if node.proven == 0 {
+                    node.proven = if terminal_val > 0.0 { 1 } else { -1 };
+                    node.proven_dist = 0;
+                }
                 terminal_val
             } else {
                 // Use NN output to expand
@@ -951,6 +1009,7 @@ pub fn mcts_search(
                         &nn_out.policy,
                         &leaf.legal_moves,
                         &leaf.child_zobrists,
+                        &leaf.child_proofs,
                         board.board_size(),
                     );
                 }
