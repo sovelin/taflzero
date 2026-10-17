@@ -65,6 +65,10 @@ CORNER_CLASS_NONE = 4  # class index for "game did not end with a corner escape"
 # Directions in the policy encoding: Up=0, Down=1, Left=2, Right=3
 DIRS = 4
 
+# The moves-left head regresses plies-remaining / MOVES_LEFT_SCALE, keeping the
+# target O(1). The engine must interpret its moves-left output in the same unit.
+MOVES_LEFT_SCALE = 100.0
+
 _SYM_POS = [
     lambda r, c, n: (r, c),
     lambda r, c, n: (c, n - r),
@@ -241,16 +245,38 @@ def _build_offset_index(path: Path, geom: BoardGeometry, tail_bytes: int = TAIL_
     pos = 0
     with open(path, "rb") as f:
         while pos < file_size:
-            offsets.append(pos)
             # Skip fixed header to reach policy_len
             f.seek(pos + BIT_POSITION_BYTES + geom.legal_mask_bytes)
             raw = f.read(2)
             if len(raw) < 2:
                 break
             policy_len = struct.unpack("<H", raw)[0]
+            offsets.append(pos)
             # Advance past policy entries + tail
             pos += geom.fixed_header + policy_len * 4 + tail_bytes
     return np.array(offsets, dtype=np.int64)
+
+
+def _read_last_of_game_flags(path: Path, offsets: np.ndarray, geom: BoardGeometry) -> np.ndarray:
+    """Read just the FLAG_LAST_OF_GAME bit for each given sample offset (v2 only).
+
+    Called on the windowed slice, not the whole file — so we pay two small seeks
+    per *used* sample instead of per sample in a 90M-record file.
+    """
+    last_flags = np.zeros(len(offsets), dtype=bool)
+    with open(path, "rb") as f:
+        for i, off in enumerate(offsets):
+            off = int(off)
+            f.seek(off + BIT_POSITION_BYTES + geom.legal_mask_bytes)
+            raw = f.read(2)
+            if len(raw) < 2:
+                last_flags[i] = True
+                continue
+            policy_len = struct.unpack("<H", raw)[0]
+            f.seek(off + geom.fixed_header + policy_len * 4 + 2)  # past value + root_q
+            fb = f.read(1)
+            last_flags[i] = bool(fb[0] & FLAG_LAST_OF_GAME) if len(fb) == 1 else True
+    return last_flags
 
 
 def _decode_policy(policy_raw: bytes, policy_len: int, geom: BoardGeometry) -> np.ndarray:
@@ -285,8 +311,15 @@ def _read_aux_policy_at(f, offset: int, geom: BoardGeometry) -> tuple[np.ndarray
 
 def _read_sample_at(
     f, offset: int, geom: BoardGeometry, z_lambda: float = 0.5, legacy: bool = False,
+    value_gamma: float = 1.0, plies_remaining: int = 0,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, bool, bool, int, int]:
     """Read and decode a single sample from an open file handle at the given offset.
+
+    `value_gamma` < 1 discounts the final-result z by gamma**plies_remaining, so
+    a win close to mate keeps ~±1 while a far-off (shuffled) win decays toward 0.
+    This gives the value head a gradient to CONVERT won positions instead of
+    treating a mate-in-3 and a 200-ply repetition-win as equally +1.  gamma=1
+    reproduces the original flat targets exactly.
 
     Returns (planes, legal_mask, policy, value_target,
              policy_valid, last_of_game, corner_class, next_offset).
@@ -362,12 +395,18 @@ def _read_sample_at(
     # -- Policy target: sparse → dense, then normalize --
     policy_visits = _decode_policy(policy_raw, policy_len, geom)
 
+    # Optional per-ply discount of the game outcome: a distant win decays toward
+    # a draw so the value head is rewarded for converting quickly (gamma=1 = off).
+    z = float(value)
+    if value_gamma != 1.0:
+        z *= value_gamma ** plies_remaining
+
     # Bootstrapped value target: mix final result with search estimate.
     # Cheap-search samples (PCR) have a low-node root_q — use pure z for them.
     if policy_valid:
-        value_target = z_lambda * float(value) + (1.0 - z_lambda) * root_q
+        value_target = z_lambda * z + (1.0 - z_lambda) * root_q
     else:
-        value_target = float(value)
+        value_target = z
 
     return (
         torch.from_numpy(board_planes),
@@ -415,20 +454,44 @@ class SelfPlayDataset(Dataset):
 
     def __init__(self, path: Path | str, window_size: int = 0, augment: bool = True,
                  z_lambda: float = 0.5, legacy: bool = False,
-                 board_size: int = 11) -> None:
+                 board_size: int = 11,
+                 value_gamma: float = 1.0, need_moves_left: bool = False) -> None:
         self._path = Path(path)
         self._legacy = legacy
         self._geom = geometry(board_size)
         tail = TAIL_BYTES_V1 if legacy else TAIL_BYTES_V2
         offsets = _build_offset_index(self._path, self._geom, tail)
 
+        # Apply the sliding window FIRST, then read game boundaries only for the
+        # samples we keep — reading last-of-game for all 90M records (2 seeks
+        # each) would dwarf the training itself.  The last window includes the
+        # final game in full, so forward-looking plies-remaining stays exact.
         if window_size > 0 and len(offsets) > window_size:
             offsets = offsets[-window_size:]
 
+        # Plies-remaining feeds both the value discount and the moves-left head;
+        # reconstruct it from game boundaries whenever either needs it.
+        self._moves_left_valid = (not legacy)
+        if (value_gamma != 1.0 or need_moves_left) and not legacy:
+            last_flags = _read_last_of_game_flags(self._path, offsets, self._geom)
+            plies = np.zeros(len(offsets), dtype=np.int32)
+            running = 0
+            for i in range(len(offsets) - 1, -1, -1):
+                if last_flags[i]:
+                    running = 0
+                plies[i] = running
+                running += 1
+        else:
+            # Neither discount nor MLH needs plies (or legacy has no boundaries).
+            plies = np.zeros(len(offsets), dtype=np.int32)
+            self._moves_left_valid = False
+
         self._offsets = offsets
+        self._plies_remaining = plies
         self._file_size = self._path.stat().st_size
         self._augment = augment
         self._z_lambda = z_lambda
+        self._value_gamma = value_gamma
         # File handle opened lazily per worker process
         self._fh = None
 
@@ -444,7 +507,8 @@ class SelfPlayDataset(Dataset):
     def __getitem__(self, idx: int):
         fh = self._get_fh()
         planes, legal_mask, policy, value, policy_valid, last_of_game, corner, next_offset, root_q = \
-            _read_sample_at(fh, int(self._offsets[idx]), self._geom, self._z_lambda, self._legacy)
+            _read_sample_at(fh, int(self._offsets[idx]), self._geom, self._z_lambda, self._legacy,
+                            self._value_gamma, int(self._plies_remaining[idx]))
 
         # Opponent-reply auxiliary target: the next sample of the same game.
         # FLAG_LAST_OF_GAME guards the game boundary; the file-size check
@@ -471,6 +535,9 @@ class SelfPlayDataset(Dataset):
                 aux_legal = aux_legal[perm]
                 corner = self._geom.corner_perms[sym][corner]
 
+        moves_left_target = float(self._plies_remaining[idx]) / MOVES_LEFT_SCALE
+        moves_left_valid = 1.0 if self._moves_left_valid else 0.0
+
         return (
             planes,
             legal_mask,
@@ -482,6 +549,8 @@ class SelfPlayDataset(Dataset):
             torch.tensor(1.0 if aux_valid else 0.0),
             torch.tensor(corner, dtype=torch.long),
             torch.tensor(np.float32(root_q)),
+            torch.tensor(np.float32(moves_left_target)),
+            torch.tensor(np.float32(moves_left_valid)),
         )
 
     def __del__(self) -> None:

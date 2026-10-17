@@ -18,6 +18,18 @@ def export_model_to_onnx(model: nn.Module, onnx_path: Path) -> None:
     in_channels = model.model_kwargs["in_channels"]
     dummy = torch.randn(1, in_channels, board_size, board_size)
 
+    # A moves-left model returns a 3rd output; name it and give it a batch axis so
+    # the exported graph gains the extra output only when the head is present.
+    has_ml = getattr(model, "has_moves_left", False)
+    output_names = ["policy", "value"] + (["moves_left"] if has_ml else [])
+    dynamic_axes = {
+        "input": {0: "batch"},
+        "policy": {0: "batch"},
+        "value": {0: "batch"},
+    }
+    if has_ml:
+        dynamic_axes["moves_left"] = {0: "batch"}
+
     # Export FP32 to a temp file, then convert to FP16 in-place
     with tempfile.NamedTemporaryFile(suffix=".onnx", delete=False) as tmp:
         tmp_path = Path(tmp.name)
@@ -28,12 +40,8 @@ def export_model_to_onnx(model: nn.Module, onnx_path: Path) -> None:
             dummy,
             str(tmp_path),
             input_names=["input"],
-            output_names=["policy", "value"],
-            dynamic_axes={
-                "input": {0: "batch"},
-                "policy": {0: "batch"},
-                "value": {0: "batch"},
-            },
+            output_names=output_names,
+            dynamic_axes=dynamic_axes,
             opset_version=17,
             dynamo=False,
         )

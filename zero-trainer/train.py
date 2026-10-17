@@ -16,6 +16,7 @@ import sys
 import time
 from pathlib import Path
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, random_split
@@ -24,7 +25,7 @@ from az_micro_net import TaflAlphaZeroNet
 from dataset import SelfPlayDataset
 from export_onnx import export_model_to_onnx
 from qnxx_io import save_qnxx, load_qnxx
-from training_utils import alpha_zero_loss, policy_loss_masked
+from training_utils import alpha_zero_loss, policy_loss_masked, moves_left_loss
 
 LOG_INTERVAL = 100  # print stats every N steps
 
@@ -38,6 +39,7 @@ def compute_batch_loss(
     corner_weight: float,
     use_aux: bool,
     decided_policy_k: float = 0.0,
+    moves_left_weight: float = 0.0,
 ):
     """Forward + all loss terms for one batch.
 
@@ -50,13 +52,19 @@ def compute_batch_loss(
     Returns (total, p_loss, v_loss, aux_p_loss, corner_loss) as tensors.
     """
     (planes, legal_mask, pi_target, value_target,
-     policy_valid, aux_policy, aux_legal, aux_valid, corner, root_q) = batch
+     policy_valid, aux_policy, aux_legal, aux_valid, corner, root_q,
+     moves_left_target, moves_left_valid) = batch
 
     planes = planes.to(device)
     legal_mask = legal_mask.to(device)
     pi_target = pi_target.to(device)
     value_target = value_target.to(device)
     policy_valid = policy_valid.to(device)
+
+    want_ml = moves_left_weight > 0.0 and model.has_moves_left
+    if want_ml:
+        moves_left_target = moves_left_target.to(device)
+        moves_left_valid = moves_left_valid.to(device)
 
     weights = compute_sample_weights(planes, value_target, defender_weight)
 
@@ -72,7 +80,8 @@ def compute_batch_loss(
         aux_valid = aux_valid.to(device)
         corner = corner.to(device)
 
-        policy_logits, value_pred, aux_logits, corner_logits = model.forward_with_aux(planes)
+        policy_logits, value_pred, aux_logits, corner_logits, ml_pred = \
+            model.forward_with_aux(planes)
         total, p_loss, v_loss = alpha_zero_loss(
             policy_logits=policy_logits,
             value_pred=value_pred,
@@ -86,9 +95,15 @@ def compute_batch_loss(
         aux_p_loss = policy_loss_masked(aux_logits, aux_policy, aux_legal, aux_valid)
         corner_loss = F.cross_entropy(corner_logits, corner)
         total = total + aux_policy_weight * aux_p_loss + corner_weight * corner_loss
-        return total, p_loss, v_loss, aux_p_loss, corner_loss
+        ml_loss = total.detach() * 0.0
+        if want_ml and ml_pred is not None:
+            ml_loss = moves_left_loss(ml_pred, moves_left_target, moves_left_valid)
+            total = total + moves_left_weight * ml_loss
+        return total, p_loss, v_loss, aux_p_loss, corner_loss, ml_loss
 
-    policy_logits, value_pred = model(planes)
+    out = model(planes)
+    policy_logits, value_pred = out[0], out[1]
+    ml_pred = out[2] if len(out) > 2 else None
     total, p_loss, v_loss = alpha_zero_loss(
         policy_logits=policy_logits,
         value_pred=value_pred,
@@ -100,7 +115,11 @@ def compute_batch_loss(
         policy_sample_weights=policy_weights,
     )
     zero = total.detach() * 0.0
-    return total, p_loss, v_loss, zero, zero
+    ml_loss = zero
+    if want_ml and ml_pred is not None:
+        ml_loss = moves_left_loss(ml_pred, moves_left_target, moves_left_valid)
+        total = total + moves_left_weight * ml_loss
+    return total, p_loss, v_loss, zero, zero, ml_loss
 
 
 def infinite_dataloader(loader: DataLoader):
@@ -127,7 +146,7 @@ def compute_val_loss(
     total_v = 0.0
     n = 0
     for batch in itertools.islice(val_loader, max_batches):
-        loss, p_loss, v_loss, _, _ = compute_batch_loss(
+        loss, p_loss, v_loss, _, _, _ = compute_batch_loss(
             model, batch, device, defender_weight,
             aux_policy_weight, corner_weight, use_aux,
         )
@@ -173,9 +192,11 @@ def train(
     restore_best: bool,
     device: torch.device,
     warmup_steps: int = 0,
+    lr_final: float | None = None,
     aux_policy_weight: float = 0.0,
     corner_weight: float = 0.0,
     decided_policy_k: float = 0.0,
+    moves_left_weight: float = 0.0,
     checkpoint_every: int = 0,
     checkpoint_path=None,
 ) -> dict:
@@ -211,11 +232,13 @@ def train(
     print(f"Device: {device}, defender_weight={defender_weight}")
     print()
 
+    use_ml = model.has_moves_left and moves_left_weight > 0.0
     running_loss = 0.0
     running_p = 0.0
     running_v = 0.0
     running_ap = 0.0
     running_c = 0.0
+    running_ml = 0.0
     t0 = time.time()
     best_val_loss = float("inf")
     best_state_dict = None
@@ -230,11 +253,20 @@ def train(
         if warmup_steps > 0 and step <= warmup_steps:
             for group in optimizer.param_groups:
                 group["lr"] = lr * step / warmup_steps
+        elif lr_final is not None and lr_final != lr:
+            # Cosine decay from lr -> lr_final over the post-warmup steps.
+            import math as _math
+            prog = (step - warmup_steps) / max(1, steps - warmup_steps)
+            prog = min(max(prog, 0.0), 1.0)
+            cur_lr = lr_final + 0.5 * (lr - lr_final) * (1 + _math.cos(_math.pi * prog))
+            for group in optimizer.param_groups:
+                group["lr"] = cur_lr
 
-        total_loss, p_loss, v_loss, ap_loss, c_loss = compute_batch_loss(
+        total_loss, p_loss, v_loss, ap_loss, c_loss, ml_loss = compute_batch_loss(
             model, batch, device, defender_weight,
             aux_policy_weight, corner_weight, use_aux,
             decided_policy_k=decided_policy_k,
+            moves_left_weight=moves_left_weight,
         )
 
         optimizer.zero_grad(set_to_none=True)
@@ -256,6 +288,7 @@ def train(
         running_v += v_loss.item()
         running_ap += ap_loss.item()
         running_c += c_loss.item()
+        running_ml += ml_loss.item()
 
         if step % LOG_INTERVAL == 0 or step == steps:
             dt = time.time() - t0
@@ -264,6 +297,7 @@ def train(
             avg_v = running_v / LOG_INTERVAL
             avg_ap = running_ap / LOG_INTERVAL
             avg_c = running_c / LOG_INTERVAL
+            avg_ml = running_ml / LOG_INTERVAL
             speed = LOG_INTERVAL * batch_size / dt
 
             val_loss, val_p, val_v = compute_val_loss(
@@ -275,10 +309,11 @@ def train(
             )
 
             aux_str = f"aux_p={avg_ap:.4f}  corner={avg_c:.4f}  " if use_aux else ""
+            ml_str = f"moves_left={avg_ml:.4f}  " if use_ml else ""
             print(
                 f"Step {step:5d}/{steps}  "
                 f"loss={avg_loss:.4f}  policy={avg_p:.4f}  value={avg_v:.4f}  "
-                f"{aux_str}"
+                f"{aux_str}{ml_str}"
                 f"val_loss={val_loss:.4f}  val_p={val_p:.4f}  val_v={val_v:.4f}  "
                 f"{speed:.0f} samples/s"
             )
@@ -312,6 +347,7 @@ def train(
             running_v = 0.0
             running_ap = 0.0
             running_c = 0.0
+            running_ml = 0.0
             t0 = time.time()
 
     # Restore best model if we tracked it
@@ -338,6 +374,8 @@ def main() -> None:
     parser.add_argument("--se", action="store_true", help="Squeeze-excitation blocks for a fresh model (ignored if --checkpoint given)")
     parser.add_argument("--gpool-channels", type=int, default=None, help="Global pooling channels on odd blocks for a fresh model (0 = off; ignored if --checkpoint given)")
     parser.add_argument("--aux-heads", action="store_true", help="Build training-only aux heads (opponent policy + king corner) for a fresh model")
+    parser.add_argument("--moves-left", action="store_true", help="Build/graft a moves-left head (predicts plies to game end; adds a 3rd ONNX output). Grafts onto a loaded checkpoint if it lacks one.")
+    parser.add_argument("--moves-left-weight", type=float, default=0.0, help="Loss weight for the moves-left head (0 = don't train it). Try 0.1. Requires --moves-left or an MLH checkpoint.")
     parser.add_argument("--decided-policy-k", type=float, default=0.0, help="Down-weight policy loss in decided positions by (1-|root_q|**k); 0 = off. Try 4.0. Value loss unaffected.")
     parser.add_argument("--aux-policy-weight", type=float, default=0.15, help="Loss weight of the opponent-reply aux policy head (used only if the model has aux heads)")
     parser.add_argument("--corner-weight", type=float, default=0.1, help="Loss weight of the king-escape-corner aux head (used only if the model has aux heads)")
@@ -350,16 +388,29 @@ def main() -> None:
     parser.add_argument("--batch", type=int, default=256, help="Batch size")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
     parser.add_argument("--warmup-steps", type=int, default=0, help="Linear LR warmup steps from 0 to --lr (0 = disabled, no warmup)")
+    parser.add_argument("--lr-final", type=float, default=None, help="If set, cosine-decay LR from --lr to this value over post-warmup steps (None = constant LR)")
     parser.add_argument("--weight-decay", type=float, default=1e-4, help="Weight decay (L2 regularization)")
     parser.add_argument("--defender-weight", type=float, default=1.0, help="Loss weight for defender-win samples (1.0 = no reweighting)")
     parser.add_argument("--value-lambda", type=float, default=0.5, help="Weight of final result z in value target; (1-lambda) goes to MCTS root Q")
+    parser.add_argument("--value-gamma", type=float, default=1.0, help="Per-ply discount of the game outcome z (z *= gamma**plies_remaining); 1.0 = off (flat +/-1). Try 0.99 to reward fast conversion of won positions.")
     parser.add_argument("--early-stopping-patience", type=int, default=0, help="Stop if val_loss doesn't improve for N checks (0 = disabled)")
     parser.add_argument("--no-restore-best", action="store_true", help="Always use final model weights, don't restore best val_loss checkpoint")
+    parser.add_argument("--seed", type=int, default=0, help="RNG seed for reproducible weight init + data order (0 = unseeded). Set equal across A/B runs to isolate one changed flag.")
     args = parser.parse_args()
 
     if not args.data.exists():
         print(f"Data file not found: {args.data}", file=sys.stderr)
         sys.exit(1)
+
+    # Deterministic weight init + data order so A/B runs differ ONLY by the flag
+    # under test (e.g. --value-gamma).  0 = leave RNG unseeded (original behavior).
+    if args.seed != 0:
+        import random as _random
+        _random.seed(args.seed)
+        np.random.seed(args.seed)
+        torch.manual_seed(args.seed)
+        torch.cuda.manual_seed_all(args.seed)
+        print(f"Seeded RNG with {args.seed}")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -382,8 +433,17 @@ def main() -> None:
             model_kwargs["gpool_channels"] = args.gpool_channels
         if args.aux_heads:
             model_kwargs["aux_heads"] = True
+        if args.moves_left:
+            model_kwargs["moves_left"] = True
         model = TaflAlphaZeroNet(**model_kwargs)
         print(f"Creating new model: {model.model_kwargs}")
+
+    # Graft a moves-left head onto a loaded checkpoint that lacks one, so a
+    # mature run can continue with MLH instead of restarting from scratch.
+    if args.moves_left and not model.has_moves_left:
+        model.enable_moves_left()
+        model.to(device)
+        print("Grafted a fresh moves-left head onto the loaded model")
 
     # Load dataset
     print(f"Loading data: {args.data}")
@@ -391,7 +451,8 @@ def main() -> None:
     board_size = model.model_kwargs.get("board_size", 11)
     dataset = SelfPlayDataset(
         args.data, window_size=args.window, z_lambda=args.value_lambda,
-        legacy=args.legacy_data, board_size=board_size,
+        legacy=args.legacy_data, board_size=board_size, value_gamma=args.value_gamma,
+        need_moves_left=(model.has_moves_left and args.moves_left_weight > 0.0),
     )
     print(f"Loaded {len(dataset)} samples" + (f" (window={args.window})" if args.window > 0 else ""))
 
@@ -423,9 +484,11 @@ def main() -> None:
         restore_best=not args.no_restore_best,
         device=device,
         warmup_steps=args.warmup_steps,
+        lr_final=args.lr_final,
         aux_policy_weight=args.aux_policy_weight,
         corner_weight=args.corner_weight,
         decided_policy_k=args.decided_policy_k,
+        moves_left_weight=args.moves_left_weight,
         checkpoint_every=args.checkpoint_every,
         checkpoint_path=args.save_checkpoint,
     )

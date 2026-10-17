@@ -168,3 +168,14 @@ fn corner_escape_in_one_is_proven_at_expansion() {
 
     assert_eq!(client.board().move_to_algebraic(res.best_move), "b1a1");
 }
+
+// Game-length shaping: a win 100 plies away loses alpha/2 of its value, one 400 plies
+// away loses the full alpha, and a net without the head (or alpha 0) changes nothing.
+#[test]
+fn moves_left_shaping_scales_with_predicted_length() {
+    use crate::mcts::shaped_value;
+    assert_eq!(shaped_value(0.8, Some(1.0), 0.15), 0.8 * (1.0 - 0.075));
+    assert_eq!(shaped_value(-0.8, Some(4.0), 0.15), -0.8 * 0.85);
+    assert_eq!(shaped_value(0.8, None, 0.15), 0.8);
+    assert_eq!(shaped_value(0.8, Some(1.0), 0.0), 0.8);
+}

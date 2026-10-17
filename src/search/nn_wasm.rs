@@ -124,6 +124,8 @@ impl NeuralNet {
                 results.push(NnOutput {
                     policy,
                     value: value_all[i],
+                    // WASM path (web client) does not use the moves-left utility.
+                    moves_left: None,
                 });
             }
         });

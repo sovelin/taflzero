@@ -11,6 +11,10 @@ pub struct NnOutput {
     /// One logit per action, `get_policy_size(board_size)` long.
     pub policy: Vec<f32>,
     pub value: f32,
+    /// Predicted plies-to-game-end (in units of plies / MOVES_LEFT_SCALE=100),
+    /// from a moves-left head. `None` for nets without the head — the engine
+    /// then simply skips the moves-left search utility (backward compatible).
+    pub moves_left: Option<f32>,
 }
 
 pub fn fill_input(input: &mut [f32], pos: &BitPosition, geom: &Precomputed) {

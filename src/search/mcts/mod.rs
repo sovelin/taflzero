@@ -301,6 +301,34 @@ impl MCTSTree {
     }
 }
 
+/// Game-length shaping of a leaf value, `v * (1 - alpha * min(plies_left / 200, 1))`:
+/// a win expected to take long is worth a little less, a loss that can be dragged out
+/// a little more, so the search prefers the quick kill and the stubborn defence. The
+/// weight comes from `TAFLZERO_MLH_ALPHA` (0 = off) so only self-play turns it on;
+/// nets without a moves-left head are left alone.
+fn shape_by_moves_left(value: f32, moves_left: Option<f32>) -> f32 {
+    use std::sync::OnceLock;
+    static ALPHA: OnceLock<f32> = OnceLock::new();
+    let alpha = *ALPHA.get_or_init(|| {
+        std::env::var("TAFLZERO_MLH_ALPHA")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.0)
+    });
+    shaped_value(value, moves_left, alpha)
+}
+
+pub(crate) fn shaped_value(value: f32, moves_left: Option<f32>, alpha: f32) -> f32 {
+    match moves_left {
+        Some(ml) if alpha > 0.0 => {
+            // The head predicts plies / MOVES_LEFT_SCALE (100); the scale here is 200 plies.
+            let plies = (ml * 100.0).max(0.0);
+            value * (1.0 - alpha * (plies / 200.0).min(1.0))
+        }
+        _ => value,
+    }
+}
+
 pub fn get_left_moves(board: &Board, move_gen: &mut MoveGen) -> Vec<Move> {
     move_gen.generate_moves(board);
     move_gen.moves[0..move_gen.count].to_vec()
@@ -466,7 +494,7 @@ fn expand_node(
 
     tree.get_node_mut(node_id).expanded = true;
 
-    nn_out.value
+    shape_by_moves_left(nn_out.value, nn_out.moves_left)
 }
 
 #[allow(dead_code)]
@@ -1014,7 +1042,7 @@ pub fn mcts_search(
                     );
                 }
 
-                nn_out.value
+                shape_by_moves_left(nn_out.value, nn_out.moves_left)
             };
 
             backpropagate(tree, &leaf.path, result);

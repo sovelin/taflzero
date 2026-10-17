@@ -97,6 +97,26 @@ def value_loss(
     return per_sample.mean()
 
 
+def moves_left_loss(
+    pred: Tensor, target: Tensor, valid: Tensor | None = None,
+) -> Tensor:
+    """MSE on the moves-left head (plies-remaining / scale).
+
+    `valid` (per-sample 0/1) masks out samples with no known game boundary
+    (legacy v1 data).  Returns a connected zero if no row is valid.
+    """
+    pred = pred.squeeze(-1)
+    target = target.squeeze(-1) if target.ndim > 1 else target
+    per_sample = (pred - target).pow(2)
+    if valid is not None:
+        v = valid.squeeze(-1) if valid.ndim > 1 else valid
+        denom = v.sum()
+        if float(denom) <= 0.0:
+            return pred.sum() * 0.0
+        return (per_sample * v).sum() / denom
+    return per_sample.mean()
+
+
 def policy_loss_masked(
     policy_logits: Tensor,
     pi_target: Tensor,

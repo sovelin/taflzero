@@ -190,12 +190,29 @@ impl NeuralNet {
         let (_, policy_data) = outputs[0].try_extract_tensor::<f32>().unwrap();
         let (_, value_data) = outputs[1].try_extract_tensor::<f32>().unwrap();
 
+        // Optional third output: a moves-left head. Nets exported without it
+        // yield only 2 outputs, so read it only when present (backward compatible
+        // with every historical net).
+        let moves_left_data: Option<Vec<f32>> = if outputs.len() > 2 {
+            outputs[2]
+                .try_extract_tensor::<f32>()
+                .ok()
+                .map(|(_, d)| d.to_vec())
+        } else {
+            None
+        };
+
         let mut results = Vec::with_capacity(batch_size);
         for i in 0..batch_size {
             let policy_size = get_policy_size(geom.board_size);
             let policy = policy_data[i * policy_size..(i + 1) * policy_size].to_vec();
             let value = value_data[i];
-            results.push(NnOutput { policy, value });
+            let moves_left = moves_left_data.as_ref().map(|d| d[i]);
+            results.push(NnOutput {
+                policy,
+                value,
+                moves_left,
+            });
         }
 
         results

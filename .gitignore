@@ -13,3 +13,4 @@ zero-trainer/weights
 .idea
 .playwright-mcp
 dedup
+__pycache__/
