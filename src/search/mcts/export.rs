@@ -79,6 +79,10 @@ struct PolicyTarget {
 pub const FLAG_POLICY_VALID: u8 = 1 << 0;
 /// flags bit 1: this sample is the last move of its game
 pub const FLAG_LAST_OF_GAME: u8 = 1 << 1;
+/// flags bit 2: the game's outcome is unknown (ply or no-capture limit); `value` is 0
+/// and must not be used as a target. Old files have the bit clear, which reads as
+/// "known" — every game written before this flag existed was decisive.
+pub const FLAG_RESULT_UNKNOWN: u8 = 1 << 2;
 
 /// king_corner value when the game did not end with a corner escape
 pub const KING_CORNER_NONE: u8 = 255;
@@ -166,6 +170,19 @@ impl PendingSample {
             Side::DEFENDERS
         };
         self.value = compute_value(stm_side, result);
+        if result.is_some() {
+            self.flags &= !FLAG_RESULT_UNKNOWN;
+        } else {
+            self.flags |= FLAG_RESULT_UNKNOWN;
+        }
+    }
+
+    pub fn flags(&self) -> u8 {
+        self.flags
+    }
+
+    pub fn value(&self) -> i8 {
+        self.value
     }
 
     pub fn set_policy_valid(&mut self, valid: bool) {

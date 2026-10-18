@@ -58,6 +58,15 @@ impl NeuralNet {
     }
 
     /// Board side this net can evaluate.
+    pub fn path(&self) -> &str {
+        ""
+    }
+
+    /// No file system in the browser: the net never changes underneath us.
+    pub fn reload_if_changed(&mut self) -> Result<bool, String> {
+        Ok(false)
+    }
+
     pub fn board_size(&self) -> usize {
         self.board_size
     }

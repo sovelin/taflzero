@@ -1,7 +1,9 @@
 use taflzero::board::Board;
 use taflzero::board::position_export::BitPosition;
 use taflzero::board::rules::{RulesEnum, get_rules_enum_from_str};
-use taflzero::gen_train_data::{DatagenConfig, SearchConfig, gen_train_data};
+use taflzero::gen_train_data::{
+    DaemonConfig, DatagenConfig, GameLimits, SearchConfig, gen_train_data,
+};
 use taflzero::mcts::MCTSConfig;
 use taflzero::search::nn::{NeuralNet, fill_input};
 use taflzero::{ConsoleClient, UciRunState, get_sample_size};
@@ -20,6 +22,10 @@ struct CliArgs {
     full_nodes: u64,
     cheap_nodes: u64,
     full_prob: f64,
+    max_plies: usize,
+    max_no_capture: usize,
+    gumbel: Option<usize>,
+    daemon: DaemonConfig,
 }
 
 fn parse_args() -> CliArgs {
@@ -36,7 +42,34 @@ fn parse_args() -> CliArgs {
     let mut full_nodes = 400u64;
     let mut cheap_nodes = 100u64;
     let mut full_prob = 1.0f64;
+    let limits = GameLimits::default();
+    let mut max_plies = limits.max_plies;
+    let mut max_no_capture = limits.max_no_capture;
+    let mut gumbel: Option<usize> = None;
+    let mut daemon = DaemonConfig::default();
     let mut args = std::env::args().skip(1);
+
+    // `--flag <usize>` with a lower bound; exits with a usage error otherwise.
+    fn usize_arg(args: &mut impl Iterator<Item = String>, flag: &str, min: usize) -> usize {
+        let Some(raw) = args.next() else {
+            eprintln!("Missing value for {flag}");
+            std::process::exit(2);
+        };
+        match raw.parse::<usize>() {
+            Ok(v) if v >= min => v,
+            _ => {
+                eprintln!("Invalid value for {flag}: {raw}");
+                std::process::exit(2);
+            }
+        }
+    }
+    fn path_arg(args: &mut impl Iterator<Item = String>, flag: &str) -> String {
+        let Some(raw) = args.next() else {
+            eprintln!("Missing value for {flag}");
+            std::process::exit(2);
+        };
+        raw
+    }
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -59,10 +92,8 @@ fn parse_args() -> CliArgs {
             "--datagen-count" => {
                 if let Some(raw) = args.next() {
                     match raw.parse::<usize>() {
-                        Ok(0) => {
-                            eprintln!("--datagen-count must be > 0");
-                            std::process::exit(2);
-                        }
+                        // 0 = no limit: play until the stop file appears (or forever).
+                        Ok(0) => datagen_count = None,
                         Ok(v) => datagen_count = Some(v),
                         Err(_) => {
                             eprintln!("Invalid value for --datagen-count: {raw}");
@@ -190,10 +221,22 @@ fn parse_args() -> CliArgs {
                     std::process::exit(2);
                 }
             }
+            "--max-plies" => max_plies = usize_arg(&mut args, "--max-plies", 1),
+            "--max-no-capture" => max_no_capture = usize_arg(&mut args, "--max-no-capture", 1),
+            "--gumbel" => gumbel = Some(usize_arg(&mut args, "--gumbel", 2)),
+            "--net-watch" => daemon.net_watch = true,
+            "--stop-file" => daemon.stop_file = Some(path_arg(&mut args, "--stop-file")),
+            "--pause-file" => daemon.pause_file = Some(path_arg(&mut args, "--pause-file")),
+            "--worker-id" => daemon.worker_id = Some(usize_arg(&mut args, "--worker-id", 0)),
             _ => {
                 eprintln!("Unknown arg: {arg}");
                 eprintln!(
-                    "Usage: taflzero [--net <model.onnx>] [--datagen <output.bin>] [--datagen-count <games>] [--datagen-count <N>] [--variant <name>] [--dump-sample <output.bin>]"
+                    "Usage: taflzero [--net <model.onnx>] [--datagen <output.bin>] [--datagen-count <N|0=unlimited>] \
+                     [--gamelog <path>] [--variant <name>] [--full-nodes N] [--cheap-nodes N] [--full-prob F] \
+                     [--gumbel <considered>] [--max-plies N] [--max-no-capture N] \
+                     [--net-watch] [--stop-file <path>] [--pause-file <path>] [--worker-id N] \
+                     [--curriculum-fraction F] [--curriculum-path <path>] [--curriculum-max-size N] \
+                     [--dump-sample <output.bin>] [--nn-eval <fen>]"
                 );
                 std::process::exit(2);
             }
@@ -214,6 +257,10 @@ fn parse_args() -> CliArgs {
         full_nodes,
         cheap_nodes,
         full_prob,
+        max_plies,
+        max_no_capture,
+        gumbel,
+        daemon,
     }
 }
 
@@ -242,8 +289,13 @@ fn load_net_for(path: &str, board_size: usize, batch_size: usize) -> NeuralNet {
 fn main() {
     let cli = parse_args();
 
-    if cli.datagen_count.is_some() && cli.datagen_path.is_none() {
-        eprintln!("--datagen-count can only be used together with --datagen");
+    if cli.datagen_path.is_none()
+        && (cli.datagen_count.is_some()
+            || cli.daemon.net_watch
+            || cli.daemon.stop_file.is_some()
+            || cli.daemon.pause_file.is_some())
+    {
+        eprintln!("--datagen-count / --net-watch / --stop-file / --pause-file need --datagen");
         std::process::exit(2);
     }
 
@@ -324,7 +376,13 @@ fn main() {
                 full_nodes: cli.full_nodes,
                 cheap_nodes: cli.cheap_nodes,
                 full_prob: cli.full_prob,
+                gumbel: cli.gumbel,
             },
+            limits: GameLimits {
+                max_plies: cli.max_plies,
+                max_no_capture: cli.max_no_capture,
+            },
+            daemon: cli.daemon,
         };
 
         gen_train_data(

@@ -14,6 +14,10 @@ use ort::value::{Value, ValueType};
 
 pub struct NeuralNet {
     session: Session,
+    /// Where the model was loaded from (empty for `from_bytes`), and the file's
+    /// modification time at load, so a worker can pick up a retrained net.
+    path: String,
+    loaded_mtime: Option<std::time::SystemTime>,
     board_size: usize,
     /// Every call is padded to this many samples. ORT plans execution per input
     /// shape, and a shape it has not seen pays that cost on every run, so the search
@@ -41,13 +45,62 @@ fn model_board_size(session: &Session) -> Option<usize> {
     Some(height as usize)
 }
 
+fn file_mtime(path: &str) -> Option<std::time::SystemTime> {
+    std::fs::metadata(path).and_then(|m| m.modified()).ok()
+}
+
 impl NeuralNet {
     /// Loads a net and records the board size it was built for. `board_size` is only a
     /// fallback for models that leave their spatial dimensions dynamic — the model's own
     /// shape wins. Whether that size fits the current board is checked at search time.
     pub fn new(path: &str, board_size: usize, batch_size: usize) -> Result<Self, String> {
         println!("[NN] Loading model: {}", path);
+        let (session, board_size) = Self::build_session(path, board_size, batch_size)?;
+        Ok(Self {
+            session,
+            path: path.to_string(),
+            loaded_mtime: file_mtime(path),
+            board_size,
+            batch_size,
+        })
+    }
 
+    /// Path the net was loaded from.
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    /// Reloads the net when the file at `path` has a newer mtime than the one loaded.
+    /// Returns `Ok(true)` after a reload, `Ok(false)` when nothing changed. A file
+    /// that cannot be loaded (half-written, corrupt) leaves the current session in
+    /// place and reports the error; the next call tries again.
+    pub fn reload_if_changed(&mut self) -> Result<bool, String> {
+        if self.path.is_empty() {
+            return Ok(false);
+        }
+        let mtime = file_mtime(&self.path);
+        if mtime.is_none() || mtime == self.loaded_mtime {
+            return Ok(false);
+        }
+        let (session, board_size) =
+            Self::build_session(&self.path, self.board_size, self.batch_size)?;
+        if board_size != self.board_size {
+            return Err(format!(
+                "reloaded net is for a {board_size}x{board_size} board, expected {0}x{0}",
+                self.board_size
+            ));
+        }
+        self.session = session;
+        self.loaded_mtime = mtime;
+        Ok(true)
+    }
+
+    /// Builds and warms up a session; returns it with the board size it is built for.
+    fn build_session(
+        path: &str,
+        board_size: usize,
+        batch_size: usize,
+    ) -> Result<(Session, usize), String> {
         #[cfg(all(feature = "cuda", feature = "directml"))]
         println!("[NN] Backend: CUDA → DirectML → CPU (auto)");
         #[cfg(all(feature = "cuda", not(feature = "directml")))]
@@ -136,11 +189,7 @@ impl NeuralNet {
             bench_runs
         );
 
-        Ok(Self {
-            session,
-            board_size,
-            batch_size,
-        })
+        Ok((session, board_size))
     }
 
     pub fn from_bytes(data: &[u8], board_size: usize, batch_size: usize) -> Result<Self, String> {
@@ -153,6 +202,8 @@ impl NeuralNet {
 
         Ok(Self {
             session,
+            path: String::new(),
+            loaded_mtime: None,
             board_size,
             batch_size,
         })
@@ -216,5 +267,47 @@ impl NeuralNet {
         }
 
         results
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // A worker reloads the net when the file changes under it, keeps the old session
+    // when the new file is unreadable, and does nothing when nothing changed.
+    #[test]
+    fn reload_follows_file_mtime_and_survives_garbage() {
+        let dir = std::env::temp_dir().join(format!("taflzero-reload-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let copy = dir.join("net.onnx");
+        let original = std::fs::read("copenhagen11x11.onnx").unwrap();
+        std::fs::write(&copy, &original).unwrap();
+
+        let mut nn = NeuralNet::new(copy.to_str().unwrap(), 11, 8).unwrap();
+        assert_eq!(nn.reload_if_changed(), Ok(false));
+
+        // Same bytes, newer mtime: reload.
+        let f = std::fs::OpenOptions::new().write(true).open(&copy).unwrap();
+        f.set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(5))
+            .unwrap();
+        drop(f);
+        assert_eq!(nn.reload_if_changed(), Ok(true));
+        assert_eq!(nn.reload_if_changed(), Ok(false));
+
+        // Garbage with a newer mtime: error, old session still answers.
+        std::fs::write(&copy, b"not an onnx file").unwrap();
+        let f = std::fs::OpenOptions::new().write(true).open(&copy).unwrap();
+        f.set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(10))
+            .unwrap();
+        drop(f);
+        assert!(nn.reload_if_changed().is_err());
+        let mut board = crate::board::Board::new();
+        board.set_rules(crate::board::rules::RulesEnum::Copenhagen11x11);
+        board.setup_initial_position().unwrap();
+        let out = nn.evaluate_position(&BitPosition::from_board(&board, 1), board.precomputed());
+        assert!(out.value.is_finite());
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
