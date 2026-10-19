@@ -283,6 +283,20 @@ impl<O: UciOutput> UciController<O> {
                 self.send(&format!("{:?}", self.engine().board()));
                 UciRunState::Continue
             }
+            // Who has won in the current position, if anyone: `result attackers`,
+            // `result defenders` or `result none`. Lets a match driver detect the
+            // end of a game without re-implementing the rules.
+            "result" => {
+                #[cfg(not(target_arch = "wasm32"))]
+                self.collect_search(false);
+                let winner = match self.engine_mut().check_terminal() {
+                    Some(crate::board::types::Side::ATTACKERS) => "attackers",
+                    Some(crate::board::types::Side::DEFENDERS) => "defenders",
+                    None => "none",
+                };
+                self.send(&format!("result {winner}"));
+                UciRunState::Continue
+            }
             "go" => {
                 self.handle_go(&tokens[1..]);
                 UciRunState::Continue

@@ -179,3 +179,37 @@ fn moves_left_shaping_scales_with_predicted_length() {
     assert_eq!(shaped_value(0.8, None, 0.15), 0.8);
     assert_eq!(shaped_value(0.8, Some(1.0), 0.0), 0.8);
 }
+
+// `result` reports the winner of the current UCI position without a search, so a
+// match driver can stop a game on the engine's own rules.
+#[test]
+fn uci_result_reports_terminal_winner() {
+    use crate::uci::{UciController, UciOutput};
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Clone)]
+    struct Sink(Arc<Mutex<Vec<String>>>);
+    impl UciOutput for Sink {
+        fn send(&self, message: &str) {
+            self.0.lock().unwrap().push(message.to_string());
+        }
+    }
+
+    let out = Sink(Arc::new(Mutex::new(vec![])));
+    let mut uci = UciController::new(out.clone(), "copenhagen11x11.onnx".to_string());
+    let last = |out: &Sink| out.0.lock().unwrap().last().cloned().unwrap();
+
+    uci.run("position startpos");
+    uci.run("result");
+    assert_eq!(last(&out), "result none");
+
+    // King already on a corner: defenders have won.
+    uci.run("position fen 11/11/5a5/11/11/11/11/11/11/11/k10 - a 0 0");
+    uci.run("result");
+    assert_eq!(last(&out), "result defenders");
+
+    // No king on the board: attackers have won.
+    uci.run("position fen 11/11/5a5/11/11/5d5/11/11/11/11/11 - d 0 0");
+    uci.run("result");
+    assert_eq!(last(&out), "result attackers");
+}
