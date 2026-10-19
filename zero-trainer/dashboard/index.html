@@ -113,7 +113,7 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; }
         <div class="chart"><h3>Losses</h3><div class="sub">policy and value, per 100 steps</div><canvas id="cLoss"></canvas></div>
         <div class="chart"><h3>Blind-spot metrics</h3><div class="sub">attacker winrate the bare net gives: lost positions should fall, won positions should rise</div><canvas id="cBlind"></canvas></div>
         <div class="chart"><h3>Brier on his positions</h3><div class="sub">random 0.25, T2 g0213 0.096, his 0.087</div><canvas id="cBrier"></canvas></div>
-        <div class="chart"><h3>Throughput</h3><div class="sub">positions per second</div><canvas id="cSpeed"></canvas></div>
+        <div class="chart"><h3>Training throughput</h3><div class="sub">samples per second through the trainer (not generation)</div><canvas id="cSpeed"></canvas></div>
         <div class="chart"><h3>Window and buffer</h3><div class="sub">positions</div><canvas id="cWin"></canvas></div>
       </div>
       <h2>Trainer log</h2>
@@ -217,7 +217,7 @@ function renderDetail(d) {
     ['Attacker wins', lsp.atk_pct != null ? fmt(lsp.atk_pct, 1) + '%' : '–', `undecided ${lsp.games ? fmt(100 * (lsp.undecided || 0) / lsp.games, 0) : '–'}% total`],
     ['Game length', fmt(lsp.avg_len, 0), 'plies, last window'],
     ['Loss', fmt(last.loss, 3), `policy ${fmt(last.policy, 3)} · value ${fmt(last.value, 3)}`],
-    ['Speed', fmt(last.samples_per_s, 0), 'positions/s'],
+    ['Train speed', fmt(last.samples_per_s, 0), 'samples/s'],
     ['Window', fmtK(st.window), `buffer ${fmtK(st.buffer)}`],
     ['Last Elo', lastElo ? (lastElo.elo > 0 ? '+' : '') + fmt(lastElo.elo, 0) : '–', lastElo ? `vs ${lastElo.anchor} @${lastElo.ckpt.replace('step', '')}` : 'no matches yet'],
   ];
@@ -276,7 +276,7 @@ function renderDetail(d) {
 
   const mx = (r) => r.generated;
   lineChart('cLoss', [ds('policy', S[0], m.map(r => ({ x: mx(r), y: r.policy }))), ds('value', S[1], m.map(r => ({ x: mx(r), y: r.value }))), ds('moves left', S[2], m.map(r => ({ x: mx(r), y: r.moves_left })))], { digits: 3 });
-  lineChart('cSpeed', [ds('positions/s', S[0], m.map(r => ({ x: mx(r), y: r.samples_per_s })))], { digits: 0 });
+  lineChart('cSpeed', [ds('samples/s', S[0], m.map(r => ({ x: mx(r), y: r.samples_per_s })))], { digits: 0 });
   lineChart('cWin', [ds('window', S[0], m.map(r => ({ x: mx(r), y: r.window }))), ds('buffer', S[2], m.map(r => ({ x: mx(r), y: r.buffer })))], { digits: 0 });
 
   // Blind metrics by checkpoint step -> generated via elo rows (same ckpt) or metrics nearest

@@ -4,7 +4,7 @@
         --anchors copenhagen11x11.onnx,weights/P-A/gen0010.onnx [--pairs 50] [--nodes 400]
         [--workers 2] [--blind] [--playout-every 5] [--once]
 
-Every `ckpt/stepNNNNNN.onnx` not yet in `elo.jsonl` gets one paired match per anchor
+The newest `ckpt/stepNNNNNN.onnx` not yet in `elo.jsonl` gets one paired match per anchor
 (tools/match.py) and, with --blind, the blind-spot metrics (tools/eval_blind.py →
 `eval.jsonl`). Fixed anchors keep checkpoints comparable across the whole run and
 across runs; a chain of "new vs previous" would drift. Runs until STOP appears in the
@@ -151,7 +151,10 @@ def main() -> int:
                 if ckpts_now == ckpts:
                     break
             continue
-        ckpt = todo[0]
+        # Newest first: one evaluation takes longer than the gap between checkpoints,
+        # so the oldest-first order falls hours behind the trainer. Skipped
+        # checkpoints are simply never evaluated.
+        ckpt = todo[-1]
         step = step_of(ckpt)
         gen = generated_at(run_dir, step)
         for anchor in anchors:
