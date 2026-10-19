@@ -108,6 +108,7 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; }
       <div class="charts">
         <div class="chart"><h3>Elo against anchors</h3><div class="sub">paired games at fixed nodes; shaded = 95% CI</div><canvas id="cElo"></canvas></div>
         <div class="chart"><h3>Self-play outcomes</h3><div class="sub">share of games, per logging window</div><canvas id="cOut"></canvas></div>
+        <div class="chart"><h3>How games end</h3><div class="sub">share of games by final position, per logging window; real attacking progress = king captured, not repetition</div><canvas id="cEnd"></canvas></div>
         <div class="chart"><h3>Average game length</h3><div class="sub">plies</div><canvas id="cLen"></canvas></div>
         <div class="chart"><h3>Losses</h3><div class="sub">policy and value, per 100 steps</div><canvas id="cLoss"></canvas></div>
         <div class="chart"><h3>Blind-spot metrics</h3><div class="sub">attacker winrate the bare net gives: lost positions should fall, won positions should rise</div><canvas id="cBlind"></canvas></div>
@@ -247,6 +248,31 @@ function renderDetail(d) {
   }
   lineChart('cOut', [ds('attackers win', S[1], out.atk), ds('defenders win', S[0], out.def), ds('undecided', S[3], out.und)], { yLabel: '% of games', min: 0, max: 100 });
   lineChart('cLen', [ds('average length', S[0], lens)], { yLabel: 'plies', digits: 0 });
+
+  // Game endings by terminal type (cumulative counts in selfplay.csv -> per-window shares)
+  const ENDS = [
+    ['king captured', S[1], ['king_captured']],
+    ['repetition (attackers win)', S[7], ['threefold']],
+    ['defenders immobilised', S[4], ['no_moves_atk', 'surrounded']],
+    ['king in corner', S[0], ['def_corner', 'edge']],
+    ['exit fort', S[2], ['fort']],
+    ['attackers immobilised', S[6], ['no_moves_def']],
+    ['undecided (limits)', S[3], ['max_plies', 'no_capture']],
+  ];
+  const endSeries = ENDS.map(() => []);
+  for (let i = 1; i < sp.length; i++) {
+    const r = sp[i], p = sp[i - 1];
+    const g = r.games - p.games; if (g <= 0) continue;
+    ENDS.forEach(([, , cols], k) => {
+      const n = cols.reduce((acc, c) => acc + ((r[c] || 0) - (p[c] || 0)), 0);
+      endSeries[k].push({ x: r.generated, y: 100 * n / g });
+    });
+  }
+  if (sp.length === 1) {
+    const r = sp[0];
+    ENDS.forEach(([, , cols], k) => endSeries[k].push({ x: r.generated, y: r.games ? 100 * cols.reduce((a, c) => a + (r[c] || 0), 0) / r.games : 0 }));
+  }
+  lineChart('cEnd', ENDS.map(([label, color], k) => ds(label, color, endSeries[k])), { yLabel: '% of games', min: 0, max: 100 });
 
   const mx = (r) => r.generated;
   lineChart('cLoss', [ds('policy', S[0], m.map(r => ({ x: mx(r), y: r.policy }))), ds('value', S[1], m.map(r => ({ x: mx(r), y: r.value }))), ds('moves left', S[2], m.map(r => ({ x: mx(r), y: r.moves_left })))], { digits: 3 });
