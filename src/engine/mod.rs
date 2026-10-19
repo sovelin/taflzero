@@ -214,6 +214,13 @@ impl Engine {
         check_terminal(&mut self.board)
     }
 
+    /// Legal moves in the current position.
+    pub fn legal_moves(&self) -> Vec<Move> {
+        let mut mg = crate::movegen::MoveGen::new();
+        mg.generate_moves(&self.board);
+        mg.moves[..mg.count].to_vec()
+    }
+
     pub fn get_board_mutable(&mut self) -> &mut Board {
         &mut self.board
     }

@@ -301,6 +301,27 @@ impl<O: UciOutput> UciController<O> {
                 self.handle_go(&tokens[1..]);
                 UciRunState::Continue
             }
+            // A uniformly random legal move (`randommove e5e2`, or `randommove (none)`),
+            // for building match openings without a second rules implementation.
+            "randommove" => {
+                #[cfg(not(target_arch = "wasm32"))]
+                self.collect_search(false);
+                let engine = self.engine_mut();
+                let moves = engine.legal_moves();
+                let reply = if moves.is_empty() {
+                    "randommove (none)".to_string()
+                } else {
+                    use std::hash::{BuildHasher, Hasher};
+                    let pick = (std::hash::RandomState::new().build_hasher().finish()
+                        % moves.len() as u64) as usize;
+                    format!(
+                        "randommove {}",
+                        engine.board().move_to_algebraic(moves[pick])
+                    )
+                };
+                self.send(&reply);
+                UciRunState::Continue
+            }
             "perft" => {
                 self.handle_perft(&tokens[1..]);
                 UciRunState::Continue

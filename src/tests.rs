@@ -213,3 +213,45 @@ fn uci_result_reports_terminal_winner() {
     uci.run("result");
     assert_eq!(last(&out), "result attackers");
 }
+
+// `randommove` returns a legal move that the engine then accepts.
+#[test]
+fn uci_randommove_is_legal() {
+    use crate::uci::{UciController, UciOutput};
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Clone)]
+    struct Sink(Arc<Mutex<Vec<String>>>);
+    impl UciOutput for Sink {
+        fn send(&self, message: &str) {
+            self.0.lock().unwrap().push(message.to_string());
+        }
+    }
+
+    let out = Sink(Arc::new(Mutex::new(vec![])));
+    let mut uci = UciController::new(out.clone(), "copenhagen11x11.onnx".to_string());
+    uci.run("position startpos");
+    let mut seen = std::collections::HashSet::new();
+    for _ in 0..20 {
+        uci.run("randommove");
+        let line = out.0.lock().unwrap().last().cloned().unwrap();
+        let mv = line.split_whitespace().nth(1).unwrap().to_string();
+        assert_ne!(mv, "(none)");
+        let legal: Vec<String> = uci
+            .engine()
+            .legal_moves()
+            .iter()
+            .map(|m| uci.engine().board().move_to_algebraic(*m))
+            .collect();
+        assert!(legal.contains(&mv), "{mv} not legal");
+        seen.insert(mv);
+    }
+    assert!(seen.len() > 3, "random moves never vary");
+
+    uci.run("position fen 11/11/5a5/11/11/11/11/11/11/11/k10 - a 0 0");
+    uci.run("randommove");
+    // Terminal position: the king is already on a corner, but attackers still have
+    // moves; whatever is returned must parse.
+    let line = out.0.lock().unwrap().last().cloned().unwrap();
+    assert!(line.starts_with("randommove "));
+}
