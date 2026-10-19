@@ -12,7 +12,8 @@ Sample binary format v2 (variable-length):
     PolicyTarget*N  N*4 bytes  (move_index u16 + visits u16 each)
     value           i8         (1 byte, final game result z from stm perspective)
     root_q          i8         (1 byte, MCTS root Q x 127 from stm perspective)
-    flags           u8         (bit0 policy_valid, bit1 last_of_game)
+    flags           u8         (bit0 policy_valid, bit1 last_of_game,
+                                bit2 result_unknown)
     king_corner     u8         (0-3 escape corner index, 255 none)
 
 The v1 format (T1 runs) lacks the trailing flags/king_corner bytes - pass
@@ -21,7 +22,13 @@ legacy=True to read those files.
 Value target = z_lambda * z + (1 - z_lambda) * root_q  (bootstrapped, lower
 variance).  For cheap-search samples (policy_valid=0, playout cap
 randomization) root_q comes from a low-node search, so the target falls back
-to pure z.
+to pure z.  When the game outcome is unknown (FLAG_RESULT_UNKNOWN) there is
+no z and the target is root_q alone.
+
+The pure-bytes decoder (`parse_samples`, `decode_sample`) is the single place
+that knows the layout; `_read_sample_at` and `SelfPlayDataset` are built on it,
+as are the continuous-training ingest (`ingest.py`) and replay buffer
+(`replay.py`).
 
 Network input planes (11 x N x N) - the plane count is fixed at 11 and is
 unrelated to the board side:
@@ -42,6 +49,7 @@ from __future__ import annotations
 
 import struct
 from collections import deque
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -58,6 +66,10 @@ TAIL_BYTES_V1 = 2  # value + root_q
 
 FLAG_POLICY_VALID = 1 << 0
 FLAG_LAST_OF_GAME = 1 << 1
+# 1 = the game never reached a decided terminal (ply / no-capture limit); the
+# value byte is 0 and the value target falls back to root_q.  Old files have
+# the bit clear, so they read as "result known" without migration.
+FLAG_RESULT_UNKNOWN = 1 << 2
 
 KING_CORNER_NONE_RAW = 255
 CORNER_CLASS_NONE = 4  # class index for "game did not end with a corner escape"
@@ -282,80 +294,154 @@ def _read_last_of_game_flags(path: Path, offsets: np.ndarray, geom: BoardGeometr
 def _decode_policy(policy_raw: bytes, policy_len: int, geom: BoardGeometry) -> np.ndarray:
     """Sparse policy entries → dense normalized distribution (or zeros)."""
     policy_visits = np.zeros(geom.policy_size, dtype=np.float32)
-    for i in range(policy_len):
-        off = i * 4
-        move_index = struct.unpack_from("<H", policy_raw, off)[0]
-        visits = struct.unpack_from("<H", policy_raw, off + 2)[0]
-        policy_visits[move_index] = float(visits)
+    if policy_len > 0:
+        entries = np.frombuffer(policy_raw, dtype="<u2", count=policy_len * 2).reshape(policy_len, 2)
+        policy_visits[entries[:, 0]] = entries[:, 1].astype(np.float32)
     visit_sum = policy_visits.sum()
     if visit_sum > 0:
         policy_visits /= visit_sum
     return policy_visits
 
 
-def _read_aux_policy_at(f, offset: int, geom: BoardGeometry) -> tuple[np.ndarray, np.ndarray, bool]:
-    """Light v2 read of a sample's policy + legal mask (for the opponent-reply
-    auxiliary target).  Skips plane/BFS decoding entirely."""
-    f.seek(offset + 48 + 2)  # skip planes + stm + rep
-    legal_mask_bytes = f.read(geom.legal_mask_bytes)
-    policy_len = struct.unpack("<H", f.read(2))[0]
-    policy_raw = f.read(policy_len * 4)
-    f.seek(2, 1)  # skip value + root_q
-    flags = f.read(1)[0]
-
-    policy = _decode_policy(policy_raw, policy_len, geom)
-    legal_mask = _unpack_bits(legal_mask_bytes, geom.policy_size)
-    valid = bool(flags & FLAG_POLICY_VALID) and policy.sum() > 0
-    return policy, legal_mask, valid
+# ─── Pure-bytes sample decoder ───────────────────────────────────────────────
+#
+# Everything below works on `bytes`, not file handles, so the same code serves
+# the offline SelfPlayDataset (via _read_sample_at) and the continuous trainer's
+# ingest/replay path, which keeps samples as raw bytes until batch assembly.
 
 
-def _read_sample_at(
-    f, offset: int, geom: BoardGeometry, z_lambda: float = 0.5, legacy: bool = False,
-    value_gamma: float = 1.0, plies_remaining: int = 0,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, bool, bool, int, int]:
-    """Read and decode a single sample from an open file handle at the given offset.
+@dataclass
+class RawSample:
+    """One undecoded sample: its bytes plus the cheap-to-read scalar fields."""
 
-    `value_gamma` < 1 discounts the final-result z by gamma**plies_remaining, so
-    a win close to mate keeps ~±1 while a far-off (shuffled) win decays toward 0.
-    This gives the value head a gradient to CONVERT won positions instead of
-    treating a mate-in-3 and a 200-ply repetition-win as equally +1.  gamma=1
-    reproduces the original flat targets exactly.
+    raw: bytes
+    flags: int
+    value: int        # i8, final result z from the side-to-move perspective (0 if unknown)
+    root_q: int       # i8, MCTS root Q x 127
+    policy_len: int
+    stm: int          # 0 = attackers to move, 1 = defenders
 
-    Returns (planes, legal_mask, policy, value_target,
-             policy_valid, last_of_game, corner_class, next_offset).
+    @property
+    def policy_valid(self) -> bool:
+        return bool(self.flags & FLAG_POLICY_VALID)
+
+    @property
+    def last_of_game(self) -> bool:
+        return bool(self.flags & FLAG_LAST_OF_GAME)
+
+    @property
+    def result_known(self) -> bool:
+        return not (self.flags & FLAG_RESULT_UNKNOWN)
+
+
+def sample_size_at(buf, offset: int, geom: BoardGeometry, legacy: bool = False) -> int | None:
+    """Total byte size of the sample starting at `offset`, or None if `buf`
+    ends before the sample is complete (truncated tail)."""
+    tail = TAIL_BYTES_V1 if legacy else TAIL_BYTES_V2
+    if offset + geom.fixed_header > len(buf):
+        return None
+    policy_len = struct.unpack_from("<H", buf, offset + BIT_POSITION_BYTES + geom.legal_mask_bytes)[0]
+    size = geom.fixed_header + policy_len * 4 + tail
+    if offset + size > len(buf):
+        return None
+    return size
+
+
+def _raw_sample(raw: bytes, geom: BoardGeometry, legacy: bool) -> RawSample:
+    policy_len = struct.unpack_from("<H", raw, BIT_POSITION_BYTES + geom.legal_mask_bytes)[0]
+    tail_at = geom.fixed_header + policy_len * 4
+    value = struct.unpack_from("<b", raw, tail_at)[0]
+    root_q = struct.unpack_from("<b", raw, tail_at + 1)[0]
+    # v1 has no flags: treat as a full-search sample closing its own game.
+    flags = (FLAG_POLICY_VALID | FLAG_LAST_OF_GAME) if legacy else raw[tail_at + 2]
+    return RawSample(raw=raw, flags=flags, value=value, root_q=root_q,
+                     policy_len=policy_len, stm=raw[48])
+
+
+def parse_samples(buf: bytes, geom: BoardGeometry, legacy: bool = False) -> tuple[list[RawSample], int]:
+    """Split `buf` into whole samples.
+
+    Returns (samples, consumed): `consumed` is the byte offset just past the
+    last complete sample, i.e. the start of a truncated trailing sample (or
+    len(buf) if the buffer ends on a sample boundary).  Re-reading the file
+    from `offset + consumed` later yields that sample intact.
     """
-    f.seek(offset)
+    view = memoryview(buf)
+    samples: list[RawSample] = []
+    pos = 0
+    while True:
+        size = sample_size_at(view, pos, geom, legacy)
+        if size is None:
+            break
+        samples.append(_raw_sample(view[pos:pos + size].tobytes(), geom, legacy))
+        pos += size
+    return samples, pos
 
-    # BitPosition: 50 bytes (48 planes + 1 stm + 1 rep)
-    planes_bytes = f.read(48)
-    stm = f.read(1)[0]
-    rep = f.read(1)[0]
 
-    # LegalMask: geom.legal_mask_bytes
-    legal_mask_bytes = f.read(geom.legal_mask_bytes)
+@dataclass
+class DecodedSample:
+    planes: np.ndarray        # (NUM_PLANES, N, N) float32
+    legal_mask: np.ndarray    # (policy_size,) bool
+    policy: np.ndarray        # (policy_size,) float32, normalized (zeros if empty)
+    value_target: float
+    policy_valid: bool
+    last_of_game: bool
+    result_known: bool
+    corner_class: int
+    root_q: float             # [-1, 1]
+    size: int                 # bytes occupied by this sample
 
-    # policy_len: u16
-    policy_len = struct.unpack("<H", f.read(2))[0]
 
-    # PolicyTarget × N: each 4 bytes (move_index u16, visits u16)
-    policy_raw = f.read(policy_len * 4)
+def value_target_for(value: int, root_q: float, policy_valid: bool, result_known: bool,
+                     z_lambda: float, value_gamma: float = 1.0, plies_remaining: int = 0) -> float:
+    """The value-head target.
 
-    # value: i8 (final result z), root_q: i8 (MCTS root Q × 127)
-    value = struct.unpack("<b", f.read(1))[0]
-    root_q = struct.unpack("<b", f.read(1))[0] / 127.0
+    known outcome:    z_lambda * z + (1 - z_lambda) * root_q; cheap-search samples
+                      (policy_valid = 0) have a low-node root_q, so pure z.
+    unknown outcome:  root_q (there is no z).
+    `value_gamma` < 1 discounts z by gamma ** plies_remaining (see _read_sample_at).
+    """
+    if not result_known:
+        return float(root_q)
+    z = float(value)
+    if value_gamma != 1.0:
+        z *= value_gamma ** plies_remaining
+    if policy_valid:
+        return z_lambda * z + (1.0 - z_lambda) * root_q
+    return z
+
+
+def decode_sample(
+    raw: bytes, geom: BoardGeometry, z_lambda: float = 0.5, legacy: bool = False,
+    value_gamma: float = 1.0, plies_remaining: int = 0,
+) -> DecodedSample:
+    """Decode one complete sample from its bytes (see module docstring for the
+    layout).  Pure numpy; the torch wrapping happens in the callers."""
+    planes_bytes = raw[0:48]
+    stm = raw[48]
+    rep = raw[49]
+    lm_start = BIT_POSITION_BYTES
+    legal_mask_bytes = raw[lm_start:lm_start + geom.legal_mask_bytes]
+    policy_len = struct.unpack_from("<H", raw, lm_start + geom.legal_mask_bytes)[0]
+    policy_raw = raw[geom.fixed_header:geom.fixed_header + policy_len * 4]
+    tail_at = geom.fixed_header + policy_len * 4
+    value = struct.unpack_from("<b", raw, tail_at)[0]
+    root_q = struct.unpack_from("<b", raw, tail_at + 1)[0] / 127.0
 
     if legacy:
         policy_valid = True
         last_of_game = True  # unknown in v1 — disables the aux opponent target
+        result_known = True
         corner_class = CORNER_CLASS_NONE
-        next_offset = offset + geom.fixed_header + policy_len * 4 + TAIL_BYTES_V1
+        size = tail_at + TAIL_BYTES_V1
     else:
-        flags = f.read(1)[0]
-        corner_raw = f.read(1)[0]
+        flags = raw[tail_at + 2]
+        corner_raw = raw[tail_at + 3]
         policy_valid = bool(flags & FLAG_POLICY_VALID)
         last_of_game = bool(flags & FLAG_LAST_OF_GAME)
+        result_known = not (flags & FLAG_RESULT_UNKNOWN)
         corner_class = CORNER_CLASS_NONE if corner_raw == KING_CORNER_NONE_RAW else int(corner_raw)
-        next_offset = offset + geom.fixed_header + policy_len * 4 + TAIL_BYTES_V2
+        size = tail_at + TAIL_BYTES_V2
 
     # -- Decode piece planes --
     attackers = _unpack_bits(planes_bytes[0:16], geom.sqs)
@@ -370,13 +456,11 @@ def _read_sample_at(
 
     # Group BFS: seeds = king + defenders, passable = non-attacker
     group_seeds = list(np.where(king_mask | def_mask)[0])
-    passable_group = ~atk_mask
-    group_bfs = _bfs_reach(group_seeds, passable_group, geom)
+    group_bfs = _bfs_reach(group_seeds, ~atk_mask, geom)
 
     # King BFS: seeds = king, passable = king's own square or empty (not atk, not def)
     king_seeds = list(np.where(king_mask)[0])
-    passable_king = ~atk_mask & ~def_mask
-    king_bfs = _bfs_reach(king_seeds, passable_king, geom)
+    king_bfs = _bfs_reach(king_seeds, ~atk_mask & ~def_mask, geom)
 
     # -- Repetition planes --
     rep1_plane = np.full(geom.sqs, 1.0 if rep >= 2 else 0.0, dtype=np.float32)
@@ -389,35 +473,74 @@ def _read_sample_at(
         rep1_plane, rep2_plane,
     ]).reshape(NUM_PLANES, geom.board_size, geom.board_size)
 
-    # -- Legal mask --
-    legal_mask = _unpack_bits(legal_mask_bytes, geom.policy_size)
-
-    # -- Policy target: sparse → dense, then normalize --
+    legal_mask = _unpack_bits(legal_mask_bytes, geom.policy_size).astype(bool)
     policy_visits = _decode_policy(policy_raw, policy_len, geom)
+    value_target = value_target_for(value, root_q, policy_valid, result_known,
+                                    z_lambda, value_gamma, plies_remaining)
 
-    # Optional per-ply discount of the game outcome: a distant win decays toward
-    # a draw so the value head is rewarded for converting quickly (gamma=1 = off).
-    z = float(value)
-    if value_gamma != 1.0:
-        z *= value_gamma ** plies_remaining
+    return DecodedSample(
+        planes=board_planes, legal_mask=legal_mask, policy=policy_visits,
+        value_target=value_target, policy_valid=policy_valid, last_of_game=last_of_game,
+        result_known=result_known, corner_class=corner_class, root_q=root_q, size=size,
+    )
 
-    # Bootstrapped value target: mix final result with search estimate.
-    # Cheap-search samples (PCR) have a low-node root_q — use pure z for them.
-    if policy_valid:
-        value_target = z_lambda * z + (1.0 - z_lambda) * root_q
-    else:
-        value_target = z
 
+def decode_aux_policy(raw: bytes, geom: BoardGeometry) -> tuple[np.ndarray, np.ndarray, bool]:
+    """Light decode of a sample's policy + legal mask (for the opponent-reply
+    auxiliary target).  Skips plane/BFS decoding entirely.  v2 only."""
+    lm_start = BIT_POSITION_BYTES
+    legal_mask_bytes = raw[lm_start:lm_start + geom.legal_mask_bytes]
+    policy_len = struct.unpack_from("<H", raw, lm_start + geom.legal_mask_bytes)[0]
+    policy_raw = raw[geom.fixed_header:geom.fixed_header + policy_len * 4]
+    flags = raw[geom.fixed_header + policy_len * 4 + 2]
+
+    policy = _decode_policy(policy_raw, policy_len, geom)
+    legal_mask = _unpack_bits(legal_mask_bytes, geom.policy_size)
+    valid = bool(flags & FLAG_POLICY_VALID) and policy.sum() > 0
+    return policy, legal_mask, valid
+
+
+def _read_raw_at(f, offset: int, geom: BoardGeometry, legacy: bool = False) -> bytes:
+    """Read the complete bytes of the sample at `offset` from an open file."""
+    tail = TAIL_BYTES_V1 if legacy else TAIL_BYTES_V2
+    f.seek(offset)
+    head = f.read(geom.fixed_header)
+    policy_len = struct.unpack_from("<H", head, BIT_POSITION_BYTES + geom.legal_mask_bytes)[0]
+    return head + f.read(policy_len * 4 + tail)
+
+
+def _read_aux_policy_at(f, offset: int, geom: BoardGeometry) -> tuple[np.ndarray, np.ndarray, bool]:
+    return decode_aux_policy(_read_raw_at(f, offset, geom), geom)
+
+
+def _read_sample_at(
+    f, offset: int, geom: BoardGeometry, z_lambda: float = 0.5, legacy: bool = False,
+    value_gamma: float = 1.0, plies_remaining: int = 0,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, bool, bool, int, int, float, bool]:
+    """Read and decode a single sample from an open file handle at the given offset.
+
+    `value_gamma` < 1 discounts the final-result z by gamma**plies_remaining, so
+    a win close to mate keeps ~±1 while a far-off (shuffled) win decays toward 0.
+    This gives the value head a gradient to CONVERT won positions instead of
+    treating a mate-in-3 and a 200-ply repetition-win as equally +1.  gamma=1
+    reproduces the original flat targets exactly.
+
+    Returns (planes, legal_mask, policy, value_target,
+             policy_valid, last_of_game, corner_class, next_offset, root_q, result_known).
+    """
+    raw = _read_raw_at(f, offset, geom, legacy)
+    d = decode_sample(raw, geom, z_lambda, legacy, value_gamma, plies_remaining)
     return (
-        torch.from_numpy(board_planes),
-        torch.from_numpy(legal_mask).bool(),
-        torch.from_numpy(policy_visits),
-        torch.tensor(np.float32(value_target)),
-        policy_valid,
-        last_of_game,
-        corner_class,
-        next_offset,
-        root_q,  # search's assessment of THIS position (decidedness signal)
+        torch.from_numpy(d.planes),
+        torch.from_numpy(d.legal_mask),
+        torch.from_numpy(d.policy),
+        torch.tensor(np.float32(d.value_target)),
+        d.policy_valid,
+        d.last_of_game,
+        d.corner_class,
+        offset + d.size,
+        d.root_q,  # search's assessment of THIS position (decidedness signal)
+        d.result_known,
     )
 
 
@@ -506,9 +629,10 @@ class SelfPlayDataset(Dataset):
 
     def __getitem__(self, idx: int):
         fh = self._get_fh()
-        planes, legal_mask, policy, value, policy_valid, last_of_game, corner, next_offset, root_q = \
-            _read_sample_at(fh, int(self._offsets[idx]), self._geom, self._z_lambda, self._legacy,
-                            self._value_gamma, int(self._plies_remaining[idx]))
+        (planes, legal_mask, policy, value, policy_valid, last_of_game, corner, next_offset,
+         root_q, result_known) = _read_sample_at(
+            fh, int(self._offsets[idx]), self._geom, self._z_lambda, self._legacy,
+            self._value_gamma, int(self._plies_remaining[idx]))
 
         # Opponent-reply auxiliary target: the next sample of the same game.
         # FLAG_LAST_OF_GAME guards the game boundary; the file-size check
@@ -536,7 +660,8 @@ class SelfPlayDataset(Dataset):
                 corner = self._geom.corner_perms[sym][corner]
 
         moves_left_target = float(self._plies_remaining[idx]) / MOVES_LEFT_SCALE
-        moves_left_valid = 1.0 if self._moves_left_valid else 0.0
+        # An undecided game has no real end, so its plies-left is not a target.
+        moves_left_valid = 1.0 if (self._moves_left_valid and result_known) else 0.0
 
         return (
             planes,

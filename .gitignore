@@ -14,3 +14,4 @@ zero-trainer/weights
 .playwright-mcp
 dedup
 __pycache__/
+zero-trainer/runs/

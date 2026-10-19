@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -10,7 +11,10 @@ import torch
 from torch import nn
 
 
-def export_model_to_onnx(model: nn.Module, onnx_path: Path) -> None:
+def export_model_to_onnx(model: nn.Module, onnx_path: Path, fp16: bool = True) -> None:
+    """Export to ONNX.  By default (fp16=True) `onnx_path` gets a mixed-fp16 graph
+    and `<stem>.fp32.onnx` the fp32 one; with fp16=False only the fp32 graph is
+    written, directly to `onnx_path` (the continuous trainer's CPU workers)."""
     model.eval()
     onnx_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -45,6 +49,10 @@ def export_model_to_onnx(model: nn.Module, onnx_path: Path) -> None:
             opset_version=17,
             dynamo=False,
         )
+
+        if not fp16:
+            shutil.move(str(tmp_path), str(onnx_path))
+            return
 
         import onnx
         from onnxconverter_common import float16
