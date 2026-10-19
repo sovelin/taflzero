@@ -34,10 +34,15 @@ def elo_from_score(score: float) -> float:
 
 
 def elo_ci(score: float, n_games: int, z: float = 1.96) -> tuple[float, float]:
+    """95% interval in Elo from the Wilson score interval (sane at 0% and 100%)."""
     if n_games == 0:
         return (-999.0, 999.0)
-    se = math.sqrt(max(score * (1 - score), 1e-9) / n_games)
-    return (elo_from_score(max(0.001, score - z * se)), elo_from_score(min(0.999, score + z * se)))
+    n = n_games
+    centre = (score + z * z / (2 * n)) / (1 + z * z / n)
+    half = z * math.sqrt(score * (1 - score) / n + z * z / (4 * n * n)) / (1 + z * z / n)
+    lo = min(max(centre - half, 0.001), 0.999)
+    hi = min(max(centre + half, 0.001), 0.999)
+    return (elo_from_score(lo), elo_from_score(hi))
 
 
 def make_opening(eng: Engine, moves: int, rng: random.Random) -> list[str]:
@@ -95,18 +100,47 @@ def main() -> None:
     next_pair = [0]
     t0 = time.time()
 
+    err_path = (args.json + ".err") if args.json else None
+
+    def report_error(msg: str) -> None:
+        line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}"
+        print(line, file=sys.stderr, flush=True)
+        if err_path:
+            with open(err_path, "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+
     def worker() -> None:
-        ea = Engine(args.exe, args.a, args.variant, env)
-        eb = Engine(args.exe, args.b, args.variant, env)
+        ea = eb = None
+        failures = 0
         try:
             while True:
                 with lock:
                     if next_pair[0] >= args.pairs:
                         return
                     next_pair[0] += 1
-                opening = make_opening(ea, args.opening_moves, rng)
-                r1 = play_game(ea, eb, opening, args.nodes, args.max_plies)  # a attacks
-                r2 = play_game(eb, ea, opening, args.nodes, args.max_plies)  # b attacks
+                try:
+                    if ea is None:
+                        ea = Engine(args.exe, args.a, args.variant, env)
+                        eb = Engine(args.exe, args.b, args.variant, env)
+                    opening = make_opening(ea, args.opening_moves, rng)
+                    r1 = play_game(ea, eb, opening, args.nodes, args.max_plies)  # a attacks
+                    r2 = play_game(eb, ea, opening, args.nodes, args.max_plies)  # b attacks
+                except Exception as e:  # engine crash or hang: log, restart engines, replay the pair
+                    failures += 1
+                    report_error(f"pair failed ({type(e).__name__}: {e}); restarting engines (failure {failures})")
+                    for eng in (ea, eb):
+                        if eng is not None:
+                            try:
+                                eng.proc.kill()
+                            except Exception:
+                                pass
+                    ea = eb = None
+                    with lock:
+                        next_pair[0] -= 1
+                    if failures >= 5:
+                        report_error("giving up on this worker after 5 failures")
+                        return
+                    continue
                 s1 = {"attackers": "w", "defenders": "l", "draw": "d"}[r1]
                 s2 = {"attackers": "l", "defenders": "w", "draw": "d"}[r2]
                 with lock:
@@ -118,8 +152,9 @@ def main() -> None:
                         sc = (totals["w"] + 0.5 * totals["d"]) / n
                         print(f"pair {totals['pairs']}/{args.pairs}: {r1}/{r2} | W{totals['w']} L{totals['l']} D{totals['d']} | elo {elo_from_score(sc):+.0f}", flush=True)
         finally:
-            ea.close()
-            eb.close()
+            for eng in (ea, eb):
+                if eng is not None:
+                    eng.close()
 
     threads = [threading.Thread(target=worker, daemon=True) for _ in range(max(1, args.workers))]
     for t in threads:
