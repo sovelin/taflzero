@@ -139,7 +139,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--full-prob", type=float, default=0.25)
     p.add_argument("--max-plies", type=int, default=400)
     p.add_argument("--max-no-capture", type=int, default=None)
-    p.add_argument("--variant", type=str, default="copenhagen")
+    p.add_argument("--variant", type=str, default="copenhagen11x11")
     p.add_argument("--gumbel", type=int, default=None, help="Gumbel root search with this many considered moves")
     p.add_argument("--mlh-alpha", type=float, default=0.15)
     return p
