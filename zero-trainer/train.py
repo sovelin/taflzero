@@ -49,6 +49,11 @@ def compute_batch_loss(
     training policy on them teaches diffuse, non-converting late-game play.
     Value loss is NOT down-weighted (the outcome signal there is correct).
 
+    Samples whose game outcome is unknown (`moves_left_valid` = 0: the game hit
+    a ply / no-capture limit) are masked out of the value loss entirely.  Their
+    value_target is the search's own root_q, and training on it feeds the
+    net's evaluation back to itself.
+
     Returns (total, p_loss, v_loss, aux_p_loss, corner_loss) as tensors.
     """
     (planes, legal_mask, pi_target, value_target,
@@ -67,6 +72,7 @@ def compute_batch_loss(
         moves_left_valid = moves_left_valid.to(device)
 
     weights = compute_sample_weights(planes, value_target, defender_weight)
+    value_weights = weights * moves_left_valid.to(device)
 
     policy_weights = None
     if decided_policy_k > 0.0:
@@ -88,9 +94,9 @@ def compute_batch_loss(
             pi_target=pi_target,
             value_target=value_target,
             legal_mask=legal_mask,
-            sample_weights=weights,
+            sample_weights=value_weights,
             policy_valid=policy_valid,
-            policy_sample_weights=policy_weights,
+            policy_sample_weights=policy_weights if policy_weights is not None else weights,
         )
         aux_p_loss = policy_loss_masked(aux_logits, aux_policy, aux_legal, aux_valid)
         corner_loss = F.cross_entropy(corner_logits, corner)
@@ -110,9 +116,9 @@ def compute_batch_loss(
         pi_target=pi_target,
         value_target=value_target,
         legal_mask=legal_mask,
-        sample_weights=weights,
+        sample_weights=value_weights,
         policy_valid=policy_valid,
-        policy_sample_weights=policy_weights,
+        policy_sample_weights=policy_weights if policy_weights is not None else weights,
     )
     zero = total.detach() * 0.0
     ml_loss = zero

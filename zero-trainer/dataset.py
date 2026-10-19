@@ -23,7 +23,8 @@ Value target = z_lambda * z + (1 - z_lambda) * root_q  (bootstrapped, lower
 variance).  For cheap-search samples (policy_valid=0, playout cap
 randomization) root_q comes from a low-node search, so the target falls back
 to pure z.  When the game outcome is unknown (FLAG_RESULT_UNKNOWN) there is
-no z and the target is root_q alone.
+no z; the target is root_q, and compute_batch_loss masks the sample out of the
+value loss (result_known doubles as moves_left_valid in the batch).
 
 The pure-bytes decoder (`parse_samples`, `decode_sample`) is the single place
 that knows the layout; `_read_sample_at` and `SelfPlayDataset` are built on it,
@@ -398,7 +399,8 @@ def value_target_for(value: int, root_q: float, policy_valid: bool, result_known
 
     known outcome:    z_lambda * z + (1 - z_lambda) * root_q; cheap-search samples
                       (policy_valid = 0) have a low-node root_q, so pure z.
-    unknown outcome:  root_q (there is no z).
+    unknown outcome:  root_q (there is no z); masked out of the value loss by
+                      compute_batch_loss, kept only as a decidedness signal.
     `value_gamma` < 1 discounts z by gamma ** plies_remaining (see _read_sample_at).
     """
     if not result_known:

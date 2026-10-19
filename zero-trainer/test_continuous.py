@@ -242,6 +242,35 @@ def test_batch_value_target_and_moves_left_mask() -> None:
     assert torch.allclose(ml_target, torch.tensor([3, 0, 2, 0], dtype=torch.float32) / MOVES_LEFT_SCALE)
 
 
+def test_value_loss_masks_unknown_outcome() -> None:
+    """Undecided samples (result unknown) must not train the value head."""
+    from az_micro_net import TaflAlphaZeroNet
+    from train import compute_batch_loss
+
+    buf = ReplayBuffer(GEOM, z_lambda=0.5, augment=False)
+    known_s, _ = parse_samples(b"".join(make_game(4, winner="atk", root_q=63)), GEOM)
+    unknown_s, _ = parse_samples(b"".join(make_game(3, winner="undecided", root_q=63)), GEOM)
+    (ck,), _ = group_games(known_s)
+    (cu,), _ = group_games(unknown_s)
+    buf.add(ck, 10_000)
+    buf.add(cu, 10_000)
+    torch.manual_seed(0)
+    model = TaflAlphaZeroNet(trunk_channels=8, num_blocks=1)
+    model.eval()
+    dev = torch.device("cpu")
+
+    def v_loss(located):
+        batch = buf.collate(located, [0] * len(located))
+        with torch.no_grad():
+            return compute_batch_loss(model, batch, dev, 1.0, 0.0, 0.0, use_aux=False)[2]
+
+    mixed = v_loss([(ck, 0), (ck, 3), (cu, 0), (cu, 2)])
+    known_only = v_loss([(ck, 0), (ck, 3)])
+    assert torch.allclose(mixed, known_only), (mixed, known_only)
+    unknown_only = v_loss([(cu, 0), (cu, 2)])
+    assert torch.isfinite(unknown_only) and unknown_only.item() == 0.0
+
+
 # ─── replay buffer ──────────────────────────────────────────────────────────
 
 

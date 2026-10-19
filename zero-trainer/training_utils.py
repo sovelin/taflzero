@@ -93,7 +93,8 @@ def value_loss(
         value_target = value_target.unsqueeze(1)
     per_sample = (value_pred - value_target).pow(2).squeeze(1)
     if sample_weights is not None:
-        return (per_sample * sample_weights).sum() / sample_weights.sum()
+        # clamp: a batch whose every sample is masked out gives 0, not NaN
+        return (per_sample * sample_weights).sum() / sample_weights.sum().clamp_min(1e-6)
     return per_sample.mean()
 
 
