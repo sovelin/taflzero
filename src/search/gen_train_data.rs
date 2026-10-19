@@ -4,7 +4,7 @@ use crate::board::rules::RulesEnum;
 use crate::board::types::Side;
 use crate::mcts::export::{KING_CORNER_NONE, LegalMask, PendingSample, king_corner_index};
 use crate::mcts::utils::move_to_policy_index;
-use crate::mcts::{C_PUCT, MCTSConfig, MCTSTree, mcts_search};
+use crate::mcts::{C_PUCT, GumbelConfig, MCTSConfig, MCTSTree, mcts_search};
 use crate::movegen::MoveGen;
 use crate::search::nn::NeuralNet;
 use crate::search_data::SearchData;
@@ -134,6 +134,18 @@ fn play_game(
     cheap_config.dirichlet_alpha = 0.0;
     cheap_config.dirichlet_epsilon = 0.0;
     cheap_config.forced_playouts_k = 0.0;
+    if let Some(considered) = search_cfg.gumbel {
+        let g = GumbelConfig {
+            considered,
+            ..GumbelConfig::default()
+        };
+        for c in [&mut full_config, &mut cheap_config] {
+            c.gumbel = Some(g);
+            c.dirichlet_alpha = 0.0;
+            c.dirichlet_epsilon = 0.0;
+            c.forced_playouts_k = 0.0;
+        }
+    }
 
     let game_result;
     let terminal_str: Option<&'static str>;
@@ -161,6 +173,11 @@ fn play_game(
         } else {
             (&cheap_config, search_cfg.cheap_nodes)
         };
+
+        // Sequential halving assumes a fresh root: no tree reuse between moves.
+        if search_cfg.gumbel.is_some() {
+            mcts_tree = MCTSTree::new();
+        }
 
         let mv = mcts_search(
             &mut board,

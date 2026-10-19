@@ -1,5 +1,8 @@
 pub mod export;
+pub mod gumbel;
 pub(crate) mod utils;
+
+pub use gumbel::GumbelConfig;
 
 use crate::board::Board;
 use crate::board::position_export::BitPosition;
@@ -36,6 +39,9 @@ pub struct MCTSConfig {
     /// Forced playouts at root (KataGo): every root child is guaranteed at least
     /// n_forced = sqrt(k * prior * total_visits) visits. 0.0 = disabled.
     pub forced_playouts_k: f32,
+    /// Gumbel AlphaZero selection at the root and inside the tree. `None` = PUCT.
+    /// With Gumbel on, Dirichlet noise, forced playouts and temperature are ignored.
+    pub gumbel: Option<GumbelConfig>,
 }
 
 impl MCTSConfig {
@@ -46,6 +52,7 @@ impl MCTSConfig {
             temperature: 0.0,
             batch_size: 8,
             forced_playouts_k: 0.0,
+            gumbel: None,
         }
     }
 
@@ -56,6 +63,7 @@ impl MCTSConfig {
             temperature: 1.0,
             batch_size: 8,
             forced_playouts_k: 2.0,
+            gumbel: None,
         }
     }
 }
@@ -68,6 +76,12 @@ pub struct MCTSNode {
     visits: f32,
     wins: f32,
     prior: f32,
+    /// Policy logit of the move into this node, max-shifted over its siblings
+    /// (`ln prior` up to a constant). Gumbel scores add sigma(Q) to it.
+    logit: f32,
+    /// Network value of this position for its side to move, set at expansion;
+    /// the "mixed value" of unvisited children in Gumbel's completed Q starts here.
+    raw_value: f32,
     zobrist_hash: ZobristHash,
     virtual_loss: f32,
     /// Proven game-theoretic result from this node's side-to-move perspective:
@@ -87,6 +101,8 @@ impl MCTSNode {
             visits: 0.0,
             wins: 0.0,
             prior: 0.0,
+            logit: 0.0,
+            raw_value: 0.0,
             zobrist_hash,
             virtual_loss: 0.0,
             proven: 0,
@@ -114,7 +130,13 @@ impl MCTSNode {
         self.prior
     }
 
-    fn new_child(mv: Move, parent: NodeId, prior: f32, zobrist_hash: ZobristHash) -> MCTSNode {
+    fn new_child(
+        mv: Move,
+        parent: NodeId,
+        prior: f32,
+        logit: f32,
+        zobrist_hash: ZobristHash,
+    ) -> MCTSNode {
         MCTSNode {
             mv: Some(mv),
             parent: Some(parent),
@@ -123,6 +145,8 @@ impl MCTSNode {
             visits: 0.0,
             wins: 0.0,
             prior,
+            logit,
+            raw_value: 0.0,
             zobrist_hash,
             virtual_loss: 0.0,
             proven: 0,
@@ -145,6 +169,12 @@ pub struct MCTSTree {
     nodes: Vec<MCTSNode>,
     pub memory_limit: Option<f64>,
     pub move_gen: MoveGen,
+    /// Gumbel state of the current root: one noise sample per child, the
+    /// sequential-halving visit schedule, and the config the search ran with
+    /// (`None` after a PUCT search).
+    gumbel_noise: Vec<f32>,
+    gumbel_schedule: Vec<u32>,
+    gumbel_cfg: Option<GumbelConfig>,
 }
 
 impl Default for MCTSTree {
@@ -159,6 +189,9 @@ impl MCTSTree {
             nodes: vec![],
             memory_limit: None,
             move_gen: MoveGen::new(),
+            gumbel_noise: Vec::new(),
+            gumbel_schedule: Vec::new(),
+            gumbel_cfg: None,
         }
     }
 
@@ -219,10 +252,11 @@ impl MCTSTree {
         mv: Move,
         parent_id: NodeId,
         prior: f32,
+        logit: f32,
         zobrist_hash: ZobristHash,
     ) -> NodeId {
         let index: NodeId = self.nodes.len();
-        let new_child = MCTSNode::new_child(mv, parent_id, prior, zobrist_hash);
+        let new_child = MCTSNode::new_child(mv, parent_id, prior, logit, zobrist_hash);
         self.nodes.push(new_child);
         let parent = self.get_node_mut(parent_id);
         parent.append_child(index);
@@ -232,6 +266,9 @@ impl MCTSTree {
     /// Reroot to the child of current root that matches `mv`.
     /// Returns true if found, false if tree was reset.
     pub fn reroot(&mut self, zobrist: ZobristHash) {
+        self.gumbel_noise.clear();
+        self.gumbel_schedule.clear();
+        self.gumbel_cfg = None;
         let Some(old_root_id) = self
             .nodes
             .iter()
@@ -267,6 +304,8 @@ impl MCTSTree {
                 visits: old_node.visits,
                 wins: old_node.wins,
                 prior: old_node.prior,
+                logit: old_node.logit,
+                raw_value: old_node.raw_value,
                 zobrist_hash: old_node.zobrist_hash,
                 virtual_loss: 0.0,
                 proven: old_node.proven,
@@ -479,6 +518,7 @@ fn expand_node(
             .map(|mv| nn_out.policy[move_to_policy_index(*mv, board.board_size()) as usize])
             .collect();
         let priors = softmax(&logits);
+        let max_logit = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
 
         let mut undo = UndoMove::new();
         let mut proofs = Vec::with_capacity(moves.len());
@@ -487,14 +527,17 @@ fn expand_node(
             let zobrist = board.zobrist;
             proofs.push(child_proof(board, move_gen));
             board.unmake_move(&mut undo).expect("Failed to unmake move");
-            tree.new_child(mv, node_id, priors[i], zobrist);
+            tree.new_child(mv, node_id, priors[i], logits[i] - max_logit, zobrist);
         }
         seal_proven_children(tree, node_id, &proofs);
     }
 
-    tree.get_node_mut(node_id).expanded = true;
+    let value = shape_by_moves_left(nn_out.value, nn_out.moves_left);
+    let node = tree.get_node_mut(node_id);
+    node.expanded = true;
+    node.raw_value = value;
 
-    shape_by_moves_left(nn_out.value, nn_out.moves_left)
+    value
 }
 
 #[allow(dead_code)]
@@ -692,23 +735,30 @@ fn select_leaf(
     tree: &MCTSTree,
     move_stack: &mut MovesStack,
     move_gen: &mut MoveGen,
-    root_forced_k: f32,
+    config: &MCTSConfig,
 ) -> Option<PendingLeaf> {
     let mut cur = tree.get_root_id();
     let mut path = vec![cur];
 
-    // Descend via PUCT until we hit a leaf or a newly-terminal node
+    // Descend (PUCT or Gumbel) until we hit a leaf or a decided node
     while !tree.get_node(cur).is_leaf()
         && !tree.get_node(cur).children.is_empty()
         && tree.get_node(cur).proven == 0
     {
-        // Forced playouts apply at the root only
-        let forced_k = if cur == tree.get_root_id() {
-            root_forced_k
-        } else {
-            0.0
+        let at_root = cur == tree.get_root_id();
+        cur = match &config.gumbel {
+            Some(g) if at_root => tree.gumbel_select_root(g),
+            Some(g) => tree.gumbel_select_interior(cur, g),
+            None => {
+                // Forced playouts apply at the root only
+                let forced_k = if at_root {
+                    config.forced_playouts_k
+                } else {
+                    0.0
+                };
+                puct_select(tree, cur, forced_k)
+            }
         };
-        cur = puct_select(tree, cur, forced_k);
         path.push(cur);
         let node = tree.get_node(cur);
         move_stack.make_move(board, node.mv.expect("Move not found"));
@@ -796,6 +846,7 @@ fn expand_with_nn_output(
     tree: &mut MCTSTree,
     node_id: NodeId,
     policy: &[f32],
+    value: f32,
     legal_moves: &[Move],
     child_zobrists: &[ZobristHash],
     child_proofs: &[i8],
@@ -807,13 +858,22 @@ fn expand_with_nn_output(
             .map(|mv| policy[move_to_policy_index(*mv, board_size) as usize])
             .collect();
         let priors = softmax(&logits);
+        let max_logit = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
 
         for (i, &mv) in legal_moves.iter().enumerate() {
-            tree.new_child(mv, node_id, priors[i], child_zobrists[i]);
+            tree.new_child(
+                mv,
+                node_id,
+                priors[i],
+                logits[i] - max_logit,
+                child_zobrists[i],
+            );
         }
         seal_proven_children(tree, node_id, child_proofs);
     }
-    tree.get_node_mut(node_id).expanded = true;
+    let node = tree.get_node_mut(node_id);
+    node.expanded = true;
+    node.raw_value = value;
 }
 
 /// Backpropagate a result from a leaf node up to the root.
@@ -909,8 +969,13 @@ pub fn mcts_search(
         backpropagate(tree, &[root_id], root_value);
     }
 
-    // Add Dirichlet noise to root priors
-    if config.dirichlet_alpha > 0.0 {
+    if let Some(g) = &config.gumbel {
+        // Gumbel explores through its root noise; Dirichlet and forced playouts stay off.
+        let mut rng = StdRng::seed_from_u64(std::hash::RandomState::new().build_hasher().finish());
+        let simulations = iter_max.unwrap_or(u32::MAX as u64).min(u32::MAX as u64) as u32;
+        tree.init_gumbel_root(g, simulations, &mut rng);
+    } else if config.dirichlet_alpha > 0.0 {
+        // Add Dirichlet noise to root priors
         add_dirichlet_noise(
             tree,
             root_id,
@@ -970,13 +1035,8 @@ pub fn mcts_search(
         let mut selected_nodes: HashSet<NodeId> = HashSet::with_capacity(this_batch);
 
         for _ in 0..this_batch {
-            if let Some(leaf) = select_leaf(
-                board,
-                tree,
-                &mut move_stack,
-                &mut mv_generator,
-                config.forced_playouts_k,
-            ) {
+            if let Some(leaf) = select_leaf(board, tree, &mut move_stack, &mut mv_generator, config)
+            {
                 if !selected_nodes.insert(leaf.node_id) {
                     // Strict dedup: do not add the same leaf twice in one micro-batch.
                     break;
@@ -1029,12 +1089,14 @@ pub fn mcts_search(
                 let nn_out = &nn_results[nn_result_idx];
                 nn_result_idx += 1;
 
+                let value = shape_by_moves_left(nn_out.value, nn_out.moves_left);
                 // Guard against duplicate expansion if two leaves hit the same node
                 if !tree.get_node(leaf.node_id).expanded {
                     expand_with_nn_output(
                         tree,
                         leaf.node_id,
                         &nn_out.policy,
+                        value,
                         &leaf.legal_moves,
                         &leaf.child_zobrists,
                         &leaf.child_proofs,
@@ -1042,7 +1104,7 @@ pub fn mcts_search(
                     );
                 }
 
-                shape_by_moves_left(nn_out.value, nn_out.moves_left)
+                value
             };
 
             backpropagate(tree, &leaf.path, result);
@@ -1076,7 +1138,11 @@ pub fn mcts_search(
         report_iteration(tree, callback, elapsed, iteration, multi_pv);
     }
 
-    get_best_child(tree, config.temperature).map(|id| tree.get_node(id).mv.unwrap())
+    let best = match &config.gumbel {
+        Some(g) => tree.gumbel_best_child(g),
+        None => get_best_child(tree, config.temperature),
+    };
+    best.map(|id| tree.get_node(id).mv.unwrap())
 }
 
 fn response_from_move(

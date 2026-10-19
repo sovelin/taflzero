@@ -313,15 +313,28 @@ impl MCTSTree {
             }
         }
 
-        let policy: Vec<PolicyTarget> = entries
-            .iter()
-            .filter(|(_, v, _, _)| *v >= 1.0)
-            .map(|&(move_index, v, _, _)| PolicyTarget {
-                move_index,
-                visits: v.round().min(u16::MAX as f32) as u16,
-            })
-            .filter(|t| t.visits > 0)
-            .collect();
+        // Gumbel: the improved policy over every legal move, quantized to u16 (the
+        // trainer normalizes by the sum, so the scale is immaterial). PUCT: visits.
+        let policy: Vec<PolicyTarget> = if let Some(improved) = self.gumbel_policy_target() {
+            improved
+                .iter()
+                .map(|&(mv, p)| PolicyTarget {
+                    move_index: move_to_policy_index(mv, board.board_size()),
+                    visits: (p * 65535.0).round().min(u16::MAX as f32) as u16,
+                })
+                .filter(|t| t.visits > 0)
+                .collect()
+        } else {
+            entries
+                .iter()
+                .filter(|(_, v, _, _)| *v >= 1.0)
+                .map(|&(move_index, v, _, _)| PolicyTarget {
+                    move_index,
+                    visits: v.round().min(u16::MAX as f32) as u16,
+                })
+                .filter(|t| t.visits > 0)
+                .collect()
+        };
 
         let rep = board.rep_table.get(&board.zobrist).copied().unwrap_or(1);
 
