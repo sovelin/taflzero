@@ -64,6 +64,7 @@ SELFPLAY_COLUMNS = [
 ] + TERMINAL_COLUMNS
 SELFPLAY_ROW_EVERY_GAMES = 500
 SELFPLAY_ROW_EVERY_SECONDS = 120.0
+SELFPLAY_ROW_MIN_GAMES = 50
 
 WORKER_RESTART_DELAY_S = 5.0
 WORKER_CRASH_LIMIT = 10
@@ -676,8 +677,11 @@ class ContinuousRun:
             self._bytes_warned = True
             self.log(f"[buffer] exceeds --buffer-max-bytes {self.args.buffer_max_bytes}; window shrunk")
         self._update_pause()
-        due_by_games = games // SELFPLAY_ROW_EVERY_GAMES > self._selfplay_row_stats.games // SELFPLAY_ROW_EVERY_GAMES
-        due_by_time = games > self._selfplay_row_stats.games and time.time() - self._selfplay_row_time >= SELFPLAY_ROW_EVERY_SECONDS
+        # A row is one logging window; a window of a handful of games makes the per-window
+        # shares jump to 0/100, so never close one before SELFPLAY_ROW_MIN_GAMES.
+        since = games - self._selfplay_row_stats.games
+        due_by_games = since >= SELFPLAY_ROW_EVERY_GAMES
+        due_by_time = since >= SELFPLAY_ROW_MIN_GAMES and time.time() - self._selfplay_row_time >= SELFPLAY_ROW_EVERY_SECONDS
         if due_by_games or due_by_time:
             self._write_selfplay_row()
         return res.samples

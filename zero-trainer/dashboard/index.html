@@ -226,6 +226,25 @@ function renderLive(p, alive) {
     <div class="sub">W/L from the checkpoint's side; each pair = one opening from both sides (result of game 1 / game 2)${stale}</div>`;
 }
 
+// selfplay.csv rows are logging windows (cumulative counts + per-window avg_len); older runs
+// wrote windows of a few games, whose shares jump to 0/100. Fold such a row into the next one.
+function mergeWindows(rows, minGames) {
+  const out = [];
+  let open = null;
+  for (const r of rows) {
+    const prev = out[out.length - 1] || { games: 0 };
+    const start = open ? open.start : prev.games;
+    const g = r.games - start;
+    if (!open) open = { start, len: 0, n: 0 };
+    const wg = r.games - (open.last ? open.last.games : start);
+    if (wg > 0 && r.avg_len != null) { open.len += r.avg_len * wg; open.n += wg; }
+    open.last = r;
+    if (g >= minGames) { out.push({ ...r, avg_len: open.n ? open.len / open.n : r.avg_len }); open = null; }
+  }
+  if (open && open.last && (!out.length || open.last.games > out[out.length - 1].games)) out.push({ ...open.last, avg_len: open.n ? open.len / open.n : open.last.avg_len });
+  return out;
+}
+
 function renderDetail(d) {
   $('dName').textContent = d.name;
   $('dStatus').textContent = d.status + (d.eval_alive ? ' · eval on' : '');
@@ -234,7 +253,7 @@ function renderDetail(d) {
   $('stopBtn').disabled = !d.trainer_alive;
   $('resumeBtn').disabled = d.trainer_alive;
 
-  const m = d.metrics, last = m[m.length - 1] || {}, sp = d.selfplay, lsp = sp[sp.length - 1] || {};
+  const m = d.metrics, last = m[m.length - 1] || {}, sp = mergeWindows(d.selfplay, 50), lsp = sp[sp.length - 1] || {};
   const st = d.state || {};
   const elo = d.elo.filter(e => e.anchor === (d.elo[0] || {}).anchor);
   const lastElo = d.elo.length ? d.elo[d.elo.length - 1] : null;
