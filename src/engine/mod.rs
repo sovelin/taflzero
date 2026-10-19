@@ -214,6 +214,18 @@ impl Engine {
         check_terminal(&mut self.board)
     }
 
+    /// The winner, counting a side with no legal move as having lost (as datagen
+    /// does); `check_terminal` alone does not cover the immobilised side.
+    pub fn winner(&mut self) -> Option<Side> {
+        if let Some(side) = self.check_terminal() {
+            return Some(side);
+        }
+        if self.legal_moves().is_empty() {
+            return Some(Side::opposite(self.board.side_to_move));
+        }
+        None
+    }
+
     /// Legal moves in the current position.
     pub fn legal_moves(&self) -> Vec<Move> {
         let mut mg = crate::movegen::MoveGen::new();

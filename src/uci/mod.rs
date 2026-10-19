@@ -289,7 +289,7 @@ impl<O: UciOutput> UciController<O> {
             "result" => {
                 #[cfg(not(target_arch = "wasm32"))]
                 self.collect_search(false);
-                let winner = match self.engine_mut().check_terminal() {
+                let winner = match self.engine_mut().winner() {
                     Some(crate::board::types::Side::ATTACKERS) => "attackers",
                     Some(crate::board::types::Side::DEFENDERS) => "defenders",
                     None => "none",
@@ -463,11 +463,16 @@ impl<O: UciOutput> UciController<O> {
         }
     }
 
-    /// Refuses to start a search when the loaded net does not fit the current board,
-    /// answering in the protocol instead of letting the search thread panic.
+    /// Refuses to start a search when the loaded net does not fit the current board
+    /// or the game is already over (no legal move: the search would answer with a
+    /// null move), answering in the protocol instead of letting a thread panic.
     fn reject_if_nn_mismatched(&mut self) -> bool {
         if let Err(err) = self.engine().check_nn_matches_board() {
             self.send(&format!("cannot search: {err}"));
+            self.send("bestmove (none)");
+            return true;
+        }
+        if self.engine_mut().winner().is_some() {
             self.send("bestmove (none)");
             return true;
         }

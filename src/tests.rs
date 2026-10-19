@@ -212,6 +212,14 @@ fn uci_result_reports_terminal_winner() {
     uci.run("position fen 11/11/5a5/11/11/5d5/11/11/11/11/11 - d 0 0");
     uci.run("result");
     assert_eq!(last(&out), "result attackers");
+
+    // Defenders to move with only a boxed-in king (no legal move): attackers have
+    // won, and `go` must not answer with a null move (it used to say `bestmove a1a1`).
+    uci.run("position fen 2a2aka3/1a2aaa1a2/1aa3a4/a1a8/a8a1/a10/a10/a10/a10/1a8a/4aaa4 - d 0 0");
+    uci.run("result");
+    assert_eq!(last(&out), "result attackers");
+    uci.run("go nodes 10");
+    assert_eq!(last(&out), "bestmove (none)");
 }
 
 // `randommove` returns a legal move that the engine then accepts.
