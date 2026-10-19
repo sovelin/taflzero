@@ -10,7 +10,7 @@
     "gumbel": 16, "mlh_alpha": 0.15, "variant": "copenhagen11x11"
   },
   "eval": {
-    "anchors": ["copenhagen11x11.onnx", "zero-trainer/weights/P-A/gen0010.onnx", "zero-trainer/weights/P-A/gen0000.onnx"],
+    "anchors": ["copenhagen11x11.onnx", "zero-trainer/weights/T2/gen0061.onnx"],
     "pairs": 30, "nodes": 400, "workers": 2, "blind": true, "playout_every": 5
   }
 }
