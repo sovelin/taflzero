@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TaflZero Training</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg: #fcfcfb; --surface: #ffffff; --ink: #1d1d1b; --ink-2: #5a5a56; --ink-3: #8a8a85; --line: #e4e4e0;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
+  --good: #1a8a3c; --warn: #b26b00; --bad: #c42b2b;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #1a1a19; --surface: #242423; --ink: #ececea; --ink-2: #b4b4b0; --ink-3: #85857f; --line: #363634;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #2aa02a; --s7: #9085e9; --s8: #e66767;
+}}
+:root[data-theme="dark"] {
+  --bg: #1a1a19; --surface: #242423; --ink: #ececea; --ink-2: #b4b4b0; --ink-3: #85857f; --line: #363634;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #2aa02a; --s7: #9085e9; --s8: #e66767;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { display: flex; align-items: center; gap: 16px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+header .spacer { flex: 1; }
+.layout { display: grid; grid-template-columns: 280px 1fr; min-height: calc(100vh - 49px); }
+aside { border-right: 1px solid var(--line); padding: 12px; overflow: auto; }
+main { padding: 16px; overflow: auto; }
+@media (max-width: 900px) { .layout { grid-template-columns: 1fr; } aside { border-right: 0; border-bottom: 1px solid var(--line); } }
+.run { padding: 8px 10px; border-radius: 6px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.run:hover { background: var(--surface); }
+.run.active { background: var(--surface); outline: 1px solid var(--line); }
+.run .name { font-weight: 600; }
+.run .meta { color: var(--ink-3); font-size: 12px; }
+.pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-2); white-space: nowrap; }
+.pill.running { color: var(--good); border-color: var(--good); }
+.pill.stopping { color: var(--warn); border-color: var(--warn); }
+.pill.stopped { color: var(--ink-3); }
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-3); margin: 16px 0 8px; font-weight: 600; }
+button { font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+button.primary { background: var(--s1); border-color: var(--s1); color: #fff; }
+button.danger { color: var(--bad); border-color: var(--bad); }
+button:disabled { opacity: .5; cursor: default; }
+input, select { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); width: 100%; }
+label { display: block; font-size: 12px; color: var(--ink-2); margin: 8px 0 2px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.tile .k { font-size: 12px; color: var(--ink-3); }
+.tile .v { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tile .s { font-size: 12px; color: var(--ink-2); }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 14px; }
+.chart { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.chart h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; }
+.chart .sub { color: var(--ink-3); font-size: 12px; margin-bottom: 6px; }
+.chart canvas { width: 100% !important; height: 240px !important; }
+pre.log { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px; font-size: 12px; max-height: 260px; overflow: auto; white-space: pre-wrap; color: var(--ink-2); }
+.msg { color: var(--bad); font-size: 12px; min-height: 1.2em; }
+.desc { font-size: 12px; color: var(--ink-2); margin-top: 4px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>TaflZero Training</h1>
+  <span id="engine" class="pill"></span>
+  <span class="spacer"></span>
+  <button id="themeBtn" title="Toggle light / dark">Dark</button>
+  <span id="clock" class="pill"></span>
+</header>
+<div class="layout">
+  <aside>
+    <h2>Runs</h2>
+    <div id="runs"></div>
+    <h2>New run</h2>
+    <label>Preset</label>
+    <select id="preset"></select>
+    <div id="presetDesc" class="desc"></div>
+    <label>Name</label>
+    <input id="runName" placeholder="T5-4x48" spellcheck="false">
+    <label>Workers (engine processes)</label>
+    <input id="workers" type="number" min="1" max="64" placeholder="preset default">
+    <details><summary>Advanced overrides</summary>
+      <label>Training threads</label><input id="trainThreads" type="number" min="1" placeholder="preset default">
+      <label>Full / cheap nodes</label>
+      <div class="row"><input id="fullNodes" type="number" placeholder="160"><input id="cheapNodes" type="number" placeholder="40"></div>
+      <label>Start checkpoint (.qnxx)</label><input id="startCkpt" placeholder="optional">
+      <label>Engine binary</label><input id="engineBin" placeholder="auto">
+    </details>
+    <div style="margin-top:12px" class="row">
+      <button class="primary" id="startBtn">Start</button>
+    </div>
+    <div id="startMsg" class="msg"></div>
+  </aside>
+  <main>
+    <div id="empty" class="desc">Select a run on the left or start a new one.</div>
+    <div id="detail" style="display:none">
+      <div class="row" style="margin-bottom:12px">
+        <strong id="dName" style="font-size:16px"></strong>
+        <span id="dStatus" class="pill"></span>
+        <span id="dPaused" class="pill" style="display:none">paused: trainer catching up</span>
+        <span class="spacer"></span>
+        <button id="stopBtn" class="danger">Stop</button>
+        <button id="resumeBtn">Resume</button>
+      </div>
+      <div class="tiles" id="tiles"></div>
+      <div class="charts">
+        <div class="chart"><h3>Elo against anchors</h3><div class="sub">paired games at fixed nodes; shaded = 95% CI</div><canvas id="cElo"></canvas></div>
+        <div class="chart"><h3>Self-play outcomes</h3><div class="sub">share of games, per logging window</div><canvas id="cOut"></canvas></div>
+        <div class="chart"><h3>Average game length</h3><div class="sub">plies</div><canvas id="cLen"></canvas></div>
+        <div class="chart"><h3>Losses</h3><div class="sub">policy and value, per 100 steps</div><canvas id="cLoss"></canvas></div>
+        <div class="chart"><h3>Blind-spot metrics</h3><div class="sub">attacker winrate the bare net gives: lost positions should fall, won positions should rise</div><canvas id="cBlind"></canvas></div>
+        <div class="chart"><h3>Brier on his positions</h3><div class="sub">random 0.25, T2 g0213 0.096, his 0.087</div><canvas id="cBrier"></canvas></div>
+        <div class="chart"><h3>Throughput</h3><div class="sub">positions per second</div><canvas id="cSpeed"></canvas></div>
+        <div class="chart"><h3>Window and buffer</h3><div class="sub">positions</div><canvas id="cWin"></canvas></div>
+      </div>
+      <h2>Trainer log</h2>
+      <pre class="log" id="log"></pre>
+      <h2>Evaluator log</h2>
+      <pre class="log" id="evalLog"></pre>
+      <details><summary>Config</summary><pre class="log" id="cfg"></pre></details>
+    </div>
+  </main>
+</div>
+<script>
+const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+// Theme: explicit choice wins and is remembered; otherwise the OS setting applies.
+function applyTheme(t) {
+  if (t) document.documentElement.setAttribute('data-theme', t); else document.documentElement.removeAttribute('data-theme');
+  const dark = t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  document.getElementById('themeBtn').textContent = dark ? 'Light' : 'Dark';
+  for (const c of Object.values(charts)) c.destroy();
+  charts = {};
+}
+let savedTheme = null; try { savedTheme = localStorage.getItem('theme'); } catch (e) {}
+const SERIES = () => ['--s1','--s2','--s3','--s4','--s5','--s6','--s7','--s8'].map(css);
+let presets = {}, runs = [], selected = null, charts = {};
+const $ = (id) => document.getElementById(id);
+
+async function api(path, body) {
+  const r = await fetch(path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
+  return r.json();
+}
+
+function fmt(n, d = 0) { return n == null || isNaN(n) ? '–' : Number(n).toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d }); }
+function fmtK(n) { return n == null ? '–' : n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(0) + 'k' : String(n); }
+
+async function loadPresets() {
+  const p = await api('/api/presets');
+  presets = p.presets;
+  $('engine').textContent = p.engine_exists ? 'engine: ' + p.engine_bin.split(/[\\/]/).slice(-3).join('/') : 'engine binary missing: ' + p.engine_bin;
+  $('engine').style.color = p.engine_exists ? '' : css('--bad');
+  const sel = $('preset');
+  sel.innerHTML = '';
+  for (const name of Object.keys(presets)) { const o = document.createElement('option'); o.value = name; o.textContent = name; sel.appendChild(o); }
+  if (presets['t5-4x48-cpu']) sel.value = 't5-4x48-cpu';
+  sel.onchange = () => { $('presetDesc').textContent = presets[sel.value]?.description || ''; };
+  sel.onchange();
+}
+
+async function loadRuns() {
+  runs = (await api('/api/runs')).runs;
+  const box = $('runs');
+  box.innerHTML = runs.length ? '' : '<div class="desc">no runs yet</div>';
+  for (const r of runs) {
+    const d = document.createElement('div');
+    d.className = 'run' + (r.name === selected ? ' active' : '');
+    d.innerHTML = `<div><div class="name">${r.name}</div><div class="meta">step ${fmt(r.step)} · ${fmtK(r.generated)} pos</div></div><span class="pill ${r.status}">${r.status}</span>`;
+    d.onclick = () => { selected = r.name; loadDetail(); loadRuns(); };
+    box.appendChild(d);
+  }
+}
+
+function lineChart(id, datasets, opts = {}) {
+  const ctx = $(id);
+  const ink2 = css('--ink-2'), line = css('--line');
+  const config = {
+    type: 'line',
+    data: { datasets },
+    options: {
+      animation: false, responsive: true, maintainAspectRatio: false, parsing: false, normalized: true,
+      interaction: { mode: 'nearest', axis: 'x', intersect: false },
+      elements: { line: { borderWidth: 2, tension: 0 }, point: { radius: 0, hitRadius: 10, hoverRadius: 4 } },
+      plugins: {
+        legend: { display: datasets.filter(d => !d._ci).length > 1, position: 'bottom', labels: { color: ink2, boxWidth: 10, boxHeight: 10, usePointStyle: true, filter: (i) => !i.text.startsWith('_') } },
+        tooltip: { callbacks: { title: (items) => opts.xLabel + ' ' + fmtK(items[0]?.parsed?.x), label: (i) => i.dataset.label.startsWith('_') ? null : `${i.dataset.label}: ${fmt(i.parsed.y, opts.digits ?? 1)}` } },
+      },
+      scales: {
+        x: { type: 'linear', grid: { color: line }, ticks: { color: ink2, callback: fmtK, maxTicksLimit: 8 }, title: { display: true, text: opts.xLabel || 'positions', color: ink2 } },
+        y: { grid: { color: line }, ticks: { color: ink2, maxTicksLimit: 6 }, min: opts.min, max: opts.max, title: { display: !!opts.yLabel, text: opts.yLabel || '', color: ink2 } },
+      },
+    },
+  };
+  if (charts[id]) { charts[id].data.datasets = datasets; charts[id].options = config.options; charts[id].update(); }
+  else charts[id] = new Chart(ctx, config);
+}
+
+function ds(label, color, points, extra = {}) { return Object.assign({ label, data: points, borderColor: color, backgroundColor: color, pointStyle: 'circle' }, extra); }
+
+function renderDetail(d) {
+  $('dName').textContent = d.name;
+  $('dStatus').textContent = d.status + (d.eval_alive ? ' · eval on' : '');
+  $('dStatus').className = 'pill ' + d.status;
+  $('dPaused').style.display = d.paused ? '' : 'none';
+  $('stopBtn').disabled = !d.trainer_alive;
+  $('resumeBtn').disabled = d.trainer_alive;
+
+  const m = d.metrics, last = m[m.length - 1] || {}, sp = d.selfplay, lsp = sp[sp.length - 1] || {};
+  const st = d.state || {};
+  const elo = d.elo.filter(e => e.anchor === (d.elo[0] || {}).anchor);
+  const lastElo = d.elo.length ? d.elo[d.elo.length - 1] : null;
+  const tiles = [
+    ['Step', fmt(st.step), `${fmt(last.steps_per_s, 2)} steps/s`],
+    ['Positions', fmtK(st.generated), `${fmt(st.games)} games`],
+    ['Attacker wins', lsp.atk_pct != null ? fmt(lsp.atk_pct, 1) + '%' : '–', `undecided ${lsp.games ? fmt(100 * (lsp.undecided || 0) / lsp.games, 0) : '–'}% total`],
+    ['Game length', fmt(lsp.avg_len, 0), 'plies, last window'],
+    ['Loss', fmt(last.loss, 3), `policy ${fmt(last.policy, 3)} · value ${fmt(last.value, 3)}`],
+    ['Speed', fmt(last.samples_per_s, 0), 'positions/s'],
+    ['Window', fmtK(st.window), `buffer ${fmtK(st.buffer)}`],
+    ['Last Elo', lastElo ? (lastElo.elo > 0 ? '+' : '') + fmt(lastElo.elo, 0) : '–', lastElo ? `vs ${lastElo.anchor} @${lastElo.ckpt.replace('step', '')}` : 'no matches yet'],
+  ];
+  $('tiles').innerHTML = tiles.map(t => `<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="s">${t[2]}</div></div>`).join('');
+
+  const S = SERIES();
+  // Elo per anchor, x = generated (fallback step)
+  const anchors = [...new Set(d.elo.map(e => e.anchor))];
+  const eloSets = [];
+  anchors.forEach((a, i) => {
+    const rows = d.elo.filter(e => e.anchor === a).sort((p, q) => p.step - q.step);
+    const x = (e) => e.generated ?? e.step;
+    eloSets.push(ds(a, S[i % 8], rows.map(e => ({ x: x(e), y: e.elo }))));
+    eloSets.push(ds('_' + a + ' lo', S[i % 8], rows.map(e => ({ x: x(e), y: e.ci[0] })), { borderWidth: 0, pointRadius: 0, fill: '+1', backgroundColor: S[i % 8] + '22', _ci: true }));
+    eloSets.push(ds('_' + a + ' hi', S[i % 8], rows.map(e => ({ x: x(e), y: e.ci[1] })), { borderWidth: 0, pointRadius: 0, _ci: true }));
+  });
+  lineChart('cElo', eloSets, { yLabel: 'Elo', digits: 0 });
+
+  // Self-play outcomes: shares per window (cumulative counts -> diffs)
+  const out = { atk: [], def: [], und: [] }, lens = [];
+  for (let i = 0; i < sp.length; i++) {
+    const r = sp[i], p = sp[i - 1] || { games: 0, atk_wins: 0, def_wins: 0, undecided: 0 };
+    const g = r.games - p.games; if (g <= 0) continue;
+    out.atk.push({ x: r.generated, y: 100 * (r.atk_wins - p.atk_wins) / g });
+    out.def.push({ x: r.generated, y: 100 * (r.def_wins - p.def_wins) / g });
+    out.und.push({ x: r.generated, y: 100 * (r.undecided - p.undecided) / g });
+    lens.push({ x: r.generated, y: r.avg_len });
+  }
+  lineChart('cOut', [ds('attackers win', S[1], out.atk), ds('defenders win', S[0], out.def), ds('undecided', S[3], out.und)], { yLabel: '% of games', min: 0, max: 100 });
+  lineChart('cLen', [ds('average length', S[0], lens)], { yLabel: 'plies', digits: 0 });
+
+  const mx = (r) => r.generated;
+  lineChart('cLoss', [ds('policy', S[0], m.map(r => ({ x: mx(r), y: r.policy }))), ds('value', S[1], m.map(r => ({ x: mx(r), y: r.value }))), ds('moves left', S[2], m.map(r => ({ x: mx(r), y: r.moves_left })))], { digits: 3 });
+  lineChart('cSpeed', [ds('positions/s', S[0], m.map(r => ({ x: mx(r), y: r.samples_per_s })))], { digits: 0 });
+  lineChart('cWin', [ds('window', S[0], m.map(r => ({ x: mx(r), y: r.window }))), ds('buffer', S[2], m.map(r => ({ x: mx(r), y: r.buffer })))], { digits: 0 });
+
+  // Blind metrics by checkpoint step -> generated via elo rows (same ckpt) or metrics nearest
+  const genOf = (name) => { const e = d.elo.find(x => x.ckpt === name); if (e && e.generated != null) return e.generated; const s = parseInt((name.match(/step(\d+)/) || [])[1] || '0'); let best = null; for (const r of m) if (!best || Math.abs(r.step - s) < Math.abs(best.step - s)) best = r; return best ? best.generated : s; };
+  const ev = d.eval.map(r => ({ x: genOf(r.net), r })).sort((a, b) => a.x - b.x);
+  lineChart('cBlind', [ds('lost positions (→ 5)', S[7], ev.map(e => ({ x: e.x, y: e.r.lost_pos }))), ds('won positions (→ 95)', S[2], ev.map(e => ({ x: e.x, y: e.r.won_pos })))], { yLabel: 'attacker winrate %', min: 0, max: 100 });
+  lineChart('cBrier', [ds('brier', S[0], ev.map(e => ({ x: e.x, y: e.r.brier_his })))], { digits: 3, min: 0 });
+
+  $('log').textContent = d.log.join('\n');
+  $('evalLog').textContent = d.eval_log.join('\n') || '(no evaluator output yet)';
+  $('cfg').textContent = JSON.stringify(d.config, null, 2);
+}
+
+async function loadDetail() {
+  if (!selected) return;
+  const d = await api('/api/run?name=' + encodeURIComponent(selected));
+  if (d.error) { selected = null; $('detail').style.display = 'none'; $('empty').style.display = ''; return; }
+  $('empty').style.display = 'none'; $('detail').style.display = '';
+  renderDetail(d);
+}
+
+$('startBtn').onclick = async () => {
+  const overrides = {};
+  const num = (id, key) => { const v = $(id).value; if (v !== '') overrides[key] = Number(v); };
+  num('workers', 'workers'); num('trainThreads', 'train_threads'); num('fullNodes', 'full_nodes'); num('cheapNodes', 'cheap_nodes');
+  if ($('startCkpt').value) overrides.start_checkpoint = $('startCkpt').value;
+  if ($('engineBin').value) overrides.engine_bin = $('engineBin').value;
+  $('startBtn').disabled = true;
+  const r = await api('/api/start', { name: $('runName').value.trim(), preset: $('preset').value, overrides });
+  $('startBtn').disabled = false;
+  $('startMsg').textContent = r.error || '';
+  if (r.ok) { selected = r.name; await loadRuns(); await loadDetail(); }
+};
+$('stopBtn').onclick = async () => { if (selected && confirm(`Stop ${selected}? It finishes the current step, saves a checkpoint and exits.`)) { await api('/api/stop', { name: selected }); loadDetail(); loadRuns(); } };
+$('resumeBtn').onclick = async () => { if (selected) { const r = await api('/api/resume', { name: selected }); if (r.error) alert(r.error); loadDetail(); loadRuns(); } };
+
+$('themeBtn').onclick = () => {
+  const dark = document.documentElement.getAttribute('data-theme') === 'dark' || (!document.documentElement.getAttribute('data-theme') && matchMedia('(prefers-color-scheme: dark)').matches);
+  const next = dark ? 'light' : 'dark';
+  try { localStorage.setItem('theme', next); } catch (e) {}
+  applyTheme(next); loadDetail();
+};
+(async () => {
+  applyTheme(savedTheme);
+  await loadPresets(); await loadRuns();
+  if (runs.length) { selected = runs[0].name; await loadRuns(); await loadDetail(); }
+  setInterval(async () => { $('clock').textContent = new Date().toLocaleTimeString(); await loadRuns(); await loadDetail(); }, 10000);
+})();
+</script>
+</body>
+</html>

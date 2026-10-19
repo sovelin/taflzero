@@ -63,6 +63,7 @@ SELFPLAY_COLUMNS = [
     "time", "games", "generated", "atk_wins", "def_wins", "undecided", "atk_pct", "avg_len",
 ] + TERMINAL_COLUMNS
 SELFPLAY_ROW_EVERY_GAMES = 500
+SELFPLAY_ROW_EVERY_SECONDS = 120.0
 
 WORKER_RESTART_DELAY_S = 5.0
 WORKER_CRASH_LIMIT = 10
@@ -378,6 +379,7 @@ class ContinuousRun:
         self.metrics = CsvLog(self.run_dir / "metrics.csv", METRICS_COLUMNS)
         self.selfplay_csv = CsvLog(self.run_dir / "selfplay.csv", SELFPLAY_COLUMNS)
         self._selfplay_row_stats = SelfplayStats()   # snapshot at the last selfplay.csv row
+        self._selfplay_row_time = time.time()
 
         self.model: TaflAlphaZeroNet
         self.optimizer: torch.optim.Optimizer
@@ -542,6 +544,11 @@ class ContinuousRun:
         try:
             self._export_onnx_to(self.ckpt_dir / f"{tag}.onnx")
             save_qnxx(self.model, self.ckpt_dir / f"{tag}.qnxx")
+            # Where the run was when this net was saved: the evaluator plots by positions.
+            with self.lock:
+                meta = {"step": self.step, "generated": self.stats.generated, "games": self.stats.games,
+                        "time": time.time()}
+            atomic_write_text(self.ckpt_dir / f"{tag}.json", json.dumps(meta))
         finally:
             if was_training:
                 self.model.train()
@@ -669,7 +676,9 @@ class ContinuousRun:
             self._bytes_warned = True
             self.log(f"[buffer] exceeds --buffer-max-bytes {self.args.buffer_max_bytes}; window shrunk")
         self._update_pause()
-        if games // SELFPLAY_ROW_EVERY_GAMES > self._selfplay_row_stats.games // SELFPLAY_ROW_EVERY_GAMES:
+        due_by_games = games // SELFPLAY_ROW_EVERY_GAMES > self._selfplay_row_stats.games // SELFPLAY_ROW_EVERY_GAMES
+        due_by_time = games > self._selfplay_row_stats.games and time.time() - self._selfplay_row_time >= SELFPLAY_ROW_EVERY_SECONDS
+        if due_by_games or due_by_time:
             self._write_selfplay_row()
         return res.samples
 
@@ -700,6 +709,7 @@ class ContinuousRun:
             row[col] = cur.by_terminal.get(col, 0)
         self.selfplay_csv.row(row)
         self._selfplay_row_stats = cur
+        self._selfplay_row_time = time.time()
 
     def ingest_loop(self) -> None:
         while not self._stop_event.is_set():

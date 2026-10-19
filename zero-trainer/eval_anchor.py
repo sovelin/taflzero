@@ -46,7 +46,14 @@ def step_of(ckpt: Path) -> int:
 
 
 def generated_at(run_dir: Path, step: int) -> int | None:
-    """Positions generated when `step` was reached, from metrics.csv (nearest row)."""
+    """Positions generated when `step` was reached: the checkpoint's own json, else the
+    nearest metrics.csv row."""
+    meta = run_dir / "ckpt" / f"step{step:06d}.json"
+    if meta.exists():
+        try:
+            return int(json.loads(meta.read_text(encoding="utf-8"))["generated"])
+        except Exception:
+            pass
     metrics = run_dir / "metrics.csv"
     if not metrics.exists():
         return None

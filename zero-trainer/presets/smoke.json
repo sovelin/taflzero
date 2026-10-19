@@ -1,0 +1,10 @@
+{
+  "description": "Two-minute end-to-end check of the loop (2 workers, tiny searches, 120 steps). Not for training.",
+  "trainer": {
+    "smoke": true, "gumbel": 16
+  },
+  "eval": {
+    "anchors": ["zero-trainer/weights/P-A/gen0000.onnx"],
+    "pairs": 2, "nodes": 20, "workers": 2, "blind": false, "playout_every": 0, "max_plies": 80
+  }
+}
