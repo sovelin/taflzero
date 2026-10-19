@@ -146,6 +146,7 @@ def run_detail(run_dir: Path) -> dict:
     d["selfplay"] = read_csv(run_dir / "selfplay.csv")
     d["elo"] = read_jsonl(run_dir / "elo.jsonl")
     d["eval"] = read_jsonl(run_dir / "eval.jsonl")
+    d["eval_progress"] = read_json(run_dir / "eval.progress.json")
     d["log"] = tail(run_dir / "log.txt")
     d["eval_log"] = tail(run_dir / "eval.log", 15)
     d["paused"] = (run_dir / "PAUSE").exists()

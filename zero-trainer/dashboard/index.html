@@ -49,6 +49,11 @@ label { display: block; font-size: 12px; color: var(--ink-2); margin: 8px 0 2px;
 .tile .k { font-size: 12px; color: var(--ink-3); }
 .tile .v { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .tile .s { font-size: 12px; color: var(--ink-2); }
+.live { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 16px; font-size: 13px; }
+.live .bar { height: 6px; background: var(--line); border-radius: 3px; margin: 8px 0 6px; overflow: hidden; }
+.live .bar > div { height: 100%; background: var(--s1); }
+.live .big { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.live .recent { color: var(--ink-3); font-family: ui-monospace, monospace; font-size: 12px; }
 .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 14px; }
 .chart { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
 .chart h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; }
@@ -105,6 +110,7 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; }
         <button id="resumeBtn">Resume</button>
       </div>
       <div class="tiles" id="tiles"></div>
+      <div class="live" id="live" style="display:none"></div>
       <div class="charts">
         <div class="chart"><h3>Elo against anchors</h3><div class="sub">paired games at fixed nodes; shaded = 95% CI</div><canvas id="cElo"></canvas></div>
         <div class="chart"><h3>Self-play outcomes</h3><div class="sub">share of games, per logging window</div><canvas id="cOut"></canvas></div>
@@ -199,6 +205,27 @@ function lineChart(id, datasets, opts = {}) {
 
 function ds(label, color, points, extra = {}) { return Object.assign({ label, data: points, borderColor: color, backgroundColor: color, pointStyle: 'circle' }, extra); }
 
+function renderLive(p, alive) {
+  const el = $('live');
+  if (!p || !alive) { el.style.display = 'none'; return; }
+  el.style.display = '';
+  const age = Math.round((Date.now() / 1000 - (p.updated || 0)) / 60);
+  const stale = age > 30 ? ` · no update for ${age} min` : '';
+  const stem = f => (f || '').replace(/\.onnx$/, '');
+  if (p.phase === 'idle') { el.innerHTML = `Evaluation idle — waiting for a new checkpoint${stale}`; return; }
+  if (p.phase === 'blind') { el.innerHTML = `Evaluation: blind-spot metrics for <b>${stem(p.a)}</b>${stale}`; return; }
+  const n = p.games || 0, done = p.pairs_done || 0, total = p.pairs || 0;
+  const sgn = x => (x > 0 ? '+' : '') + fmt(x, 0);
+  const elo = p.elo == null ? '–' : sgn(p.elo);
+  const ci = p.ci ? `[${sgn(p.ci[0])}, ${sgn(p.ci[1])}]` : '';
+  const mins = p.started ? Math.round((Date.now() / 1000 - p.started) / 60) : 0;
+  el.innerHTML = `<div class="row"><span>Live match: <b>${stem(p.a)}</b> vs <b>${stem(p.b)}</b> · ${p.nodes || ''} nodes</span><span class="spacer"></span><span>pair ${done}/${total} · ${mins} min</span></div>
+    <div class="bar"><div style="width:${total ? 100 * done / total : 0}%"></div></div>
+    <div class="row"><span class="big">${elo}</span><span>${ci}</span><span>W${p.w || 0} L${p.l || 0} D${p.d || 0} · ${n} games · score ${n ? fmt(100 * (p.w + 0.5 * p.d) / n, 0) : '–'}%</span>
+    <span class="spacer"></span><span class="recent">${(p.recent || []).join('  ')}</span></div>
+    <div class="sub">W/L from the checkpoint's side; each pair = one opening from both sides (result of game 1 / game 2)${stale}</div>`;
+}
+
 function renderDetail(d) {
   $('dName').textContent = d.name;
   $('dStatus').textContent = d.status + (d.eval_alive ? ' · eval on' : '');
@@ -221,6 +248,7 @@ function renderDetail(d) {
     ['Window', fmtK(st.window), `buffer ${fmtK(st.buffer)}`],
     ['Last Elo', lastElo ? (lastElo.elo > 0 ? '+' : '') + fmt(lastElo.elo, 0) : '–', lastElo ? `vs ${lastElo.anchor} @${lastElo.ckpt.replace('step', '')}` : 'no matches yet'],
   ];
+  renderLive(d.eval_progress, d.eval_alive);
   $('tiles').innerHTML = tiles.map(t => `<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="s">${t[2]}</div></div>`).join('');
 
   const S = SERIES();

@@ -91,6 +91,7 @@ def main() -> None:
     ap.add_argument("--json", default=None)
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--progress", default=None, help="JSON file rewritten after every pair (live score for a dashboard)")
     args = ap.parse_args()
 
     rng = random.Random(args.seed)
@@ -101,6 +102,30 @@ def main() -> None:
     t0 = time.time()
 
     err_path = (args.json + ".err") if args.json else None
+    recent: list[str] = []
+
+    def write_progress() -> None:
+        """Called under `lock`. Atomic rewrite so a reader never sees a half file."""
+        if not args.progress:
+            return
+        n = totals["w"] + totals["l"] + totals["d"]
+        sc = (totals["w"] + 0.5 * totals["d"]) / n if n else 0.5
+        lo, hi = elo_ci(sc, n)
+        state = {
+            "phase": "match", "a": os.path.basename(args.a), "b": os.path.basename(args.b),
+            "pairs_done": totals["pairs"], "pairs": args.pairs, "games": n,
+            "w": totals["w"], "l": totals["l"], "d": totals["d"],
+            "score": round(sc, 4), "elo": round(elo_from_score(sc), 1) if n else None,
+            "ci": [round(lo, 1), round(hi, 1)] if n else None,
+            "recent": recent[-10:], "started": t0, "updated": time.time(), "nodes": args.nodes,
+        }
+        tmp = args.progress + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(state, f)
+        os.replace(tmp, args.progress)
+
+    with lock:
+        write_progress()
 
     def report_error(msg: str) -> None:
         line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}"
@@ -147,6 +172,8 @@ def main() -> None:
                     totals[s1] += 1
                     totals[s2] += 1
                     totals["pairs"] += 1
+                    recent.append(f"{r1[:3]}/{r2[:3]}")
+                    write_progress()
                     if not args.quiet:
                         n = totals["w"] + totals["l"] + totals["d"]
                         sc = (totals["w"] + 0.5 * totals["d"]) / n

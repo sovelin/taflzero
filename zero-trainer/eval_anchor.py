@@ -77,12 +77,23 @@ def generated_at(run_dir: Path, step: int) -> int | None:
     return best[1] if best else None
 
 
+def write_phase(run_dir: Path, **state) -> None:
+    """`eval.progress.json`: what the side-car is doing right now, for the dashboard.
+    During a match tools/match.py rewrites the same file after every pair."""
+    path = run_dir / "eval.progress.json"
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps({"updated": time.time(), **state}), encoding="utf-8")
+    os.replace(tmp, path)
+
+
 def run_match(args, ckpt: Path, anchor: Path) -> dict:
     out = ckpt.with_suffix(f".vs-{anchor.stem}.json")
+    run_dir = Path(args.run_dir)
     cmd = [sys.executable, str(TOOLS / "match.py"), "--exe", args.engine_bin, "--a", str(ckpt), "--b", str(anchor),
            "--pairs", str(args.pairs), "--nodes", str(args.nodes), "--workers", str(args.workers),
            "--opening-moves", str(args.opening_moves), "--max-plies", str(args.max_plies),
-           "--variant", args.variant, "--json", str(out), "--quiet"]
+           "--variant", args.variant, "--json", str(out), "--quiet",
+           "--progress", str(run_dir / "eval.progress.json")]
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     result = json.loads(out.read_text(encoding="utf-8"))
     out.unlink(missing_ok=True)
@@ -90,6 +101,7 @@ def run_match(args, ckpt: Path, anchor: Path) -> dict:
 
 
 def run_blind(args, ckpt: Path, playout: bool, out_path: Path) -> None:
+    write_phase(Path(args.run_dir), phase="blind", a=ckpt.name, started=time.time())
     cmd = [sys.executable, str(TOOLS / "eval_blind.py"), args.engine_bin, str(ckpt), "--out", str(out_path),
            "--label", ckpt.stem]
     if playout:
@@ -140,6 +152,7 @@ def main() -> int:
         todo = [c for c in ckpts if any(f"{c.stem}|{a.stem}" not in done_elo for a in anchors)
                 or (args.blind and c.stem not in done_blind)]
         if not todo:
+            write_phase(run_dir, phase="idle")
             if args.once or (run_dir / "STOP").exists() and not (run_dir / "latest.onnx").exists():
                 break
             if args.once:
