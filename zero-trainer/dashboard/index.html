@@ -120,6 +120,8 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; }
         <div class="chart"><h3>Blind-spot metrics</h3><div class="sub">attacker winrate the bare net gives: lost positions should fall, won positions should rise</div><canvas id="cBlind"></canvas></div>
         <div class="chart"><h3>Brier on his positions</h3><div class="sub">random 0.25, T2 g0213 0.096, his 0.087</div><canvas id="cBrier"></canvas></div>
         <div class="chart"><h3>Training throughput</h3><div class="sub">samples per second through the trainer (not generation)</div><canvas id="cSpeed"></canvas></div>
+        <div class="chart"><h3>Self-play speed</h3><div class="sub">games per second, per logging window (positions/s in the tile)</div><canvas id="cGen"></canvas></div>
+        <div class="chart"><h3>GPU</h3><div class="sub">utilisation %, sampled at each trainer log line</div><canvas id="cGpu"></canvas></div>
         <div class="chart"><h3>Window and buffer</h3><div class="sub">positions</div><canvas id="cWin"></canvas></div>
       </div>
       <h2>Trainer log</h2>
@@ -257,13 +259,23 @@ function renderDetail(d) {
   const st = d.state || {};
   const elo = d.elo.filter(e => e.anchor === (d.elo[0] || {}).anchor);
   const lastElo = d.elo.length ? d.elo[d.elo.length - 1] : null;
+  // Self-play rate over the last ~10 minutes of selfplay.csv rows.
+  const genRate = (() => {
+    if (sp.length < 2) return {};
+    const b = sp[sp.length - 1];
+    let a = sp[sp.length - 2];
+    for (let i = sp.length - 2; i >= 0 && b.time - sp[i].time <= 600; i--) a = sp[i];
+    const dt = b.time - a.time;
+    return dt > 0 ? { pos: (b.generated - a.generated) / dt, games: (b.games - a.games) / dt } : {};
+  })();
   const tiles = [
     ['Step', fmt(st.step), `${fmt(last.steps_per_s, 2)} steps/s`],
     ['Positions', fmtK(st.generated), `${fmt(st.games)} games`],
     ['Attacker wins', lsp.atk_pct != null ? fmt(lsp.atk_pct, 1) + '%' : '–', `undecided ${lsp.games ? fmt(100 * (lsp.undecided || 0) / lsp.games, 0) : '–'}% total`],
     ['Game length', fmt(lsp.avg_len, 0), 'plies, last window'],
     ['Loss', fmt(last.loss, 3), `policy ${fmt(last.policy, 3)} · value ${fmt(last.value, 3)}`],
-    ['Train speed', fmt(last.samples_per_s, 0), 'samples/s'],
+    ['Train speed', fmt(last.samples_per_s, 0), `samples/s${last.gpu_util !== '' && last.gpu_util != null ? ` · GPU ${fmt(last.gpu_util, 0)}%` : ''}`],
+    ['Self-play', genRate.pos != null ? fmt(genRate.pos, 0) : '–', genRate.games != null ? `positions/s · ${fmt(genRate.games, 2)} games/s` : 'positions/s'],
     ['Window', fmtK(st.window), `buffer ${fmtK(st.buffer)}`],
     ['Last Elo', lastElo ? (lastElo.elo > 0 ? '+' : '') + fmt(lastElo.elo, 0) : '–', lastElo ? `vs ${lastElo.anchor} @${lastElo.ckpt.replace('step', '')}` : 'no matches yet'],
   ];
@@ -324,6 +336,14 @@ function renderDetail(d) {
   const mx = (r) => r.generated;
   lineChart('cLoss', [ds('policy', S[0], m.map(r => ({ x: mx(r), y: r.policy }))), ds('value', S[1], m.map(r => ({ x: mx(r), y: r.value }))), ds('moves left', S[2], m.map(r => ({ x: mx(r), y: r.moves_left })))], { digits: 3 });
   lineChart('cSpeed', [ds('samples/s', S[0], m.map(r => ({ x: mx(r), y: r.samples_per_s })))], { digits: 0 });
+  // Self-play speed from the cumulative counters in selfplay.csv.
+  const gen = [];
+  for (let i = 1; i < sp.length; i++) {
+    const r = sp[i], p = sp[i - 1], dt = r.time - p.time;
+    if (dt > 0 && r.games > p.games) gen.push({ x: r.generated, y: (r.games - p.games) / dt });
+  }
+  lineChart('cGen', [ds('games/s', S[2], gen)], { digits: 2, min: 0 });
+  lineChart('cGpu', [ds('GPU %', S[1], m.filter(r => r.gpu_util !== '' && r.gpu_util != null).map(r => ({ x: mx(r), y: r.gpu_util })))], { digits: 0, min: 0, max: 100 });
   lineChart('cWin', [ds('window', S[0], m.map(r => ({ x: mx(r), y: r.window }))), ds('buffer', S[2], m.map(r => ({ x: mx(r), y: r.buffer })))], { digits: 0 });
 
   // Blind metrics by checkpoint step -> generated via elo rows (same ckpt) or metrics nearest

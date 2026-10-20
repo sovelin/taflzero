@@ -271,6 +271,31 @@ def test_value_loss_masks_unknown_outcome() -> None:
     assert torch.isfinite(unknown_only) and unknown_only.item() == 0.0
 
 
+def test_bf16_autocast_matches_fp32_loss() -> None:
+    """amp_dtype only lowers the forward precision: every loss term stays close to
+    fp32, comes back as float32, and the weights keep their fp32 dtype."""
+    from az_micro_net import TaflAlphaZeroNet
+    from train import compute_batch_loss
+
+    buf = ReplayBuffer(GEOM, z_lambda=0.5, augment=False)
+    samples, _ = parse_samples(b"".join(make_game(6, winner="atk", root_q=40)), GEOM)
+    (c,), _ = group_games(samples)
+    buf.add(c, 10_000)
+    batch = buf.collate([(c, i) for i in range(6)], [0] * 6)
+    torch.manual_seed(0)
+    model = TaflAlphaZeroNet(trunk_channels=16, num_blocks=2, aux_heads=True, moves_left=True)
+    model.eval()
+    dev = torch.device("cpu")
+    with torch.no_grad():
+        ref = compute_batch_loss(model, batch, dev, 1.0, 0.15, 0.1, True, moves_left_weight=0.1)
+        low = compute_batch_loss(model, batch, dev, 1.0, 0.15, 0.1, True, moves_left_weight=0.1,
+                                 amp_dtype=torch.bfloat16)
+    for a, b in zip(ref, low):
+        assert b.dtype == torch.float32
+        assert abs(a.item() - b.item()) <= 0.03 * max(abs(a.item()), 1e-3), (a.item(), b.item())
+    assert all(p.dtype == torch.float32 for p in model.parameters())
+
+
 # ─── replay buffer ──────────────────────────────────────────────────────────
 
 

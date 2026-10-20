@@ -10,6 +10,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import itertools
 import json
 import sys
@@ -30,6 +31,16 @@ from training_utils import alpha_zero_loss, policy_loss_masked, moves_left_loss
 LOG_INTERVAL = 100  # print stats every N steps
 
 
+def _autocast(device: torch.device, amp_dtype: torch.dtype | None):
+    if amp_dtype is None:
+        return contextlib.nullcontext()
+    return torch.autocast(device_type=device.type, dtype=amp_dtype)
+
+
+def _to_fp32(outs):
+    return tuple(o.float() if isinstance(o, torch.Tensor) else o for o in outs)
+
+
 def compute_batch_loss(
     model: TaflAlphaZeroNet,
     batch,
@@ -40,8 +51,14 @@ def compute_batch_loss(
     use_aux: bool,
     decided_policy_k: float = 0.0,
     moves_left_weight: float = 0.0,
+    amp_dtype: torch.dtype | None = None,
 ):
     """Forward + all loss terms for one batch.
+
+    `amp_dtype` (e.g. torch.bfloat16) runs the forward pass under autocast; the
+    network outputs are cast back to float32 before any loss is computed, so the
+    loss terms, masks and their reductions stay in full precision. Weights and
+    gradients stay float32 (autocast only changes the matmul/conv precision).
 
     `decided_policy_k` > 0 down-weights the policy loss in decided positions:
     policy weight *= (1 - |root_q|**decided_policy_k).  In won/lost positions
@@ -86,8 +103,9 @@ def compute_batch_loss(
         aux_valid = aux_valid.to(device)
         corner = corner.to(device)
 
-        policy_logits, value_pred, aux_logits, corner_logits, ml_pred = \
-            model.forward_with_aux(planes)
+        with _autocast(device, amp_dtype):
+            outs = model.forward_with_aux(planes)
+        policy_logits, value_pred, aux_logits, corner_logits, ml_pred = _to_fp32(outs)
         total, p_loss, v_loss = alpha_zero_loss(
             policy_logits=policy_logits,
             value_pred=value_pred,
@@ -107,7 +125,9 @@ def compute_batch_loss(
             total = total + moves_left_weight * ml_loss
         return total, p_loss, v_loss, aux_p_loss, corner_loss, ml_loss
 
-    out = model(planes)
+    with _autocast(device, amp_dtype):
+        out = model(planes)
+    out = _to_fp32(out)
     policy_logits, value_pred = out[0], out[1]
     ml_pred = out[2] if len(out) > 2 else None
     total, p_loss, v_loss = alpha_zero_loss(

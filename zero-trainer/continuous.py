@@ -57,7 +57,7 @@ from train import compute_batch_loss
 METRICS_COLUMNS = [
     "time", "step", "generated", "games", "window", "buffer", "lr", "loss", "policy",
     "value", "aux_p", "corner", "moves_left", "grad_norm", "unknown_frac", "steps_per_s",
-    "samples_per_s", "paused",
+    "samples_per_s", "paused", "gpu_util", "gpu_mem_gb",
 ]
 SELFPLAY_COLUMNS = [
     "time", "games", "generated", "atk_wins", "def_wins", "undecided", "atk_pct", "avg_len",
@@ -90,6 +90,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--start-checkpoint", type=Path, default=None, help="Initial weights (.qnxx); steps start at 0")
     p.add_argument("--smoke", action="store_true", help="Small preset for the integration test (plan §3.10)")
     p.add_argument("--device", type=str, default="cpu")
+    p.add_argument("--amp", choices=["none", "bf16"], default="none",
+                   help="mixed precision for the trainer's forward pass (CUDA); weights stay fp32")
     p.add_argument("--seed", type=int, default=1)
 
     # network architecture (same flags as train.py)
@@ -248,9 +250,37 @@ class Log:
         self._fh.close()
 
 
+def gpu_stats() -> tuple[str, str]:
+    """(utilisation %, memory used GB) of GPU 0 from nvidia-smi; blanks if unavailable."""
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=utilization.gpu,memory.used", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=5,
+        ).stdout.strip().splitlines()[0]
+        util, mem = (x.strip() for x in out.split(","))
+        return util, f"{float(mem) / 1024:.2f}"
+    except Exception:
+        return "", ""
+
+
 class CsvLog:
     def __init__(self, path: Path, columns: list[str]) -> None:
         self.columns = columns
+        if path.exists() and path.stat().st_size > 0:
+            # A resumed run whose file predates a column change: rewrite it under
+            # the new header so rows stay aligned (missing columns are blank).
+            with open(path, newline="", encoding="utf-8") as fh:
+                old = list(csv.DictReader(fh))
+            with open(path, newline="", encoding="utf-8") as fh:
+                header = next(csv.reader(fh), [])
+            if header != columns:
+                tmp = path.with_name(path.name + ".tmp")
+                with open(tmp, "w", newline="", encoding="utf-8") as fh:
+                    w = csv.writer(fh)
+                    w.writerow(columns)
+                    for r in old:
+                        w.writerow([r.get(c, "") for c in columns])
+                os.replace(tmp, path)
         new = not path.exists() or path.stat().st_size == 0
         self._fh = open(path, "a", newline="", encoding="utf-8")
         self._w = csv.writer(self._fh)
@@ -363,6 +393,7 @@ class ContinuousRun:
 
         self.geom = geometry(args.board_size)
         self.device = torch.device(args.device)
+        self.amp_dtype = torch.bfloat16 if args.amp == "bf16" and self.device.type == "cuda" else None
         torch.set_num_threads(args.train_threads)
 
         self.lock = threading.Lock()
@@ -577,6 +608,7 @@ class ContinuousRun:
         total, p_loss, v_loss, ap_loss, c_loss, ml_loss = compute_batch_loss(
             self.model, batch, self.device, 1.0, a.aux_policy_weight, a.corner_weight,
             self.use_aux, decided_policy_k=a.decided_policy_k, moves_left_weight=a.moves_left_weight,
+            amp_dtype=self.amp_dtype,
         )
         loss = float(total.item())
         if not math.isfinite(loss):
@@ -661,6 +693,8 @@ class ContinuousRun:
             "steps_per_s": f"{steps_per_s:.3f}", "samples_per_s": f"{steps_per_s * self.args.batch:.1f}",
             "paused": int(self.paused),
         }
+        if self.device.type == "cuda":
+            row["gpu_util"], row["gpu_mem_gb"] = gpu_stats()
         self.metrics.row(row)
         self.log(f"step {self.step} gen {generated} games {games} atk {atk_pct:.1f}% len {avg_len:.0f} "
                  f"loss {row['loss']} (p {row['policy']} v {row['value']}) {row['samples_per_s']} samples/s"
@@ -815,7 +849,8 @@ class ContinuousRun:
             self.log("[init] stale STOP file removed")
             self.stop_file.unlink()
         self.log(f"[init] run_dir={self.run_dir} workers={a.workers} batch={a.batch} lr={a.lr} "
-                 f"optimizer={a.optimizer} train_threads={a.train_threads} device={self.device}")
+                 f"optimizer={a.optimizer} train_threads={a.train_threads} device={self.device} "
+                 f"amp={'bf16' if self.amp_dtype is not None else 'none'}")
 
         def on_sigint(signum, frame):
             self.request_stop("SIGINT")
