@@ -487,7 +487,9 @@ class ContinuousRun:
         tmp = path.with_name(path.name + ".tmp")
         was_training = self.model.training
         self.model.eval()
-        model_cpu = self.model if self.device.type == "cpu" else self.model.cpu()
+        # Module.cpu() moves in place and returns self, so remember whether to move back.
+        moved = self.device.type != "cpu"
+        model_cpu = self.model.cpu() if moved else self.model
         try:
             export_model_to_onnx(model_cpu, tmp, fp16=False)
             replace_with_retry(tmp, path)
@@ -499,7 +501,7 @@ class ContinuousRun:
                 onnx.save(float16.convert_float_to_float16(m, keep_io_types=True), str(tmp16))
                 replace_with_retry(tmp16, self.latest_fp16)
         finally:
-            if model_cpu is not self.model:
+            if moved:
                 self.model.to(self.device)
             if was_training:
                 self.model.train()
