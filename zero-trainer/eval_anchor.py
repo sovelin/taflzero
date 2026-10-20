@@ -77,6 +77,20 @@ def generated_at(run_dir: Path, step: int) -> int | None:
     return best[1] if best else None
 
 
+STOP_GRACE_S = 600.0
+
+
+def stopped_for_good(run_dir: Path) -> bool:
+    """A STOP file that has been there for a while. A restart (stop, change config,
+    resume) also writes STOP for a minute or two and then removes it; the side-car
+    must survive that, so only a STOP older than STOP_GRACE_S counts."""
+    stop = run_dir / "STOP"
+    try:
+        return time.time() - stop.stat().st_mtime >= STOP_GRACE_S
+    except OSError:
+        return False
+
+
 def write_phase(run_dir: Path, **state) -> None:
     """`eval.progress.json`: what the side-car is doing right now, for the dashboard.
     During a match tools/match.py rewrites the same file after every pair."""
@@ -153,17 +167,13 @@ def main() -> int:
                 or (args.blind and c.stem not in done_blind)]
         if not todo:
             write_phase(run_dir, phase="idle")
-            if args.once or (run_dir / "STOP").exists() and not (run_dir / "latest.onnx").exists():
-                break
-            if args.once:
+            if args.once or stopped_for_good(run_dir):
                 break
             time.sleep(args.poll)
-            # A finished run (STOP present) with everything evaluated: leave.
-            if (run_dir / "STOP").exists():
-                ckpts_now = sorted(ckpt_dir.glob("step*.onnx"), key=step_of) if ckpt_dir.exists() else []
-                if ckpts_now == ckpts:
-                    break
             continue
+        if stopped_for_good(run_dir):
+            say("run stopped; leaving the remaining checkpoints unevaluated")
+            break
         # Newest first: one evaluation takes longer than the gap between checkpoints,
         # so the oldest-first order falls hours behind the trainer. Skipped
         # checkpoints are simply never evaluated.
