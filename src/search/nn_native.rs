@@ -3,15 +3,29 @@ use crate::board::Precomputed;
 use crate::board::position_export::BitPosition;
 use crate::{get_policy_size, get_sample_size};
 use ndarray::{Array, IxDyn};
+use ort::environment::Environment;
 #[cfg(feature = "cuda")]
-use ort::execution_providers::CUDAExecutionProvider;
+use ort::ep::CUDA;
 #[cfg(feature = "directml")]
-use ort::execution_providers::DirectMLExecutionProvider;
+use ort::ep::DirectML;
 #[cfg(feature = "openvino")]
-use ort::execution_providers::OpenVINO;
+use ort::ep::OpenVINO;
 use ort::session::Session;
 use ort::value::{Value, ValueType};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
+
+/// The process-wide ORT environment (ort 2.0 rc.14+ builds sessions from one).
+fn ort_env() -> Result<&'static Environment, String> {
+    static ENV: OnceLock<Environment> = OnceLock::new();
+    if let Some(env) = ENV.get() {
+        return Ok(env);
+    }
+    let env = ort::init()
+        .with_name("taflzero")
+        .build()
+        .map_err(|e| format!("cannot initialise ONNX Runtime: {e}"))?;
+    Ok(ENV.get_or_init(|| env))
+}
 
 use super::nn_batch::BatchServer;
 
@@ -124,8 +138,6 @@ impl NeuralNet {
         board_size: usize,
         batch_size: usize,
     ) -> Result<(Session, usize), String> {
-        #[cfg(all(feature = "cuda", feature = "directml"))]
-        println!("[NN] Backend: CUDA → DirectML → CPU (auto)");
         #[cfg(all(feature = "cuda", not(feature = "directml")))]
         println!("[NN] Backend: CUDA");
         #[cfg(all(feature = "directml", not(feature = "cuda")))]
@@ -135,7 +147,7 @@ impl NeuralNet {
         #[cfg(not(any(feature = "cuda", feature = "directml", feature = "openvino")))]
         println!("[NN] Backend: CPU");
 
-        let mut builder = Session::builder().unwrap();
+        let mut builder = Session::builder(ort_env()?).unwrap();
 
         // Parallelism in datagen comes from running many engine processes, so let each
         // session use a single intra-op thread; the ORT default is one per core, which
@@ -148,23 +160,36 @@ impl NeuralNet {
 
         #[cfg(all(feature = "cuda", feature = "directml"))]
         {
-            builder = builder
-                .with_execution_providers([
-                    CUDAExecutionProvider::default().build(),
-                    DirectMLExecutionProvider::default().build(),
-                ])
-                .unwrap();
+            // ORT refuses CUDA and DirectML in one session ("DML EP can only be used
+            // with CPU EPs"), and a CUDA provider that fails to load is skipped
+            // silently, so registering both always ended on DirectML. Try CUDA alone
+            // first; fall back to DirectML only when it cannot load.
+            match builder.with_execution_providers([CUDA::default().build().error_on_failure()]) {
+                Ok(b) => {
+                    println!("[NN] Backend: CUDA");
+                    builder = b;
+                }
+                Err(err) => {
+                    println!("[NN] Backend: DirectML (CUDA unavailable: {err})");
+                    builder = Session::builder(ort_env()?)
+                        .unwrap()
+                        .with_intra_threads(intra_threads)
+                        .unwrap()
+                        .with_execution_providers([DirectML::default().build()])
+                        .unwrap();
+                }
+            }
         }
         #[cfg(all(feature = "cuda", not(feature = "directml")))]
         {
             builder = builder
-                .with_execution_providers([CUDAExecutionProvider::default().build()])
+                .with_execution_providers([CUDA::default().build()])
                 .unwrap();
         }
         #[cfg(all(feature = "directml", not(feature = "cuda")))]
         {
             builder = builder
-                .with_execution_providers([DirectMLExecutionProvider::default().build()])
+                .with_execution_providers([DirectML::default().build()])
                 .unwrap();
         }
         #[cfg(feature = "openvino")]
@@ -217,7 +242,7 @@ impl NeuralNet {
     }
 
     pub fn from_bytes(data: &[u8], board_size: usize, batch_size: usize) -> Result<Self, String> {
-        let session = Session::builder()
+        let session = Session::builder(ort_env()?)
             .map_err(|err| format!("cannot create ONNX session: {err}"))?
             .commit_from_memory(data)
             .map_err(|err| format!("cannot load neural net from bytes: {err}"))?;

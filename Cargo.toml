@@ -42,7 +42,7 @@ directml = ["ort/directml"]
 openvino = [ "ort/openvino" ]
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-ort = { version = "=2.0.0-rc.12" }
+ort = { version = "=2.0.0-rc.15" }
 ndarray = "0.17"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
