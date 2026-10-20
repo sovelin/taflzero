@@ -40,7 +40,7 @@ pub struct BatchServer {
     board_size: usize,
     max_batch: usize,
     wait: Duration,
-    /// Threads currently playing; a batch is closed as soon as each of them has a
+    /// Threads currently playing; a batch is closed as soon as half of them have a
     /// request in, without waiting out `wait`.
     active: AtomicUsize,
     /// Batches run and samples served, for the throughput line in logs.
@@ -137,12 +137,15 @@ impl BatchServer {
         while q.requests.is_empty() {
             q = self.arrived.wait(q).unwrap();
         }
-        // Hold the batch open while it is short of both the size cap and one
-        // request per active thread, but never longer than `wait`.
+        // Hold the batch open while it is short of both the size cap and a request
+        // from half the active threads, but never longer than `wait`. Half, not all:
+        // waiting for every thread makes the whole process march in lockstep (GPU
+        // idle while threads select, threads idle while the GPU runs). With half,
+        // one group's batch runs while the other group selects its next leaves.
         let deadline = Instant::now() + self.wait;
         loop {
             let active = self.active.load(Ordering::Relaxed);
-            if q.samples >= self.max_batch || q.requests.len() >= active {
+            if q.samples >= self.max_batch || q.requests.len() >= active.div_ceil(2) {
                 break;
             }
             let now = Instant::now();
