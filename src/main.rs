@@ -2,10 +2,11 @@ use taflzero::board::Board;
 use taflzero::board::position_export::BitPosition;
 use taflzero::board::rules::{RulesEnum, get_rules_enum_from_str};
 use taflzero::gen_train_data::{
-    DaemonConfig, DatagenConfig, GameLimits, SearchConfig, gen_train_data,
+    DaemonConfig, DatagenConfig, DatagenSink, GameLimits, SearchConfig, gen_train_data,
+    gen_train_data_into,
 };
 use taflzero::mcts::MCTSConfig;
-use taflzero::search::nn::{NeuralNet, fill_input};
+use taflzero::search::nn::{BatchServer, NeuralNet, fill_input};
 use taflzero::{ConsoleClient, UciRunState, get_sample_size};
 
 struct CliArgs {
@@ -26,6 +27,8 @@ struct CliArgs {
     max_no_capture: usize,
     gumbel: Option<usize>,
     daemon: DaemonConfig,
+    /// Game threads per datagen process, all served by one batching net.
+    threads: usize,
 }
 
 fn parse_args() -> CliArgs {
@@ -47,6 +50,7 @@ fn parse_args() -> CliArgs {
     let mut max_no_capture = limits.max_no_capture;
     let mut gumbel: Option<usize> = None;
     let mut daemon = DaemonConfig::default();
+    let mut threads = 1usize;
     let mut args = std::env::args().skip(1);
 
     // `--flag <usize>` with a lower bound; exits with a usage error otherwise.
@@ -228,13 +232,14 @@ fn parse_args() -> CliArgs {
             "--stop-file" => daemon.stop_file = Some(path_arg(&mut args, "--stop-file")),
             "--pause-file" => daemon.pause_file = Some(path_arg(&mut args, "--pause-file")),
             "--worker-id" => daemon.worker_id = Some(usize_arg(&mut args, "--worker-id", 0)),
+            "--threads" => threads = usize_arg(&mut args, "--threads", 1),
             _ => {
                 eprintln!("Unknown arg: {arg}");
                 eprintln!(
                     "Usage: taflzero [--net <model.onnx>] [--datagen <output.bin>] [--datagen-count <N|0=unlimited>] \
                      [--gamelog <path>] [--variant <name>] [--full-nodes N] [--cheap-nodes N] [--full-prob F] \
                      [--gumbel <considered>] [--max-plies N] [--max-no-capture N] \
-                     [--net-watch] [--stop-file <path>] [--pause-file <path>] [--worker-id N] \
+                     [--net-watch] [--stop-file <path>] [--pause-file <path>] [--worker-id N] [--threads N] \
                      [--curriculum-fraction F] [--curriculum-path <path>] [--curriculum-max-size N] \
                      [--dump-sample <output.bin>] [--nn-eval <fen>]"
                 );
@@ -261,6 +266,7 @@ fn parse_args() -> CliArgs {
         max_no_capture,
         gumbel,
         daemon,
+        threads,
     }
 }
 
@@ -346,11 +352,8 @@ fn main() {
     }
 
     if let Some(path) = cli.datagen_path {
-        let mut nn = load_net_for(
-            &cli.net_path,
-            cli.variant.rules().board_size,
-            MCTSConfig::default_train().batch_size,
-        );
+        let board_size = cli.variant.rules().board_size;
+        let search_batch = MCTSConfig::default_train().batch_size;
 
         let log_path = cli
             .gamelog_path
@@ -385,6 +388,66 @@ fn main() {
             daemon: cli.daemon,
         };
 
+        if cli.threads > 1 {
+            if datagen_cfg.curriculum_fraction > 0.0 {
+                eprintln!("--curriculum-fraction is not supported with --threads > 1");
+                std::process::exit(2);
+            }
+            // One session for all game threads: a batch closes when every thread has
+            // a request in or after this long, whichever is first.
+            let server = match BatchServer::start(
+                &cli.net_path,
+                board_size,
+                cli.threads * search_batch,
+                std::time::Duration::from_millis(2),
+                datagen_cfg.daemon.net_watch,
+            ) {
+                Ok(s) => s,
+                Err(err) => {
+                    eprintln!("{err}");
+                    std::process::exit(2);
+                }
+            };
+            if server.board_size() != board_size {
+                eprintln!(
+                    "neural net '{}' is built for a {1}x{1} board but this run needs {board_size}x{board_size}",
+                    cli.net_path,
+                    server.board_size()
+                );
+                std::process::exit(2);
+            }
+            let sink = DatagenSink::open(&path, &log_path);
+            let per_thread = cli.datagen_count.map(|n| n.div_ceil(cli.threads));
+            let variant = cli.variant;
+            std::thread::scope(|scope| {
+                for t in 0..cli.threads {
+                    let server = &server;
+                    let sink = &sink;
+                    let mut cfg = datagen_cfg.clone();
+                    cfg.daemon.thread = Some(t);
+                    // The server reloads the net; threads must not try on their handle.
+                    cfg.daemon.net_watch = false;
+                    scope.spawn(move || {
+                        let mut nn = NeuralNet::shared(std::sync::Arc::clone(server));
+                        server.client_started();
+                        gen_train_data_into(sink, &mut nn, per_thread, variant, cfg);
+                        server.client_stopped();
+                    });
+                }
+            });
+            let (batches, served) = server.stats();
+            println!(
+                "[NN] batch server: {served} samples in {batches} batches ({:.1} per batch)",
+                if batches > 0 {
+                    served as f64 / batches as f64
+                } else {
+                    0.0
+                }
+            );
+            return;
+        }
+
+        let mut nn = load_net_for(&cli.net_path, board_size, search_batch);
         gen_train_data(
             &path,
             &log_path,

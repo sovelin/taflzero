@@ -143,6 +143,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-no-capture", type=int, default=None)
     p.add_argument("--variant", type=str, default="copenhagen11x11")
     p.add_argument("--gumbel", type=int, default=None, help="Gumbel root search with this many considered moves")
+    p.add_argument("--worker-threads", type=int, default=1,
+                   help="game threads per worker process, served by one batching net (engine --threads)")
     p.add_argument("--mlh-alpha", type=float, default=0.15)
     return p
 
@@ -319,6 +321,8 @@ def worker_command(args: argparse.Namespace, run_dir: Path, worker_id: int, net_
         cmd += ["--max-no-capture", str(args.max_no_capture)]
     if args.gumbel is not None:
         cmd += ["--gumbel", str(args.gumbel)]
+    if args.worker_threads > 1:
+        cmd += ["--threads", str(args.worker_threads)]
     return cmd
 
 

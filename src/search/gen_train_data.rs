@@ -16,6 +16,7 @@ use std::collections::VecDeque;
 use std::fs::OpenOptions;
 use std::hash::{BuildHasher, Hasher};
 use std::io::{BufWriter, Read, Write};
+use std::sync::Mutex;
 
 const CURRICULUM_TAIL: usize = 25;
 const CURRICULUM_MIN_READY: usize = 100;
@@ -272,6 +273,7 @@ fn play_game(
 // ─── Main datagen loop ────────────────────────────────────────────────────────
 
 /// Per-move search budget (playout cap randomization).
+#[derive(Clone)]
 pub struct SearchConfig {
     /// Nodes for full searches (policy target written).
     pub full_nodes: u64,
@@ -296,6 +298,7 @@ impl Default for SearchConfig {
 }
 
 /// When a game is cut off as undecided.
+#[derive(Clone)]
 pub struct GameLimits {
     /// Plies after which the game is abandoned.
     pub max_plies: usize,
@@ -313,7 +316,7 @@ impl Default for GameLimits {
 }
 
 /// Controls for a worker that runs unattended next to a trainer.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct DaemonConfig {
     /// Reload the net before a game when the file's mtime changed.
     pub net_watch: bool,
@@ -323,8 +326,11 @@ pub struct DaemonConfig {
     pub pause_file: Option<String>,
     /// Log prefix only.
     pub worker_id: Option<usize>,
+    /// Game thread inside a `--threads` worker; log prefix only.
+    pub thread: Option<usize>,
 }
 
+#[derive(Clone)]
 pub struct DatagenConfig {
     pub curriculum_fraction: f64,
     pub curriculum_path: Option<String>,
@@ -347,6 +353,33 @@ impl Default for DatagenConfig {
     }
 }
 
+/// The sample and gamelog files of a datagen run. Game threads share one sink:
+/// each game is written under the lock in a single `write_all` + flush, so the
+/// file is always a sequence of whole games whatever the thread interleaving.
+pub struct DatagenSink {
+    writer: Mutex<BufWriter<std::fs::File>>,
+    log: Mutex<BufWriter<std::fs::File>>,
+}
+
+impl DatagenSink {
+    pub fn open(output_path: &str, log_path: &str) -> Self {
+        let file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(output_path)
+            .expect("Could not open output file");
+        let log_file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log_path)
+            .expect("Could not open gamelog file");
+        Self {
+            writer: Mutex::new(BufWriter::new(file)),
+            log: Mutex::new(BufWriter::new(log_file)),
+        }
+    }
+}
+
 fn stop_requested(daemon: &DaemonConfig) -> bool {
     daemon
         .stop_file
@@ -362,22 +395,21 @@ pub fn gen_train_data(
     variant: RulesEnum,
     cfg: DatagenConfig,
 ) {
+    let sink = DatagenSink::open(output_path, log_path);
+    gen_train_data_into(&sink, nn, game_limit, variant, cfg);
+}
+
+/// One game loop writing into a (possibly shared) sink; `--threads N` runs N of
+/// these over one sink and one batching net.
+pub fn gen_train_data_into(
+    sink: &DatagenSink,
+    nn: &mut NeuralNet,
+    game_limit: Option<usize>,
+    variant: RulesEnum,
+    cfg: DatagenConfig,
+) {
     let mut search_data = SearchData::new();
     let mut rng = StdRng::seed_from_u64(std::hash::RandomState::new().build_hasher().finish());
-
-    let file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(output_path)
-        .expect("Could not open output file");
-    let mut writer = BufWriter::new(file);
-
-    let log_file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(log_path)
-        .expect("Could not open gamelog file");
-    let mut log_writer = BufWriter::new(log_file);
 
     // ── Curriculum buffer setup ──
     let use_curriculum = cfg.curriculum_fraction > 0.0;
@@ -401,11 +433,12 @@ pub fn gen_train_data(
     let mut attacker_wins_saved = 0usize;
     let mut defender_wins_saved = 0usize;
     let mut undecided_saved = 0usize;
-    let tag = cfg
-        .daemon
-        .worker_id
-        .map(|id| format!("[W{id}] "))
-        .unwrap_or_default();
+    let tag = match (cfg.daemon.worker_id, cfg.daemon.thread) {
+        (Some(id), Some(t)) => format!("[W{id}.{t}] "),
+        (Some(id), None) => format!("[W{id}] "),
+        (None, Some(t)) => format!("[T{t}] "),
+        (None, None) => String::new(),
+    };
     let mut curriculum_games = 0usize;
     let mut curriculum_decisive = 0usize;
 
@@ -531,6 +564,7 @@ pub fn gen_train_data(
 
         // Gamelog
         if let Some(t) = terminal_str {
+            let mut log_writer = sink.log.lock().unwrap();
             writeln!(log_writer, "{},{}", t, res.len()).expect("Cannot write gamelog");
             log_writer.flush().expect("Cannot flush gamelog");
         }
@@ -547,6 +581,7 @@ pub fn gen_train_data(
                     .write_to(&mut game_bytes)
                     .expect("Cannot serialize sample");
             }
+            let mut writer = sink.writer.lock().unwrap();
             writer.write_all(&game_bytes).expect("Cannot write game");
             writer.flush().expect("Cannot flush game");
         }
@@ -731,6 +766,7 @@ mod tests {
                 stop_file: Some(stop.to_string_lossy().into_owned()),
                 pause_file: None,
                 worker_id: Some(0),
+                thread: None,
             },
             ..DatagenConfig::default()
         };
@@ -765,6 +801,89 @@ mod tests {
         }
         assert_eq!(pos, bytes.len(), "truncated trailing sample");
         assert!(samples >= 5);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Number of whole samples in a v2 data file; panics on a torn sample.
+    fn count_samples(bytes: &[u8]) -> (usize, usize) {
+        let mask = crate::mcts::export::legal_mask_bytes(11);
+        let mut pos = 0usize;
+        let mut samples = 0usize;
+        let mut games = 0usize;
+        while pos < bytes.len() {
+            let len_at = pos + 50 + mask;
+            assert!(len_at + 2 <= bytes.len(), "truncated sample header");
+            let plen = u16::from_le_bytes([bytes[len_at], bytes[len_at + 1]]) as usize;
+            let flags = bytes[len_at + 2 + plen * 4 + 2];
+            if flags & FLAG_LAST_OF_GAME != 0 {
+                games += 1;
+            }
+            pos = len_at + 2 + plen * 4 + 4;
+            samples += 1;
+        }
+        assert_eq!(pos, bytes.len(), "truncated trailing sample");
+        (samples, games)
+    }
+
+    // Several game threads over one sink and one batching net: the file is still a
+    // sequence of whole games, every thread's games are in it, and the gamelog has
+    // one line per decided game.
+    #[test]
+    fn threads_share_sink_and_batch_server() {
+        let dir = std::env::temp_dir().join(format!("taflzero-threads-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("w0.bin");
+        let log = dir.join("w0.gamelog");
+        let _ = std::fs::remove_file(&out);
+        let _ = std::fs::remove_file(&log);
+
+        let threads = 3;
+        let server = crate::search::nn::BatchServer::start(
+            "copenhagen11x11.onnx",
+            11,
+            threads * 8,
+            std::time::Duration::from_millis(2),
+            false,
+        )
+        .unwrap();
+        let sink = DatagenSink::open(out.to_str().unwrap(), log.to_str().unwrap());
+        let cfg = DatagenConfig {
+            search: SearchConfig {
+                full_nodes: 2,
+                cheap_nodes: 2,
+                full_prob: 1.0,
+                gumbel: None,
+            },
+            limits: GameLimits {
+                max_plies: 6,
+                max_no_capture: 400,
+            },
+            ..DatagenConfig::default()
+        };
+        std::thread::scope(|scope| {
+            for t in 0..threads {
+                let server = &server;
+                let sink = &sink;
+                let mut cfg = cfg.clone();
+                cfg.daemon.thread = Some(t);
+                scope.spawn(move || {
+                    let mut nn = NeuralNet::shared(std::sync::Arc::clone(server));
+                    server.client_started();
+                    // Two games' worth of positions per thread (6 plies each).
+                    gen_train_data_into(sink, &mut nn, Some(12), RulesEnum::Copenhagen11x11, cfg);
+                    server.client_stopped();
+                });
+            }
+        });
+        drop(sink);
+
+        let bytes = std::fs::read(&out).unwrap();
+        let (samples, games) = count_samples(&bytes);
+        assert!(samples >= threads * 12, "{samples} samples");
+        assert!(games >= threads * 2, "{games} games");
+        let (batches, served) = server.stats();
+        assert!(served >= samples as usize);
+        assert!(batches > 0);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

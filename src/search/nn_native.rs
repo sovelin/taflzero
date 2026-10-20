@@ -11,9 +11,19 @@ use ort::execution_providers::DirectMLExecutionProvider;
 use ort::execution_providers::OpenVINO;
 use ort::session::Session;
 use ort::value::{Value, ValueType};
+use std::sync::Arc;
+
+use super::nn_batch::BatchServer;
+
+/// Where a net's inferences run: this process's own ORT session, or the shared
+/// batching server of a multi-threaded datagen process.
+enum Backend {
+    Local(Session),
+    Shared(Arc<BatchServer>),
+}
 
 pub struct NeuralNet {
-    session: Session,
+    backend: Backend,
     /// Where the model was loaded from (empty for `from_bytes`), and the file's
     /// modification time at load, so a worker can pick up a retrained net.
     path: String,
@@ -57,12 +67,25 @@ impl NeuralNet {
         println!("[NN] Loading model: {}", path);
         let (session, board_size) = Self::build_session(path, board_size, batch_size)?;
         Ok(Self {
-            session,
+            backend: Backend::Local(session),
             path: path.to_string(),
             loaded_mtime: file_mtime(path),
             board_size,
             batch_size,
         })
+    }
+
+    /// A handle onto a shared [`BatchServer`]: every `evaluate_batch` is pooled with
+    /// the other threads' requests into one large inference. Reloading is the
+    /// server's job, so `reload_if_changed` is a no-op on this handle.
+    pub fn shared(server: Arc<BatchServer>) -> Self {
+        Self {
+            board_size: server.board_size(),
+            backend: Backend::Shared(server),
+            path: String::new(),
+            loaded_mtime: None,
+            batch_size: 0,
+        }
     }
 
     /// Path the net was loaded from.
@@ -75,7 +98,7 @@ impl NeuralNet {
     /// that cannot be loaded (half-written, corrupt) leaves the current session in
     /// place and reports the error; the next call tries again.
     pub fn reload_if_changed(&mut self) -> Result<bool, String> {
-        if self.path.is_empty() {
+        if self.path.is_empty() || matches!(self.backend, Backend::Shared(_)) {
             return Ok(false);
         }
         let mtime = file_mtime(&self.path);
@@ -90,13 +113,13 @@ impl NeuralNet {
                 self.board_size
             ));
         }
-        self.session = session;
+        self.backend = Backend::Local(session);
         self.loaded_mtime = mtime;
         Ok(true)
     }
 
     /// Builds and warms up a session; returns it with the board size it is built for.
-    fn build_session(
+    pub(super) fn build_session(
         path: &str,
         board_size: usize,
         batch_size: usize,
@@ -184,7 +207,8 @@ impl NeuralNet {
         }
         let elapsed = start.elapsed();
         println!(
-            "[NN] Warmup done. batch=8 forward: {:.2}ms avg ({} runs)",
+            "[NN] Warmup done. batch={} forward: {:.2}ms avg ({} runs)",
+            batch_size,
             elapsed.as_secs_f64() / bench_runs as f64 * 1000.0,
             bench_runs
         );
@@ -201,7 +225,7 @@ impl NeuralNet {
         let board_size = model_board_size(&session).unwrap_or(board_size);
 
         Ok(Self {
-            session,
+            backend: Backend::Local(session),
             path: String::new(),
             loaded_mtime: None,
             board_size,
@@ -223,51 +247,69 @@ impl NeuralNet {
         positions: &[&BitPosition],
         geom: &Precomputed,
     ) -> Vec<NnOutput> {
-        let batch_size = positions.len();
-        // Pad up to the warmed-up shape; the tail samples are zeros and discarded.
-        let padded = self.batch_size.max(batch_size);
-        let mut input_data = build_input_data(positions, geom);
-        input_data.resize(padded * get_sample_size(geom.board_size), 0.0);
-
-        let input_tensor = Array::from_shape_vec(
-            IxDyn(&[padded, NUM_PLANES, geom.board_size, geom.board_size]),
-            input_data,
-        )
-        .unwrap();
-
-        let input_value = Value::from_array(input_tensor).unwrap();
-        let outputs = self.session.run(ort::inputs![input_value]).unwrap();
-
-        let (_, policy_data) = outputs[0].try_extract_tensor::<f32>().unwrap();
-        let (_, value_data) = outputs[1].try_extract_tensor::<f32>().unwrap();
-
-        // Optional third output: a moves-left head. Nets exported without it
-        // yield only 2 outputs, so read it only when present (backward compatible
-        // with every historical net).
-        let moves_left_data: Option<Vec<f32>> = if outputs.len() > 2 {
-            outputs[2]
-                .try_extract_tensor::<f32>()
-                .ok()
-                .map(|(_, d)| d.to_vec())
-        } else {
-            None
-        };
-
-        let mut results = Vec::with_capacity(batch_size);
-        for i in 0..batch_size {
-            let policy_size = get_policy_size(geom.board_size);
-            let policy = policy_data[i * policy_size..(i + 1) * policy_size].to_vec();
-            let value = value_data[i];
-            let moves_left = moves_left_data.as_ref().map(|d| d[i]);
-            results.push(NnOutput {
-                policy,
-                value,
-                moves_left,
-            });
+        let n = positions.len();
+        let input_data = build_input_data(positions, geom);
+        match &mut self.backend {
+            // Pad up to the warmed-up shape; the tail samples are zeros and discarded.
+            Backend::Local(session) => {
+                let padded = self.batch_size.max(n);
+                run_inference(session, input_data, n, padded, geom.board_size)
+            }
+            Backend::Shared(server) => server.evaluate(input_data, n),
         }
-
-        results
     }
+}
+
+/// One forward pass: `input_data` holds `n` samples and is padded with zeros to
+/// `padded` samples (ORT plans execution per input shape, so callers keep to a few
+/// shapes). Returns `n` outputs.
+pub(super) fn run_inference(
+    session: &mut Session,
+    mut input_data: Vec<f32>,
+    n: usize,
+    padded: usize,
+    board_size: usize,
+) -> Vec<NnOutput> {
+    input_data.resize(padded * get_sample_size(board_size), 0.0);
+
+    let input_tensor = Array::from_shape_vec(
+        IxDyn(&[padded, NUM_PLANES, board_size, board_size]),
+        input_data,
+    )
+    .unwrap();
+
+    let input_value = Value::from_array(input_tensor).unwrap();
+    let outputs = session.run(ort::inputs![input_value]).unwrap();
+
+    let (_, policy_data) = outputs[0].try_extract_tensor::<f32>().unwrap();
+    let (_, value_data) = outputs[1].try_extract_tensor::<f32>().unwrap();
+
+    // Optional third output: a moves-left head. Nets exported without it
+    // yield only 2 outputs, so read it only when present (backward compatible
+    // with every historical net).
+    let moves_left_data: Option<Vec<f32>> = if outputs.len() > 2 {
+        outputs[2]
+            .try_extract_tensor::<f32>()
+            .ok()
+            .map(|(_, d)| d.to_vec())
+    } else {
+        None
+    };
+
+    let policy_size = get_policy_size(board_size);
+    let mut results = Vec::with_capacity(n);
+    for i in 0..n {
+        let policy = policy_data[i * policy_size..(i + 1) * policy_size].to_vec();
+        let value = value_data[i];
+        let moves_left = moves_left_data.as_ref().map(|d| d[i]);
+        results.push(NnOutput {
+            policy,
+            value,
+            moves_left,
+        });
+    }
+
+    results
 }
 
 #[cfg(test)]
