@@ -316,6 +316,12 @@ def net2net(
         new_net.value_head[1].load_state_dict(old_net.value_head[1].state_dict())
         new_net.value_mlp.load_state_dict(old_net.value_mlp.state_dict())
 
+        # ── Moves-left head (part of forward(); the engine reads it for MLH) ──
+        if getattr(old_net, "has_moves_left", False):
+            new_net.moves_left_head[0] = _widen_conv_in(old_net.moves_left_head[0], mapping, count, new_channels)
+            new_net.moves_left_head[1].load_state_dict(old_net.moves_left_head[1].state_dict())
+            new_net.moves_left_mlp.load_state_dict(old_net.moves_left_mlp.state_dict())
+
         # ── Aux heads ─────────────────────────────────────────────────────────
         if old_aux:
             tmp = _widen_conv_out(old_net.aux_policy_head[0], mapping, new_channels)
@@ -339,13 +345,16 @@ def verify(old_net: TaflAlphaZeroNet, new_net: TaflAlphaZeroNet, tol: float = 1e
     n = getattr(old_net, "board_size", 11)
     x = torch.randn(4, old_net.stem[0].in_channels, n, n)
     with torch.no_grad():
-        p_old, v_old = old_net(x)
-        p_new, v_new = new_net(x)
+        out_old = old_net(x)
+        out_new = new_net(x)
+    p_old, v_old = out_old[0], out_old[1]
+    p_new, v_new = out_new[0], out_new[1]
     p_diff = (p_old - p_new).abs().max().item()
     v_diff = (v_old - v_new).abs().max().item()
-    ok = p_diff < tol and v_diff < tol
+    m_diff = (out_old[2] - out_new[2]).abs().max().item() if len(out_old) > 2 else 0.0
+    ok = p_diff < tol and v_diff < tol and m_diff < tol
     status = "✅" if ok else "⚠️ "
-    print(f"  {status} Policy diff: {p_diff:.2e}  Value diff: {v_diff:.2e}  (tol={tol})")
+    print(f"  {status} Policy diff: {p_diff:.2e}  Value diff: {v_diff:.2e}  Moves-left diff: {m_diff:.2e}  (tol={tol})")
     if not ok:
         print("     Function not preserved — check implementation!")
     return ok
