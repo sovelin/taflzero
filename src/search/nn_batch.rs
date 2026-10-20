@@ -46,6 +46,8 @@ pub struct BatchServer {
     /// Batches run and samples served, for the throughput line in logs.
     batches: AtomicUsize,
     served: AtomicUsize,
+    /// Successful net reloads (net_watch).
+    reloads: AtomicUsize,
 }
 
 fn file_mtime(path: &str) -> Option<std::time::SystemTime> {
@@ -76,6 +78,7 @@ impl BatchServer {
             active: AtomicUsize::new(0),
             batches: AtomicUsize::new(0),
             served: AtomicUsize::new(0),
+            reloads: AtomicUsize::new(0),
         });
         let worker = Arc::clone(&server);
         let path = path.to_string();
@@ -92,6 +95,11 @@ impl BatchServer {
 
     pub fn max_batch(&self) -> usize {
         self.max_batch
+    }
+
+    /// Net reloads completed so far.
+    pub fn reloads(&self) -> usize {
+        self.reloads.load(Ordering::Relaxed)
     }
 
     /// (batches run, samples served) so far.
@@ -175,6 +183,10 @@ impl BatchServer {
         let sample_size = get_sample_size(self.board_size);
         let mut loaded_mtime = file_mtime(&path);
         let mut last_check = Instant::now();
+        // A reload (session build + warm-up, about a second) runs on a helper thread
+        // so the game threads keep being served by the old net meanwhile; the new
+        // session is swapped in between batches.
+        let mut pending_reload: Option<mpsc::Receiver<Result<Session, String>>> = None;
         loop {
             let (taken, total) = self.take_batch();
             let padded = total.div_ceil(BUCKET) * BUCKET;
@@ -192,22 +204,45 @@ impl BatchServer {
             self.batches.fetch_add(1, Ordering::Relaxed);
             self.served.fetch_add(total, Ordering::Relaxed);
 
-            if net_watch && last_check.elapsed() >= Duration::from_secs(1) {
+            if let Some(rx) = &pending_reload {
+                match rx.try_recv() {
+                    Ok(Ok(s)) => {
+                        session = s;
+                        pending_reload = None;
+                        self.reloads.fetch_add(1, Ordering::Relaxed);
+                        println!("[NN] Reloaded {path}");
+                    }
+                    Ok(Err(err)) => {
+                        pending_reload = None;
+                        println!("[NN] Reload failed: {err}, keeping old net");
+                    }
+                    Err(mpsc::TryRecvError::Empty) => {}
+                    Err(mpsc::TryRecvError::Disconnected) => pending_reload = None,
+                }
+            }
+            if net_watch
+                && pending_reload.is_none()
+                && last_check.elapsed() >= Duration::from_secs(1)
+            {
                 last_check = Instant::now();
                 let mtime = file_mtime(&path);
                 if mtime.is_some() && mtime != loaded_mtime {
-                    match NeuralNet::build_session(&path, self.board_size, self.max_batch) {
-                        Ok((mut s, size)) if size == self.board_size => {
-                            warm_buckets(&mut s, size, self.max_batch);
-                            session = s;
-                            loaded_mtime = mtime;
-                            println!("[NN] Reloaded {path}");
-                        }
-                        Ok((_, size)) => println!(
-                            "[NN] Reload failed: net is for a {size}x{size} board, keeping old net"
-                        ),
-                        Err(err) => println!("[NN] Reload failed: {err}, keeping old net"),
-                    }
+                    loaded_mtime = mtime;
+                    let (tx, rx) = mpsc::channel();
+                    let (path, board_size, max_batch) =
+                        (path.clone(), self.board_size, self.max_batch);
+                    std::thread::spawn(move || {
+                        let built = match NeuralNet::build_session(&path, board_size, max_batch) {
+                            Ok((mut s, size)) if size == board_size => {
+                                warm_buckets(&mut s, size, max_batch);
+                                Ok(s)
+                            }
+                            Ok((_, size)) => Err(format!("net is for a {size}x{size} board")),
+                            Err(err) => Err(err),
+                        };
+                        let _ = tx.send(built);
+                    });
+                    pending_reload = Some(rx);
                 }
             }
         }
@@ -326,5 +361,48 @@ mod tests {
         let a = server.evaluate(input, 1).pop().unwrap();
         let b = local.evaluate_position(&pos[0], geom);
         assert!((a.value - b.value).abs() < 1e-4);
+    }
+
+    // With net_watch the server picks up a newer file while it keeps serving, and
+    // answers from the new session afterwards.
+    #[test]
+    fn reloads_in_the_background_while_serving() {
+        let dir = std::env::temp_dir().join(format!("taflzero-srv-reload-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let copy = dir.join("net.onnx");
+        std::fs::write(&copy, std::fs::read("copenhagen11x11.onnx").unwrap()).unwrap();
+        let server = BatchServer::start(
+            copy.to_str().unwrap(),
+            11,
+            8,
+            Duration::from_millis(1),
+            true,
+        )
+        .unwrap();
+        let (pos, board) = positions(3, 4);
+        let geom = board.precomputed();
+        let mut shared = NeuralNet::shared(server.clone());
+        server.client_started();
+        let refs: Vec<&BitPosition> = pos.iter().collect();
+        let before = shared.evaluate_batch(&refs, geom);
+
+        // Same bytes, newer mtime: the next check (≥ 1 s after the last) starts a
+        // background rebuild; keep evaluating until it has been swapped in.
+        let f = std::fs::OpenOptions::new().write(true).open(&copy).unwrap();
+        f.set_modified(std::time::SystemTime::now() + Duration::from_secs(5))
+            .unwrap();
+        drop(f);
+        let t0 = Instant::now();
+        while server.reloads() == 0 && t0.elapsed() < Duration::from_secs(60) {
+            let _ = shared.evaluate_batch(&refs, geom);
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert_eq!(server.reloads(), 1, "net was not reloaded");
+        let after = shared.evaluate_batch(&refs, geom);
+        for (x, y) in before.iter().zip(&after) {
+            assert!((x.value - y.value).abs() < 1e-4);
+        }
+        server.client_stopped();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
