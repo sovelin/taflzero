@@ -244,7 +244,8 @@ class Dashboard:
                     "--anchors", ",".join(anchors), "--pairs", str(eval_cfg.get("pairs", 30)),
                     "--nodes", str(eval_cfg.get("nodes", 400)), "--workers", str(eval_cfg.get("workers", 2)),
                     "--playout-every", str(eval_cfg.get("playout_every", 5)),
-                    "--max-plies", str(eval_cfg.get("max_plies", 400))]
+                    "--max-plies", str(eval_cfg.get("max_plies", 400)),
+                    "--min-gap", str(eval_cfg.get("min_gap", 0))]
             if eval_cfg.get("blind", False):
                 ecmd.append("--blind")
             pids["eval"] = spawn_detached(ecmd, run_dir / "dashboard-eval.log", REPO)

@@ -47,6 +47,17 @@ def step_of(ckpt: Path) -> int:
     return int(m.group(1)) if m else -1
 
 
+def spaced_out(ckpt: Path, done_elo: set[str], min_gap: int) -> bool:
+    """`--min-gap`: a checkpoint is rated when it is at least `min_gap` steps past the newest rated
+    one, or when its own rating has already begun (a restart finishes what it started)."""
+    if min_gap <= 0:
+        return True
+    if any(k.startswith(f"{ckpt.stem}|") for k in done_elo):
+        return True
+    rated = [int(m.group(1)) for k in done_elo if (m := re.match(r"step(\d+)\|", k))]
+    return not rated or step_of(ckpt) - max(rated) >= min_gap
+
+
 def generated_at(run_dir: Path, step: int) -> int | None:
     """Positions generated when `step` was reached: the checkpoint's own json, else the
     nearest metrics.csv row."""
@@ -138,6 +149,9 @@ def main() -> int:
     ap.add_argument("--variant", default="copenhagen11x11")
     ap.add_argument("--blind", action="store_true", help="also run the blind-spot metrics")
     ap.add_argument("--playout-every", type=int, default=5, help="every Nth checkpoint also plays out the conversion positions")
+    ap.add_argument("--min-gap", type=int, default=0,
+                    help="rate a checkpoint only when it is this many steps past the newest one already rated "
+                         "(0 = every checkpoint the side-car can get to)")
     ap.add_argument("--poll", type=float, default=60.0)
     ap.add_argument("--once", action="store_true")
     args = ap.parse_args()
@@ -167,6 +181,7 @@ def main() -> int:
         ckpts = sorted(ckpt_dir.glob("step*.onnx"), key=step_of) if ckpt_dir.exists() else []
         todo = [c for c in ckpts if any(f"{c.stem}|{a.stem}" not in done_elo for a in anchors)
                 or (args.blind and c.stem not in done_blind)]
+        todo = [c for c in todo if spaced_out(c, done_elo, args.min_gap)]
         if not todo:
             write_phase(run_dir, phase="idle")
             if args.once or stopped_for_good(run_dir):
