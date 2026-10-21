@@ -229,13 +229,15 @@ let endPick = 'exit fort';
 try { endPick = localStorage.getItem('endPick') || endPick; } catch (e) {}
 try { smoothN = Math.max(1, parseInt(localStorage.getItem('smooth') || '1')); } catch (e) {}
 function smoothPts(pts) {
+  // Centred: point i is the mean of points i-h..i+h, so a peak stays where it was
+  // (a trailing mean would shift every curve right by half the window).
   if (smoothN <= 1) return pts;
-  const out = [];
-  let sum = 0, n = 0;
+  const h = Math.floor(smoothN / 2), out = [];
   for (let i = 0; i < pts.length; i++) {
-    if (pts[i].y != null && !isNaN(pts[i].y)) { sum += +pts[i].y; n++; }
-    const j = i - smoothN;
-    if (j >= 0 && pts[j].y != null && !isNaN(pts[j].y)) { sum -= +pts[j].y; n--; }
+    let sum = 0, n = 0;
+    for (let j = Math.max(0, i - h); j <= Math.min(pts.length - 1, i + h); j++) {
+      if (pts[j].y != null && !isNaN(pts[j].y)) { sum += +pts[j].y; n++; }
+    }
     out.push({ x: pts[i].x, y: n ? sum / n : null });
   }
   return out;
@@ -403,19 +405,25 @@ function renderDetail(d) {
     lineChart('cLadder', sets, { yLabel: 'Elo', digits: 0 });
   }
 
-  // Row `smoothN` windows back (sp[0] while there are fewer), for shares pooled over the span.
-  const back = (i) => i - smoothN >= 0 ? sp[i - smoothN] : (i > 0 ? sp[0] : null);
+  // The rows bounding the span pooled for row i: `p` just before it, `r` its last row.
+  // Centred on i (i-h..i+h windows), one window when smoothing is off; `p` is null for the
+  // first row, sp[0] when the span would start before the data.
+  const win = (i) => {
+    if (smoothN <= 1) return { p: i > 0 ? sp[i - 1] : null, r: sp[i] };
+    const h = Math.floor(smoothN / 2), lo = i - h, hi = Math.min(sp.length - 1, i + h);
+    return { p: lo > 0 ? sp[lo - 1] : (i > 0 ? sp[0] : null), r: sp[hi] };
+  };
   const span = sp.length > 2 ? (sp[sp.length - 1].time - sp[0].time) / (sp.length - 1) : 0;
   $('smoothVal').textContent = smoothN <= 1 ? 'off' : `${smoothN} windows${span ? ` ≈ ${fmt(smoothN * span / 60, 0)} min` : ''} (self-play, trainer and ladder charts)`;
   // Self-play outcomes: shares per window (cumulative counts -> diffs)
   const out = { atk: [], def: [], und: [] }, lens = [];
   for (let i = 0; i < sp.length; i++) {
-    const r = sp[i], p = back(i) || { games: 0, atk_wins: 0, def_wins: 0, undecided: 0 };
+    const w = win(i), r = w.r, p = w.p || { games: 0, atk_wins: 0, def_wins: 0, undecided: 0 }, xg = sp[i].generated;
     const g = r.games - p.games; if (g <= 0) continue;
-    out.atk.push({ x: r.generated, y: 100 * (r.atk_wins - p.atk_wins) / g });
-    out.def.push({ x: r.generated, y: 100 * (r.def_wins - p.def_wins) / g });
-    out.und.push({ x: r.generated, y: 100 * (r.undecided - p.undecided) / g });
-    lens.push({ x: r.generated, y: +r.avg_len });
+    out.atk.push({ x: xg, y: 100 * (r.atk_wins - p.atk_wins) / g });
+    out.def.push({ x: xg, y: 100 * (r.def_wins - p.def_wins) / g });
+    out.und.push({ x: xg, y: 100 * (r.undecided - p.undecided) / g });
+    lens.push({ x: xg, y: +r.avg_len });
   }
   lineChart('cOut', [ds('attackers win', S[1], out.atk), ds('defenders win', S[0], out.def), ds('undecided', S[3], out.und)], { yLabel: '% of games', min: 0, max: 100 });
   lineChart('cLen', [ds('average length', S[0], smoothPts(lens))], { yLabel: 'plies', digits: 0 });
@@ -433,16 +441,16 @@ function renderDetail(d) {
   ];
   const endSeries = ENDS.map(() => []);
   for (let i = 1; i < sp.length; i++) {
-    const r = sp[i], p = back(i);
+    const { p, r } = win(i), xg = sp[i].generated;
     const g = r.games - p.games; if (g <= 0) continue;
     ENDS.forEach(([, , cols], k) => {
       const n = cols.reduce((acc, c) => acc + ((r[c] || 0) - (p[c] || 0)), 0);
-      endSeries[k].push({ x: r.generated, y: 100 * n / g });
+      endSeries[k].push({ x: xg, y: 100 * n / g });
     });
   }
   if (sp.length === 1) {
     const r = sp[0];
-    ENDS.forEach(([, , cols], k) => endSeries[k].push({ x: r.generated, y: r.games ? 100 * cols.reduce((a, c) => a + (r[c] || 0), 0) / r.games : 0 }));
+    ENDS.forEach(([, , cols], k) => endSeries[k].push({ x: xg, y: r.games ? 100 * cols.reduce((a, c) => a + (r[c] || 0), 0) / r.games : 0 }));
   }
   lineChart('cEnd', ENDS.map(([label, color], k) => ds(label, color, endSeries[k])), { yLabel: '% of games', min: 0, max: 100 });
 
@@ -451,12 +459,12 @@ function renderDetail(d) {
   const [, cols, side] = pick;
   const allPts = [], sidePts = [];
   for (let i = 1; i < sp.length; i++) {
-    const r = sp[i], p = back(i);
+    const { p, r } = win(i), xg = sp[i].generated;
     const g = r.games - p.games; if (g <= 0) continue;
     const n = cols.reduce((a, c) => a + ((r[c] || 0) - (p[c] || 0)), 0);
-    allPts.push({ x: r.generated, y: 100 * n / g });
+    allPts.push({ x: xg, y: 100 * n / g });
     const wins = side ? r[side] - p[side] : 0;
-    if (wins > 0) sidePts.push({ x: r.generated, y: 100 * n / wins });
+    if (wins > 0) sidePts.push({ x: xg, y: 100 * n / wins });
   }
   const sideName = side === 'def_wins' ? '% of defender wins' : '% of attacker wins';
   lineChart('cFortSp', [ds('% of all games', S[2], allPts)].concat(side ? [ds(sideName, S[0], sidePts)] : []), { yLabel: '%', min: 0, digits: 2 });
@@ -467,8 +475,8 @@ function renderDetail(d) {
   // Self-play speed from the cumulative counters in selfplay.csv.
   const gen = [];
   for (let i = 1; i < sp.length; i++) {
-    const r = sp[i], p = back(i), dt = r.time - p.time;
-    if (dt > 0 && r.games > p.games) gen.push({ x: r.generated, y: (r.games - p.games) / dt });
+    const { p, r } = win(i), xg = sp[i].generated, dt = r.time - p.time;
+    if (dt > 0 && r.games > p.games) gen.push({ x: xg, y: (r.games - p.games) / dt });
   }
   lineChart('cGen', [ds('games/s', S[2], gen)], { digits: 2, min: 0 });
   lineChart('cGpu', [ds('GPU %', S[1], smoothPts(m.filter(r => r.gpu_util !== '' && r.gpu_util != null).map(r => ({ x: mx(r), y: +r.gpu_util }))))], { digits: 0, min: 0, max: 100 });
