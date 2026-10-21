@@ -247,7 +247,12 @@ function lineChart(id, datasets, opts = {}) {
       },
     },
   };
-  if (charts[id]) { charts[id].data.datasets = datasets; charts[id].options = config.options; charts[id].update(); }
+  if (charts[id]) {
+    // Keep series hidden from the legend hidden across refreshes.
+    const hidden = new Set(charts[id].data.datasets.filter((_, i) => !charts[id].isDatasetVisible(i)).map(x => x.label));
+    datasets.forEach(x => { if (hidden.has(x.label)) x.hidden = true; });
+    charts[id].data.datasets = datasets; charts[id].options = config.options; charts[id].update();
+  }
   else charts[id] = new Chart(ctx, config);
 }
 
@@ -561,11 +566,40 @@ $('themeBtn').onclick = () => {
   try { localStorage.setItem('theme', next); } catch (e) {}
   applyTheme(next); loadDetail();
 };
+// One refresh at a time; a failed one (server busy, file mid-write) is retried on the next tick,
+// and the clock pill shows when the page last got fresh data.
+let refreshing = false, lastOk = 0;
+async function refresh() {
+  if (refreshing) return;
+  refreshing = true;
+  try {
+    await loadRuns();
+    await loadDetail();
+    lastOk = Date.now();
+    $('clock').textContent = new Date().toLocaleTimeString();
+    $('clock').title = '';
+  } catch (e) {
+    console.error('refresh failed', e);
+    $('clock').title = 'last refresh failed: ' + e;
+  } finally {
+    refreshing = false;
+    markStale();
+  }
+}
+function markStale() {
+  const age = lastOk ? (Date.now() - lastOk) / 1000 : 0;
+  $('clock').style.opacity = age > 30 ? '0.5' : '';
+  if (age > 30) $('clock').textContent = `stale ${Math.round(age)} s`;
+}
+
 (async () => {
   applyTheme(savedTheme);
   await loadPresets(); await loadRuns();
-  if (runs.length) { selected = runs[0].name; await loadRuns(); await loadDetail(); }
-  setInterval(async () => { $('clock').textContent = new Date().toLocaleTimeString(); await loadRuns(); await loadDetail(); }, 10000);
+  if (runs.length) { selected = runs[0].name; await refresh(); }
+  setInterval(refresh, 10000);
+  setInterval(markStale, 5000);
+  // Background tabs get their timers throttled to about once a minute: catch up as soon as the tab is shown again.
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
 })();
 </script>
 </body>
