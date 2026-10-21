@@ -147,6 +147,7 @@ def run_detail(run_dir: Path) -> dict:
     d["elo"] = read_jsonl(run_dir / "elo.jsonl")
     d["eval"] = read_jsonl(run_dir / "eval.jsonl")
     d["eval_progress"] = read_json(run_dir / "eval.progress.json")
+    d["ladder"] = read_json(run_dir / "ladder.ratings.json")
     d["log"] = tail(run_dir / "log.txt")
     d["eval_log"] = tail(run_dir / "eval.log", 15)
     d["paused"] = (run_dir / "PAUSE").exists()
@@ -219,6 +220,15 @@ class Dashboard:
             if eval_cfg.get("blind", False):
                 ecmd.append("--blind")
             pids["eval"] = spawn_detached(ecmd, run_dir / "dashboard-eval.log", REPO)
+        # Optional cheap all-checkpoint ladder: "ladder": {"nodes": 20, "pairs": 4, "opponents": 8}
+        ladder = eval_cfg.get("ladder")
+        if ladder:
+            lcmd = [sys.executable, str(HERE / "eval_ladder.py"), "--run-dir", str(run_dir), "--engine-bin", str(engine),
+                    "--nodes", str(ladder.get("nodes", 20)), "--pairs", str(ladder.get("pairs", 4)),
+                    "--opponents", str(ladder.get("opponents", 8)), "--workers", str(ladder.get("workers", 1))]
+            if anchors:
+                lcmd += ["--anchors", ",".join(anchors)]
+            pids["ladder"] = spawn_detached(lcmd, run_dir / "dashboard-ladder.log", REPO)
         (run_dir / "dashboard.pids.json").write_text(json.dumps(pids), encoding="utf-8")
         return {"ok": True, "name": name, "pids": pids}
 

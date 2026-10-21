@@ -113,6 +113,7 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; }
       <div class="live" id="live" style="display:none"></div>
       <div class="charts">
         <div class="chart"><h3>Elo against anchors</h3><div class="sub">paired games at fixed nodes; shaded = 95% CI</div><canvas id="cElo"></canvas></div>
+        <div class="chart" id="ladderBox" style="display:none"><h3>Checkpoint ladder</h3><div class="sub" id="ladderSub"></div><canvas id="cLadder"></canvas></div>
         <div class="chart"><h3>Self-play outcomes</h3><div class="sub">share of games, per logging window</div><canvas id="cOut"></canvas></div>
         <div class="chart"><h3>How games end</h3><div class="sub">share of games by final position, per logging window; real attacking progress = king captured, not repetition</div><canvas id="cEnd"></canvas></div>
         <div class="chart"><h3>Average game length</h3><div class="sub">plies</div><canvas id="cLen"></canvas></div>
@@ -311,6 +312,22 @@ function renderDetail(d) {
     eloSets.push(ds('_' + a + ' hi', S[i % 8], rows.map(e => ({ x: x(e), y: e.ci[1] })), { borderWidth: 0, pointRadius: 0, _ci: true }));
   });
   lineChart('cElo', eloSets, { yLabel: 'Elo', digits: 0 });
+
+  // Optional ladder (eval_ladder.py): every checkpoint on one scale from cheap matches.
+  const lad = d.ladder;
+  $('ladderBox').style.display = lad && lad.players && lad.players.length ? '' : 'none';
+  if (lad && lad.players && lad.players.length) {
+    const ck = lad.players.filter(p => !p.anchor).sort((p, q) => p.step - q.step);
+    const xOf = p => p.generated ?? p.step;
+    const sets = [ds('checkpoints', S[0], ck.map(p => ({ x: xOf(p), y: p.elo })))];
+    sets.push(ds('_lo', S[0], ck.map(p => ({ x: xOf(p), y: p.elo - 1.96 * p.se })), { borderWidth: 0, pointRadius: 0, fill: '+1', backgroundColor: S[0] + '22', _ci: true }));
+    sets.push(ds('_hi', S[0], ck.map(p => ({ x: xOf(p), y: p.elo + 1.96 * p.se })), { borderWidth: 0, pointRadius: 0, _ci: true }));
+    const span = ck.length ? [xOf(ck[0]), xOf(ck[ck.length - 1])] : [0, 1];
+    lad.players.filter(p => p.anchor).forEach((p, i) => sets.push(ds(p.name, S[(i + 2) % 8], span.map(x => ({ x, y: p.elo })), { borderDash: [6, 4], pointRadius: 0 })));
+    const games = lad.players.reduce((a, p) => a + p.games, 0) / 2;
+    $('ladderSub').textContent = `${lad.nodes} nodes, ${ck.length} checkpoints, ${fmt(games)} games; ${lad.reference} = 0; shaded = 95% CI; dashed = anchors`;
+    lineChart('cLadder', sets, { yLabel: 'Elo', digits: 0 });
+  }
 
   // Self-play outcomes: shares per window (cumulative counts -> diffs)
   const out = { atk: [], def: [], und: [] }, lens = [];

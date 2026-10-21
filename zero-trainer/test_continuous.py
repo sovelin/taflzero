@@ -594,3 +594,14 @@ def test_fresh_run_refuses_existing_run_dir(tmp_path: Path) -> None:
     args = parse_config(_tiny_args(run_dir))
     with pytest.raises(SystemExit):
         ContinuousRun(args)
+
+
+def test_ladder_fit_recovers_a_known_gap():
+    from eval_ladder import fit_ratings
+    # 75% for a over b is +191 Elo; b against the reference is even.
+    matches = [{"a": "a", "b": "b", "w": 300, "l": 100, "d": 0}, {"a": "b", "b": "ref", "w": 200, "l": 200, "d": 0}]
+    fit = fit_ratings(matches, "ref")
+    assert abs(fit["ref"][0]) < 1e-6
+    assert abs(fit["b"][0]) < 5
+    assert abs(fit["a"][0] - 191) < 5
+    assert 0 < fit["a"][1] < 60
