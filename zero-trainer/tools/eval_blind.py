@@ -16,6 +16,7 @@ the bare net (`go nodes 1`, attacker winrate in percent):
   --playout  conv_def/conv_atk/conv_unf: 12 post-blunder positions played out by this
              engine against itself at 400 nodes, 200-ply cap. g0213 at 800 nodes: 7/2/3;
              his defence 12/0/0.
+  fort_*     the fort metric (tools/eval_fort.py), once bench/fort.jsonl exists.
 
 Appends one JSON line to --out (default: eval.jsonl next to the net).
 """
@@ -29,6 +30,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from eval_fort import FORT, fort_metrics, load  # noqa: E402
 from uci_client import Engine  # noqa: E402
 
 BENCH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "bench", "blindspot.jsonl")
@@ -71,6 +73,8 @@ def main() -> None:
         lost = [w for w in lost if w is not None]
         out["lost_pos"] = round(sum(lost) / max(len(lost), 1), 1)
         out["lost_n"] = len(lost)
+
+        out.update(fort_metrics(eng, load(FORT)))  # nothing until bench/fort.jsonl exists
 
         if args.playout:
             res = {"defenders": 0, "attackers": 0, "unfinished": 0}

@@ -605,3 +605,14 @@ def test_ladder_fit_recovers_a_known_gap():
     assert abs(fit["b"][0]) < 5
     assert abs(fit["a"][0] - 191) < 5
     assert 0 < fit["a"][1] < 60
+
+
+def test_fort_bench_takes_attacker_to_move_prefixes():
+    sys.path.insert(0, str(Path(__file__).resolve().parent / "tools"))
+    from build_fort_bench import fort_rows
+    moves = " ".join(f"m{i}" for i in range(61))  # defenders made the last (61st) move
+    rows = fort_rows({"id": 0, "attacker": "x", "opening": 16, "moves": moves})
+    assert [r["k"] for r in rows] == [4, 8, 16, 24, 32]  # k=48 would cut into the opening
+    for r in rows:
+        n = len(r["moves"].split())
+        assert n % 2 == 0 and 61 - r["k"] - 1 <= n <= 61 - r["k"]
