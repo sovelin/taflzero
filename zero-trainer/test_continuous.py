@@ -628,10 +628,11 @@ def test_fort_bench_takes_attacker_to_move_prefixes():
 
 def test_eval_min_gap_spaces_checkpoints_and_finishes_started_ones() -> None:
     import eval_anchor as e
-    done = {"step174000|copenhagen11x11", "step174000|step017005", "step184000|step017005"}
+    done = {"step174000|copenhagen11x11", "step184000|step017005"}
     ck = lambda n: Path(f"step{n:06d}.onnx")  # noqa: E731
     assert e.spaced_out(ck(190000), done, 0)
-    assert e.spaced_out(ck(184000), done, 20000)  # one anchor done: finish the other
+    assert e.spaced_out(ck(184000), done, 20000)  # the newest rated one, one anchor left: finish it
+    assert not e.spaced_out(ck(174000), done, 20000)  # an older half-rated one is left alone
     assert not e.spaced_out(ck(190000), done, 20000)  # only 6000 past 184000
     assert e.spaced_out(ck(204000), done, 20000)
     assert e.spaced_out(ck(2000), set(), 20000)  # nothing rated yet

@@ -49,13 +49,15 @@ def step_of(ckpt: Path) -> int:
 
 def spaced_out(ckpt: Path, done_elo: set[str], min_gap: int) -> bool:
     """`--min-gap`: a checkpoint is rated when it is at least `min_gap` steps past the newest rated
-    one, or when its own rating has already begun (a restart finishes what it started)."""
+    one, or when it is that newest one and its own rating is unfinished (a restart finishes what it
+    started; older half-rated checkpoints are left alone)."""
     if min_gap <= 0:
         return True
-    if any(k.startswith(f"{ckpt.stem}|") for k in done_elo):
-        return True
     rated = [int(m.group(1)) for k in done_elo if (m := re.match(r"step(\d+)\|", k))]
-    return not rated or step_of(ckpt) - max(rated) >= min_gap
+    if not rated:
+        return True
+    step = step_of(ckpt)
+    return step - max(rated) >= min_gap or step == max(rated)
 
 
 def generated_at(run_dir: Path, step: int) -> int | None:
