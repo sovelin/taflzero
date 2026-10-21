@@ -385,20 +385,28 @@ function renderDetail(d) {
   if (lad && lad.players && lad.players.length) {
     const ck = lad.players.filter(p => !p.anchor).sort((p, q) => p.step - q.step);
     const xOf = p => p.generated ?? p.step;
-    const sets = [ds('checkpoints', S[0], ck.map(p => ({ x: xOf(p), y: p.elo })))];
-    sets.push(ds('_lo', S[0], ck.map(p => ({ x: xOf(p), y: p.elo - 1.96 * p.se })), { borderWidth: 0, pointRadius: 0, fill: '+1', backgroundColor: S[0] + '22', _ci: true }));
-    sets.push(ds('_hi', S[0], ck.map(p => ({ x: xOf(p), y: p.elo + 1.96 * p.se })), { borderWidth: 0, pointRadius: 0, _ci: true }));
+    const raw = ck.map(p => ({ x: xOf(p), y: p.elo }));
+    // The slider smooths here too: a trailing mean over `smoothN` checkpoints, the raw
+    // points left as dots; the per-checkpoint CI band only makes sense unsmoothed.
+    const sets = smoothN > 1
+      ? [ds(`checkpoints (mean of ${smoothN})`, S[0], smoothPts(raw), { pointRadius: 0 }),
+         ds('checkpoints', S[0] + '55', raw, { borderWidth: 0, pointRadius: 2.5, showLine: false })]
+      : [ds('checkpoints', S[0], raw)];
+    if (smoothN <= 1) {
+      sets.push(ds('_lo', S[0], ck.map(p => ({ x: xOf(p), y: p.elo - 1.96 * p.se })), { borderWidth: 0, pointRadius: 0, fill: '+1', backgroundColor: S[0] + '22', _ci: true }));
+      sets.push(ds('_hi', S[0], ck.map(p => ({ x: xOf(p), y: p.elo + 1.96 * p.se })), { borderWidth: 0, pointRadius: 0, _ci: true }));
+    }
     const span = ck.length ? [xOf(ck[0]), xOf(ck[ck.length - 1])] : [0, 1];
     lad.players.filter(p => p.anchor).forEach((p, i) => sets.push(ds(p.name, S[(i + 2) % 8], span.map(x => ({ x, y: p.elo })), { borderDash: [6, 4], pointRadius: 0 })));
     const games = lad.players.reduce((a, p) => a + p.games, 0) / 2;
-    $('ladderSub').textContent = `${lad.nodes} nodes, ${ck.length} checkpoints, ${fmt(games)} games; ${lad.reference} = 0; shaded = 95% CI; dashed = anchors`;
+    $('ladderSub').textContent = `${lad.nodes} nodes, ${ck.length} checkpoints, ${fmt(games)} games; ${lad.reference} = 0; ${smoothN > 1 ? 'dots = single checkpoints' : 'shaded = 95% CI'}; dashed = anchors`;
     lineChart('cLadder', sets, { yLabel: 'Elo', digits: 0 });
   }
 
   // Row `smoothN` windows back (sp[0] while there are fewer), for shares pooled over the span.
   const back = (i) => i - smoothN >= 0 ? sp[i - smoothN] : (i > 0 ? sp[0] : null);
   const span = sp.length > 2 ? (sp[sp.length - 1].time - sp[0].time) / (sp.length - 1) : 0;
-  $('smoothVal').textContent = smoothN <= 1 ? 'off' : `${smoothN} windows${span ? ` ≈ ${fmt(smoothN * span / 60, 0)} min` : ''} (self-play and trainer charts)`;
+  $('smoothVal').textContent = smoothN <= 1 ? 'off' : `${smoothN} windows${span ? ` ≈ ${fmt(smoothN * span / 60, 0)} min` : ''} (self-play, trainer and ladder charts)`;
   // Self-play outcomes: shares per window (cumulative counts -> diffs)
   const out = { atk: [], def: [], und: [] }, lens = [];
   for (let i = 0; i < sp.length; i++) {
