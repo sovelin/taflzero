@@ -69,6 +69,7 @@ label { display: block; font-size: 12px; color: var(--ink-2); margin: 8px 0 2px;
 .live .recent { color: var(--ink-3); font-family: ui-monospace, monospace; font-size: 12px; }
 .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 14px; }
 .chart { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.smooth input[type=range] { width: 220px; }
 .chart h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; }
 .chart .sub { color: var(--ink-3); font-size: 12px; margin-bottom: 6px; }
 .chart canvas { width: 100% !important; height: 240px !important; }
@@ -135,11 +136,13 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; }
         <div id="rrMsg" class="sub"></div>
         <div id="rrLive"></div>
       </details>
+      <div class="row smooth">Smoothing <input type="range" id="smooth" min="1" max="90" value="1"> <span id="smoothVal" class="sub"></span></div>
       <div class="charts">
         <div class="chart"><h3>Elo against anchors</h3><div class="sub">paired games at fixed nodes; shaded = 95% CI</div><canvas id="cElo"></canvas></div>
         <div class="chart" id="ladderBox" style="display:none"><h3>Checkpoint ladder</h3><div class="sub" id="ladderSub"></div><canvas id="cLadder"></canvas></div>
         <div class="chart"><h3>Self-play outcomes</h3><div class="sub">share of games, per logging window</div><canvas id="cOut"></canvas></div>
         <div class="chart"><h3>How games end</h3><div class="sub">share of games by final position, per logging window; real attacking progress = king captured, not repetition</div><canvas id="cEnd"></canvas></div>
+        <div class="chart"><h3>Fort wins in self-play</h3><div class="sub">games the defenders won by an exit fort, per logging window</div><canvas id="cFortSp"></canvas></div>
         <div class="chart"><h3>Average game length</h3><div class="sub">plies</div><canvas id="cLen"></canvas></div>
         <div class="chart"><h3>Losses</h3><div class="sub">policy and value, per 100 steps</div><canvas id="cLoss"></canvas></div>
         <div class="chart"><h3>Blind-spot metrics</h3><div class="sub">attacker winrate the bare net gives: lost positions should fall, won positions should rise</div><canvas id="cBlind"></canvas></div>
@@ -205,6 +208,23 @@ async function loadRuns() {
     d.onclick = () => { selected = r.name; loadDetail(); loadRuns(); };
     box.appendChild(d);
   }
+}
+
+// Smoothing slider: the self-play charts pool `smoothN` logging windows (shares from the
+// cumulative counters over the whole span), the trainer charts take a trailing mean of as many points.
+let smoothN = 1, lastDetail = null;
+try { smoothN = Math.max(1, parseInt(localStorage.getItem('smooth') || '1')); } catch (e) {}
+function smoothPts(pts) {
+  if (smoothN <= 1) return pts;
+  const out = [];
+  let sum = 0, n = 0;
+  for (let i = 0; i < pts.length; i++) {
+    if (pts[i].y != null && !isNaN(pts[i].y)) { sum += +pts[i].y; n++; }
+    const j = i - smoothN;
+    if (j >= 0 && pts[j].y != null && !isNaN(pts[j].y)) { sum -= +pts[j].y; n--; }
+    out.push({ x: pts[i].x, y: n ? sum / n : null });
+  }
+  return out;
 }
 
 function lineChart(id, datasets, opts = {}) {
@@ -356,18 +376,22 @@ function renderDetail(d) {
     lineChart('cLadder', sets, { yLabel: 'Elo', digits: 0 });
   }
 
+  // Row `smoothN` windows back (sp[0] while there are fewer), for shares pooled over the span.
+  const back = (i) => i - smoothN >= 0 ? sp[i - smoothN] : (i > 0 ? sp[0] : null);
+  const span = sp.length > 2 ? (sp[sp.length - 1].time - sp[0].time) / (sp.length - 1) : 0;
+  $('smoothVal').textContent = smoothN <= 1 ? 'off' : `${smoothN} windows${span ? ` ≈ ${fmt(smoothN * span / 60, 0)} min` : ''} (self-play and trainer charts)`;
   // Self-play outcomes: shares per window (cumulative counts -> diffs)
   const out = { atk: [], def: [], und: [] }, lens = [];
   for (let i = 0; i < sp.length; i++) {
-    const r = sp[i], p = sp[i - 1] || { games: 0, atk_wins: 0, def_wins: 0, undecided: 0 };
+    const r = sp[i], p = back(i) || { games: 0, atk_wins: 0, def_wins: 0, undecided: 0 };
     const g = r.games - p.games; if (g <= 0) continue;
     out.atk.push({ x: r.generated, y: 100 * (r.atk_wins - p.atk_wins) / g });
     out.def.push({ x: r.generated, y: 100 * (r.def_wins - p.def_wins) / g });
     out.und.push({ x: r.generated, y: 100 * (r.undecided - p.undecided) / g });
-    lens.push({ x: r.generated, y: r.avg_len });
+    lens.push({ x: r.generated, y: +r.avg_len });
   }
   lineChart('cOut', [ds('attackers win', S[1], out.atk), ds('defenders win', S[0], out.def), ds('undecided', S[3], out.und)], { yLabel: '% of games', min: 0, max: 100 });
-  lineChart('cLen', [ds('average length', S[0], lens)], { yLabel: 'plies', digits: 0 });
+  lineChart('cLen', [ds('average length', S[0], smoothPts(lens))], { yLabel: 'plies', digits: 0 });
 
   // Game endings by terminal type (cumulative counts in selfplay.csv -> per-window shares)
   const ENDS = [
@@ -381,7 +405,7 @@ function renderDetail(d) {
   ];
   const endSeries = ENDS.map(() => []);
   for (let i = 1; i < sp.length; i++) {
-    const r = sp[i], p = sp[i - 1];
+    const r = sp[i], p = back(i);
     const g = r.games - p.games; if (g <= 0) continue;
     ENDS.forEach(([, , cols], k) => {
       const n = cols.reduce((acc, c) => acc + ((r[c] || 0) - (p[c] || 0)), 0);
@@ -394,17 +418,28 @@ function renderDetail(d) {
   }
   lineChart('cEnd', ENDS.map(([label, color], k) => ds(label, color, endSeries[k])), { yLabel: '% of games', min: 0, max: 100 });
 
+  // Exit forts on their own scale: a few percent is invisible on the 0-100 chart above.
+  const fortAll = [], fortDef = [];
+  for (let i = 1; i < sp.length; i++) {
+    const r = sp[i], p = back(i);
+    const g = r.games - p.games, f = (r.fort || 0) - (p.fort || 0), dw = r.def_wins - p.def_wins;
+    if (g <= 0) continue;
+    fortAll.push({ x: r.generated, y: 100 * f / g });
+    if (dw > 0) fortDef.push({ x: r.generated, y: 100 * f / dw });
+  }
+  lineChart('cFortSp', [ds('% of all games', S[2], fortAll), ds('% of defender wins', S[0], fortDef)], { yLabel: '%', min: 0, digits: 2 });
+
   const mx = (r) => r.generated;
-  lineChart('cLoss', [ds('policy', S[0], m.map(r => ({ x: mx(r), y: r.policy }))), ds('value', S[1], m.map(r => ({ x: mx(r), y: r.value }))), ds('moves left', S[2], m.map(r => ({ x: mx(r), y: r.moves_left })))], { digits: 3 });
-  lineChart('cSpeed', [ds('samples/s', S[0], m.map(r => ({ x: mx(r), y: r.samples_per_s })))], { digits: 0 });
+  lineChart('cLoss', [ds('policy', S[0], smoothPts(m.map(r => ({ x: mx(r), y: r.policy })))), ds('value', S[1], smoothPts(m.map(r => ({ x: mx(r), y: r.value })))), ds('moves left', S[2], smoothPts(m.map(r => ({ x: mx(r), y: r.moves_left }))))], { digits: 3 });
+  lineChart('cSpeed', [ds('samples/s', S[0], smoothPts(m.map(r => ({ x: mx(r), y: r.samples_per_s }))))], { digits: 0 });
   // Self-play speed from the cumulative counters in selfplay.csv.
   const gen = [];
   for (let i = 1; i < sp.length; i++) {
-    const r = sp[i], p = sp[i - 1], dt = r.time - p.time;
+    const r = sp[i], p = back(i), dt = r.time - p.time;
     if (dt > 0 && r.games > p.games) gen.push({ x: r.generated, y: (r.games - p.games) / dt });
   }
   lineChart('cGen', [ds('games/s', S[2], gen)], { digits: 2, min: 0 });
-  lineChart('cGpu', [ds('GPU %', S[1], m.filter(r => r.gpu_util !== '' && r.gpu_util != null).map(r => ({ x: mx(r), y: r.gpu_util })))], { digits: 0, min: 0, max: 100 });
+  lineChart('cGpu', [ds('GPU %', S[1], smoothPts(m.filter(r => r.gpu_util !== '' && r.gpu_util != null).map(r => ({ x: mx(r), y: +r.gpu_util }))))], { digits: 0, min: 0, max: 100 });
   lineChart('cWin', [ds('window', S[0], m.map(r => ({ x: mx(r), y: r.window }))), ds('buffer', S[2], m.map(r => ({ x: mx(r), y: r.buffer })))], { digits: 0 });
 
   // Blind metrics by checkpoint step -> generated via elo rows (same ckpt) or metrics nearest
@@ -494,6 +529,7 @@ async function loadDetail() {
   const d = await api('/api/run?name=' + encodeURIComponent(selected));
   if (d.error) { selected = null; $('detail').style.display = 'none'; $('empty').style.display = ''; return; }
   $('empty').style.display = 'none'; $('detail').style.display = '';
+  lastDetail = d;
   renderDetail(d);
 }
 
@@ -511,6 +547,13 @@ $('startBtn').onclick = async () => {
 };
 $('stopBtn').onclick = async () => { if (selected && confirm(`Stop ${selected}? It finishes the current step, saves a checkpoint and exits.`)) { await api('/api/stop', { name: selected }); loadDetail(); loadRuns(); } };
 $('resumeBtn').onclick = async () => { if (selected) { const r = await api('/api/resume', { name: selected }); if (r.error) alert(r.error); loadDetail(); loadRuns(); } };
+
+$('smooth').value = smoothN;
+$('smooth').oninput = () => {
+  smoothN = Math.max(1, parseInt($('smooth').value));
+  try { localStorage.setItem('smooth', String(smoothN)); } catch (e) {}
+  if (lastDetail) renderDetail(lastDetail);
+};
 
 $('themeBtn').onclick = () => {
   const dark = document.documentElement.getAttribute('data-theme') === 'dark' || (!document.documentElement.getAttribute('data-theme') && matchMedia('(prefers-color-scheme: dark)').matches);
