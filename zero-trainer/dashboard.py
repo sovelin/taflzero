@@ -152,6 +152,9 @@ def run_detail(run_dir: Path) -> dict:
     d["eval"] = read_jsonl(run_dir / "eval.jsonl")
     d["eval_progress"] = read_json(run_dir / "eval.progress.json")
     d["ladder"] = read_json(run_dir / "ladder.ratings.json")
+    d["rr"] = rr_state(run_dir)
+    d["nets"] = {"ckpts": [p.stem for p in sorted((run_dir / "ckpt").glob("step*.onnx"), reverse=True)],
+                 "anchors": list(anchor_nets(run_dir))}
     d["log"] = tail(run_dir / "log.txt")
     d["eval_log"] = tail(run_dir / "eval.log", 15)
     d["paused"] = (run_dir / "PAUSE").exists()
@@ -159,6 +162,26 @@ def run_detail(run_dir: Path) -> dict:
 
 
 # ─── starting runs ───────────────────────────────────────────────────────────
+
+# ─── round robin between chosen nets (round_robin.py) ───────────────────────
+
+def anchor_nets(run_dir: Path) -> dict[str, Path]:
+    """Nets a round robin can use besides the run's checkpoints: the best 11x11 net
+    and the run's anchors."""
+    out = {"copenhagen11x11": REPO / "copenhagen11x11.onnx"}
+    for a in (read_json(run_dir / "dashboard.eval.json") or {}).get("anchors", []):
+        p = (REPO / a).resolve()
+        if p.exists():
+            out.setdefault(p.stem, p)
+    return out
+
+
+def rr_state(run_dir: Path) -> dict | None:
+    st = read_json(run_dir / "rr" / "state.json")
+    if st and st.get("status") == "running" and not pid_alive(int(st.get("pid", 0))):
+        st["status"] = "stopped"
+    return st
+
 
 def load_presets() -> dict[str, dict]:
     out = {}
@@ -243,6 +266,48 @@ class Dashboard:
         (run_dir / "STOP").write_text("", encoding="utf-8")
         return {"ok": True}
 
+    def rr_start(self, name: str, nets: list[str], nodes: int, pairs: int, workers: int) -> dict:
+        run_dir = self.runs_dir / name
+        if not run_dir.is_dir():
+            return {"error": "no such run"}
+        st = rr_state(run_dir)
+        if st and st.get("status") == "running":
+            return {"error": "a round robin is already running"}
+        known = anchor_nets(run_dir)
+        paths = []
+        for n in dict.fromkeys(nets):
+            p = known.get(n) or run_dir / "ckpt" / f"{n}.onnx"
+            if not p.exists():
+                return {"error": f"no such net: {n}"}
+            paths.append(str(p))
+        if len(paths) < 2:
+            return {"error": "pick at least two nets"}
+        (run_dir / "rr").mkdir(exist_ok=True)
+        cmd = [sys.executable, str(HERE / "round_robin.py"), "--run-dir", str(run_dir), "--engine-bin", str(self.engine_bin),
+               "--nets", ",".join(paths), "--nodes", str(max(1, nodes)), "--pairs", str(max(1, pairs)),
+               "--workers", str(max(1, workers))]
+        return {"ok": True, "pid": spawn_detached(cmd, run_dir / "rr" / "log.txt", REPO)}
+
+    def rr_stop(self, name: str) -> dict:
+        """Stops at once: the STOP file for a clean exit, then the process tree."""
+        run_dir = self.runs_dir / name
+        st = rr_state(run_dir)
+        if not st:
+            return {"error": "no round robin"}
+        (run_dir / "rr").mkdir(exist_ok=True)
+        (run_dir / "rr" / "STOP").write_text("", encoding="utf-8")
+        pid = int(st.get("pid", 0))
+        if pid_alive(pid):
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True,
+                               creationflags=subprocess.CREATE_NO_WINDOW)
+            else:
+                os.kill(pid, 9)
+        st["status"] = "stopped"
+        st["current"] = []
+        (run_dir / "rr" / "state.json").write_text(json.dumps(st), encoding="utf-8")
+        return {"ok": True}
+
     def unpause(self, name: str) -> dict:
         (self.runs_dir / name / "PAUSE").unlink(missing_ok=True)
         return {"ok": True}
@@ -280,6 +345,9 @@ def make_handler(dash: Dashboard):
             elif url.path == "/api/runs":
                 with LOCK:
                     self._json({"runs": [run_status(p) for p in dash.run_dirs()]})
+            elif url.path == "/api/rr":
+                run_dir = dash.runs_dir / q.get("name", [""])[0]
+                self._json({"rr": rr_state(run_dir) if run_dir.is_dir() else None})
             elif url.path == "/api/run":
                 name = q.get("name", [""])[0]
                 run_dir = dash.runs_dir / name
@@ -306,6 +374,11 @@ def make_handler(dash: Dashboard):
                     res = dash.start(payload.get("name", ""), "", {}, resume=True)
                 elif url.path == "/api/stop":
                     res = dash.stop(payload.get("name", ""))
+                elif url.path == "/api/rr/start":
+                    res = dash.rr_start(payload.get("name", ""), list(payload.get("nets", [])), int(payload.get("nodes", 20)),
+                                        int(payload.get("pairs", 2)), int(payload.get("workers", 1)))
+                elif url.path == "/api/rr/stop":
+                    res = dash.rr_stop(payload.get("name", ""))
                 elif url.path == "/api/unpause":
                     res = dash.unpause(payload.get("name", ""))
                 else:

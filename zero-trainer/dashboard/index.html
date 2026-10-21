@@ -52,7 +52,20 @@ label { display: block; font-size: 12px; color: var(--ink-2); margin: 8px 0 2px;
 .live { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 16px; font-size: 13px; }
 .live .bar { height: 6px; background: var(--line); border-radius: 3px; margin: 8px 0 6px; overflow: hidden; }
 .live .bar > div { height: 100%; background: var(--s1); }
+.rr .bar { height: 6px; background: var(--line); border-radius: 3px; margin: 8px 0 6px; overflow: hidden; }
+.rr .bar > div { height: 100%; background: var(--s1); }
 .live .big { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.rr { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 16px; font-size: 13px; }
+.rr summary { cursor: pointer; font-weight: 600; }
+.rr .picker { display: flex; flex-wrap: wrap; gap: 4px 12px; max-height: 120px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; margin: 6px 0; }
+.rr .picker label { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.rr .picker input { width: auto; min-width: 0; margin: 0; padding: 0; }
+.rr input[type=number] { width: 70px; }
+.rr table { border-collapse: collapse; width: 100%; margin-top: 8px; font-variant-numeric: tabular-nums; }
+.rr th, .rr td { text-align: left; padding: 3px 8px; border-bottom: 1px solid var(--line); }
+.rr th { color: var(--ink-2); font-weight: 500; }
+.rr td.num, .rr th.num { text-align: right; }
+.rr .games { color: var(--ink-2); font-size: 12px; margin-top: 6px; line-height: 1.6; }
 .live .recent { color: var(--ink-3); font-family: ui-monospace, monospace; font-size: 12px; }
 .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 14px; }
 .chart { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
@@ -111,6 +124,17 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; }
       </div>
       <div class="tiles" id="tiles"></div>
       <div class="live" id="live" style="display:none"></div>
+      <details class="rr" id="rrBox">
+        <summary>Round robin <span id="rrHead" class="pill"></span></summary>
+        <div class="sub">pick nets, play every pairing at a small node budget; the table updates after every game</div>
+        <div><b>Nets</b> <button id="rrLatest">latest 4</button> <button id="rrSpread">spread 6</button> <button id="rrClear">clear</button></div>
+        <div class="picker" id="rrNets"></div>
+        <div class="row">nodes <input id="rrNodes" type="number" value="20" min="1"> pairs per pairing <input id="rrPairs" type="number" value="2" min="1">
+          games at once <input id="rrWorkers" type="number" value="1" min="1" max="4">
+          <span class="spacer"></span><button id="rrStart">Start</button><button id="rrStop" class="danger">Stop</button></div>
+        <div id="rrMsg" class="sub"></div>
+        <div id="rrLive"></div>
+      </details>
       <div class="charts">
         <div class="chart"><h3>Elo against anchors</h3><div class="sub">paired games at fixed nodes; shaded = 95% CI</div><canvas id="cElo"></canvas></div>
         <div class="chart" id="ladderBox" style="display:none"><h3>Checkpoint ladder</h3><div class="sub" id="ladderSub"></div><canvas id="cLadder"></canvas></div>
@@ -298,6 +322,8 @@ function renderDetail(d) {
     ['Last Elo', lastElo ? (lastElo.elo > 0 ? '+' : '') + fmt(lastElo.elo, 0) : '–', lastElo ? `vs ${lastElo.anchor} @${lastElo.ckpt.replace('step', '')}` : 'no matches yet'],
   ];
   renderLive(d.eval_progress, d.eval_alive, d.elo);
+  renderRrPicker(d.nets);
+  if (!rrTimer || !(d.rr && d.rr.status === 'running')) renderRr(d.rr);
   $('tiles').innerHTML = tiles.map(t => `<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="s">${t[2]}</div></div>`).join('');
 
   const S = SERIES();
@@ -390,6 +416,60 @@ function renderDetail(d) {
   $('evalLog').textContent = d.eval_log.join('\n') || '(no evaluator output yet)';
   $('cfg').textContent = JSON.stringify(d.config, null, 2);
 }
+
+// ─── round robin panel ───
+const rrSel = new Set(['copenhagen11x11']);
+let rrNetKey = '', rrTimer = null, rrCk = [];
+function renderRrPicker(nets) {
+  if (!nets) return;
+  rrCk = nets.ckpts;  // newest first
+  const all = [...nets.anchors, ...nets.ckpts];
+  const key = all.join(',');
+  if (key === rrNetKey) return;
+  rrNetKey = key;
+  $('rrNets').innerHTML = all.map(n => `<label><input type="checkbox" data-net="${n}" ${rrSel.has(n) ? 'checked' : ''}> ${n}</label>`).join('');
+  $('rrNets').querySelectorAll('input').forEach(i => i.onchange = () => { i.checked ? rrSel.add(i.dataset.net) : rrSel.delete(i.dataset.net); });
+}
+function setRrSel(names) {
+  rrSel.clear(); names.forEach(n => rrSel.add(n));
+  $('rrNets').querySelectorAll('input').forEach(i => i.checked = rrSel.has(i.dataset.net));
+}
+function rrCkpts() { return rrCk; }
+$('rrLatest').onclick = () => setRrSel(['copenhagen11x11', ...rrCkpts().slice(0, 4)]);
+$('rrSpread').onclick = () => { const c = rrCkpts(); const k = Math.min(6, c.length); setRrSel(['copenhagen11x11', ...Array.from({ length: k }, (_, i) => c[Math.round(i * (c.length - 1) / Math.max(1, k - 1))])]); };
+$('rrClear').onclick = () => setRrSel([]);
+const ago = t => { const s = Math.round(Date.now() / 1000 - t); return s < 60 ? s + ' s' : Math.round(s / 60) + ' min'; };
+function renderRr(st) {
+  const running = st && st.status === 'running';
+  $('rrStart').disabled = running; $('rrStop').disabled = !running;
+  $('rrHead').textContent = st ? `${st.status} · ${st.games_done}/${st.games_total} games` : 'not started';
+  if (running) $('rrBox').open = true;
+  if (!st) { $('rrLive').innerHTML = ''; return; }
+  const sgn = x => { if (x == null) return '–'; const r = Math.round(x); return (r > 0 ? '+' : '') + (r === 0 ? '0' : fmt(r, 0)); };
+  const rows = st.table.map((r, i) => `<tr><td>${i + 1}</td><td>${r.name}</td><td class="num">${sgn(r.elo)}</td><td class="num">${r.se ? '±' + fmt(1.96 * r.se, 0) : ''}</td>
+    <td class="num">${r.w}-${r.l}-${r.d}</td><td class="num">${r.score == null ? '–' : fmt(100 * r.score, 0) + '%'}</td><td class="num">${r.games}</td></tr>`).join('');
+  const cur = (st.current || []).map(c => `now: <b>${c.attackers}</b> (att) vs <b>${c.defenders}</b> (def), ${ago(c.since)}`).join('<br>');
+  const rec = (st.recent || []).slice().reverse().map(g => g.winner
+    ? `${g.winner === g.attackers ? '<b>' + g.attackers + '</b> (att) beat ' + g.defenders : '<b>' + g.defenders + '</b> (def) beat ' + g.attackers} · ${REASON[g.reason] || g.reason}, ${g.plies} plies`
+    : `${g.attackers} (att) – ${g.defenders} (def) drawn · ${REASON[g.reason] || g.reason}, ${g.plies} plies`).join('<br>');
+  $('rrLive').innerHTML = `<div class="bar"><div style="width:${st.games_total ? 100 * st.games_done / st.games_total : 0}%"></div></div>
+    <table><tr><th>#</th><th>net</th><th class="num">Elo</th><th class="num">95%</th><th class="num">W-L-D</th><th class="num">score</th><th class="num">games</th></tr>${rows}</table>
+    <div class="sub">${st.nodes} nodes, ${st.pairs} pair(s) per pairing; ${st.reference} = 0; started ${ago(st.started)} ago</div>
+    <div class="games">${cur}${cur && rec ? '<br>' : ''}${rec}</div>`;
+  clearTimeout(rrTimer);
+  if (running) rrTimer = setTimeout(pollRr, 2000);
+}
+async function pollRr() {
+  if (!selected) return;
+  const r = await api('/api/rr?name=' + encodeURIComponent(selected));
+  renderRr(r.rr);
+}
+$('rrStart').onclick = async () => {
+  const r = await api('/api/rr/start', { name: selected, nets: [...rrSel], nodes: Number($('rrNodes').value), pairs: Number($('rrPairs').value), workers: Number($('rrWorkers').value) });
+  $('rrMsg').textContent = r.error || `started (${rrSel.size} nets)`;
+  if (r.ok) setTimeout(pollRr, 1500);
+};
+$('rrStop').onclick = async () => { const r = await api('/api/rr/stop', { name: selected }); $('rrMsg').textContent = r.error || 'stopped'; pollRr(); };
 
 async function loadDetail() {
   if (!selected) return;
