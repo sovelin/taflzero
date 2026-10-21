@@ -45,7 +45,8 @@ def pid_alive(pid: int) -> bool:
         return False
     if os.name == "nt":
         try:
-            out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"], capture_output=True, text=True, timeout=10).stdout
+            out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"], capture_output=True, text=True, timeout=10,
+                                 creationflags=subprocess.CREATE_NO_WINDOW).stdout
         except Exception:
             return False
         return str(pid) in out
