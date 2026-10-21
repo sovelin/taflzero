@@ -508,6 +508,11 @@ def test_smoke_preset_and_worker_command(tmp_path: Path) -> None:
     assert str(tmp_path / "data" / "worker3.bin") in cmd
     assert str(tmp_path / "data" / "worker3.gamelog") in cmd
     assert str(tmp_path / "STOP") in cmd and str(tmp_path / "PAUSE") in cmd
+    assert "--search-batch" not in s  # the engine default needs no flag
+    args = parse_config(["--run-dir", str(tmp_path), "--engine-bin", "taflzero.exe", "--smoke",
+                         "--worker-threads", "2048", "--worker-search-batch", "1"])
+    s = " ".join(worker_command(args, tmp_path, 0, tmp_path / "latest.onnx"))
+    assert "--threads 2048" in s and "--search-batch 1" in s
 
 
 # ─── trainer loop end to end (no engine) ────────────────────────────────────

@@ -2,8 +2,8 @@ use taflzero::board::Board;
 use taflzero::board::position_export::BitPosition;
 use taflzero::board::rules::{RulesEnum, get_rules_enum_from_str};
 use taflzero::gen_train_data::{
-    DaemonConfig, DatagenConfig, DatagenSink, GameLimits, SearchConfig, gen_train_data,
-    gen_train_data_into,
+    DaemonConfig, DatagenConfig, DatagenSink, GameLimits, SearchConfig, WorkerOverrides,
+    gen_train_data, gen_train_data_into,
 };
 use taflzero::mcts::MCTSConfig;
 use taflzero::search::nn::{BatchServer, NeuralNet, fill_input};
@@ -29,6 +29,8 @@ struct CliArgs {
     daemon: DaemonConfig,
     /// Game threads per datagen process, all served by one batching net.
     threads: usize,
+    /// Leaves per net call inside one search (1 = no virtual loss).
+    search_batch: usize,
 }
 
 fn parse_args() -> CliArgs {
@@ -51,6 +53,7 @@ fn parse_args() -> CliArgs {
     let mut gumbel: Option<usize> = None;
     let mut daemon = DaemonConfig::default();
     let mut threads = 1usize;
+    let mut search_batch = MCTSConfig::default_train().batch_size;
     let mut args = std::env::args().skip(1);
 
     // `--flag <usize>` with a lower bound; exits with a usage error otherwise.
@@ -233,6 +236,7 @@ fn parse_args() -> CliArgs {
             "--pause-file" => daemon.pause_file = Some(path_arg(&mut args, "--pause-file")),
             "--worker-id" => daemon.worker_id = Some(usize_arg(&mut args, "--worker-id", 0)),
             "--threads" => threads = usize_arg(&mut args, "--threads", 1),
+            "--search-batch" => search_batch = usize_arg(&mut args, "--search-batch", 1),
             _ => {
                 eprintln!("Unknown arg: {arg}");
                 eprintln!(
@@ -267,6 +271,32 @@ fn parse_args() -> CliArgs {
         gumbel,
         daemon,
         threads,
+        search_batch,
+    }
+}
+
+/// `worker.overrides` next to the datagen file wins over the command line: it is how
+/// a worker under a trainer that cannot be restarted gets new settings.
+fn apply_worker_overrides(cli: &mut CliArgs) {
+    let Some(path) = &cli.datagen_path else {
+        return;
+    };
+    match WorkerOverrides::next_to(path) {
+        None => {}
+        Some((file, Err(err))) => {
+            eprintln!("{file}: {err}");
+            std::process::exit(2);
+        }
+        Some((file, Ok(o))) => {
+            if let Some(t) = o.threads {
+                println!("[datagen] {file}: threads {} -> {t}", cli.threads);
+                cli.threads = t;
+            }
+            if let Some(b) = o.search_batch {
+                println!("[datagen] {file}: search_batch {} -> {b}", cli.search_batch);
+                cli.search_batch = b;
+            }
+        }
     }
 }
 
@@ -293,7 +323,8 @@ fn load_net_for(path: &str, board_size: usize, batch_size: usize) -> NeuralNet {
 }
 
 fn main() {
-    let cli = parse_args();
+    let mut cli = parse_args();
+    apply_worker_overrides(&mut cli);
 
     if cli.datagen_path.is_none()
         && (cli.datagen_count.is_some()
@@ -353,7 +384,7 @@ fn main() {
 
     if let Some(path) = cli.datagen_path {
         let board_size = cli.variant.rules().board_size;
-        let search_batch = MCTSConfig::default_train().batch_size;
+        let search_batch = cli.search_batch;
 
         let log_path = cli
             .gamelog_path
@@ -380,6 +411,7 @@ fn main() {
                 cheap_nodes: cli.cheap_nodes,
                 full_prob: cli.full_prob,
                 gumbel: cli.gumbel,
+                search_batch,
             },
             limits: GameLimits {
                 max_plies: cli.max_plies,

@@ -187,8 +187,13 @@ impl BatchServer {
         // so the game threads keep being served by the old net meanwhile; the new
         // session is swapped in between batches.
         let mut pending_reload: Option<mpsc::Receiver<Result<Session, String>>> = None;
+        // A throughput line a minute: how much of the time the net sat waiting for
+        // requests (game threads selecting) against running them.
+        let mut report = Report::new();
         loop {
+            let t0 = Instant::now();
             let (taken, total) = self.take_batch();
+            let t1 = Instant::now();
             let padded = total.div_ceil(BUCKET) * BUCKET;
             let mut input = Vec::with_capacity(padded * sample_size);
             for r in &taken {
@@ -203,6 +208,7 @@ impl BatchServer {
             }
             self.batches.fetch_add(1, Ordering::Relaxed);
             self.served.fetch_add(total, Ordering::Relaxed);
+            report.add(total, t1 - t0, t1.elapsed());
 
             if let Some(rx) = &pending_reload {
                 match rx.try_recv() {
@@ -246,6 +252,49 @@ impl BatchServer {
                 }
             }
         }
+    }
+}
+
+struct Report {
+    since: Instant,
+    batches: usize,
+    samples: usize,
+    waiting: Duration,
+    running: Duration,
+}
+
+impl Report {
+    const EVERY: Duration = Duration::from_secs(60);
+
+    fn new() -> Self {
+        Self {
+            since: Instant::now(),
+            batches: 0,
+            samples: 0,
+            waiting: Duration::ZERO,
+            running: Duration::ZERO,
+        }
+    }
+
+    fn add(&mut self, samples: usize, waiting: Duration, running: Duration) {
+        self.batches += 1;
+        self.samples += samples;
+        self.waiting += waiting;
+        self.running += running;
+        let elapsed = self.since.elapsed();
+        if elapsed < Self::EVERY {
+            return;
+        }
+        let secs = elapsed.as_secs_f64();
+        println!(
+            "[NN] {:.1} batches/s, {:.0} samples/batch, {:.0} samples/s, run {:.1} ms/batch, waiting for requests {:.0}% of the time",
+            self.batches as f64 / secs,
+            self.samples as f64 / self.batches.max(1) as f64,
+            self.samples as f64 / secs,
+            self.running.as_secs_f64() * 1000.0 / self.batches.max(1) as f64,
+            self.waiting.as_secs_f64() / secs * 100.0
+        );
+        *self = Self::new();
     }
 }
 

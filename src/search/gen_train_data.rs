@@ -124,6 +124,8 @@ fn play_game(
     cheap_config.dirichlet_alpha = 0.0;
     cheap_config.dirichlet_epsilon = 0.0;
     cheap_config.forced_playouts_k = 0.0;
+    full_config.batch_size = search_cfg.search_batch.max(1);
+    cheap_config.batch_size = search_cfg.search_batch.max(1);
     if let Some(considered) = search_cfg.gumbel {
         let g = GumbelConfig {
             considered,
@@ -273,6 +275,9 @@ pub struct SearchConfig {
     /// Gumbel AlphaZero at the root with this many considered actions; `None` = PUCT
     /// with Dirichlet noise and forced playouts.
     pub gumbel: Option<usize>,
+    /// Leaves selected per net call inside one search. 1 = plain MCTS, no virtual
+    /// loss; the GPU batch then comes from many games (`--threads`) instead.
+    pub search_batch: usize,
 }
 
 impl Default for SearchConfig {
@@ -282,7 +287,52 @@ impl Default for SearchConfig {
             cheap_nodes: 100,
             full_prob: 1.0,
             gumbel: None,
+            search_batch: MCTSConfig::default_train().batch_size,
         }
+    }
+}
+
+/// Settings a running trainer cannot change on its workers' command line: a text
+/// file next to the data files (`worker.overrides`, `key=value` per line, `#`
+/// comments) read by the engine at start, so a worker restart is enough to try them.
+#[derive(Default, Debug, PartialEq)]
+pub struct WorkerOverrides {
+    pub threads: Option<usize>,
+    pub search_batch: Option<usize>,
+}
+
+impl WorkerOverrides {
+    pub const FILE: &'static str = "worker.overrides";
+
+    pub fn parse(text: &str) -> Result<Self, String> {
+        let mut out = Self::default();
+        for (i, line) in text.lines().enumerate() {
+            let line = line.split('#').next().unwrap_or("").trim();
+            if line.is_empty() {
+                continue;
+            }
+            let (key, value) = line
+                .split_once('=')
+                .ok_or_else(|| format!("line {}: expected key=value, got '{line}'", i + 1))?;
+            let value: usize = value
+                .trim()
+                .parse()
+                .map_err(|_| format!("line {}: '{}' is not a number", i + 1, value.trim()))?;
+            match key.trim() {
+                "threads" => out.threads = Some(value.max(1)),
+                "search_batch" => out.search_batch = Some(value.max(1)),
+                other => return Err(format!("line {}: unknown key '{other}'", i + 1)),
+            }
+        }
+        Ok(out)
+    }
+
+    /// The overrides file next to a datagen output file, if there is one.
+    pub fn next_to(datagen_path: &str) -> Option<(String, Result<Self, String>)> {
+        let dir = std::path::Path::new(datagen_path).parent()?;
+        let file = dir.join(Self::FILE);
+        let text = std::fs::read_to_string(&file).ok()?;
+        Some((file.to_string_lossy().into_owned(), Self::parse(&text)))
     }
 }
 
@@ -659,6 +709,7 @@ mod tests {
             cheap_nodes: 2,
             full_prob: 1.0,
             gumbel: None,
+            ..SearchConfig::default()
         };
         let (res, _, result, term) =
             play_game(&mut nn, &mut search_data, board, &search, &limits, &mut rng);
@@ -743,6 +794,7 @@ mod tests {
                 cheap_nodes: 2,
                 full_prob: 1.0,
                 gumbel: None,
+                ..SearchConfig::default()
             },
             limits: GameLimits {
                 max_plies: 5,
@@ -840,6 +892,8 @@ mod tests {
                 cheap_nodes: 2,
                 full_prob: 1.0,
                 gumbel: None,
+                // One leaf per net call: the batch is pooled across the threads.
+                search_batch: 1,
             },
             limits: GameLimits {
                 max_plies: 6,
@@ -871,6 +925,55 @@ mod tests {
         let (batches, served) = server.stats();
         assert!(served >= samples as usize);
         assert!(batches > 0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn worker_overrides_parse_key_values_and_reject_junk() {
+        let o = WorkerOverrides::parse(
+            "# a comment
+threads = 2048
+search_batch=1 # one leaf
+
+",
+        )
+        .unwrap();
+        assert_eq!(
+            o,
+            WorkerOverrides {
+                threads: Some(2048),
+                search_batch: Some(1)
+            }
+        );
+        assert_eq!(
+            WorkerOverrides::parse("").unwrap(),
+            WorkerOverrides::default()
+        );
+        assert!(WorkerOverrides::parse("threads: 4").is_err());
+        assert!(WorkerOverrides::parse("threads=four").is_err());
+        assert!(WorkerOverrides::parse("nodes=4").is_err());
+        // Zero would stop a worker dead; it is read as one.
+        assert_eq!(
+            WorkerOverrides::parse("threads=0").unwrap().threads,
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn worker_overrides_are_read_next_to_the_data_file() {
+        let dir = std::env::temp_dir().join(format!("taflzero-ovr-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let data = dir.join("worker0.bin");
+        assert!(WorkerOverrides::next_to(data.to_str().unwrap()).is_none());
+        std::fs::write(
+            dir.join(WorkerOverrides::FILE),
+            "search_batch=1
+",
+        )
+        .unwrap();
+        let (file, parsed) = WorkerOverrides::next_to(data.to_str().unwrap()).unwrap();
+        assert!(file.ends_with(WorkerOverrides::FILE));
+        assert_eq!(parsed.unwrap().search_batch, Some(1));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
