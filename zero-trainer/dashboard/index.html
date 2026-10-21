@@ -70,6 +70,7 @@ label { display: block; font-size: 12px; color: var(--ink-2); margin: 8px 0 2px;
 .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 14px; }
 .chart { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
 .smooth input[type=range] { width: 220px; }
+.chart h3 select.endpick { width: auto; margin-left: 8px; font-size: 12px; padding: 1px 4px; }
 .chart h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; }
 .chart .sub { color: var(--ink-3); font-size: 12px; margin-bottom: 6px; }
 .chart canvas { width: 100% !important; height: 240px !important; }
@@ -142,7 +143,7 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; }
         <div class="chart" id="ladderBox" style="display:none"><h3>Checkpoint ladder</h3><div class="sub" id="ladderSub"></div><canvas id="cLadder"></canvas></div>
         <div class="chart"><h3>Self-play outcomes</h3><div class="sub">share of games, per logging window</div><canvas id="cOut"></canvas></div>
         <div class="chart"><h3>How games end</h3><div class="sub">share of games by final position, per logging window; real attacking progress = king captured, not repetition</div><canvas id="cEnd"></canvas></div>
-        <div class="chart"><h3>Fort wins in self-play</h3><div class="sub">games the defenders won by an exit fort, per logging window</div><canvas id="cFortSp"></canvas></div>
+        <div class="chart"><h3>One ending in detail <select id="endPick" class="endpick"></select></h3><div class="sub">the chosen ending on its own scale: % of all games and % of that side's wins, per logging window</div><canvas id="cFortSp"></canvas></div>
         <div class="chart"><h3>Average game length</h3><div class="sub">plies</div><canvas id="cLen"></canvas></div>
         <div class="chart"><h3>Losses</h3><div class="sub">policy and value, per 100 steps</div><canvas id="cLoss"></canvas></div>
         <div class="chart"><h3>Blind-spot metrics</h3><div class="sub">attacker winrate the bare net gives: lost positions should fall, won positions should rise</div><canvas id="cBlind"></canvas></div>
@@ -213,6 +214,19 @@ async function loadRuns() {
 // Smoothing slider: the self-play charts pool `smoothN` logging windows (shares from the
 // cumulative counters over the whole span), the trainer charts take a trailing mean of as many points.
 let smoothN = 1, lastDetail = null;
+// Endings for the 'one ending in detail' chart: [label, selfplay.csv columns, wins column of that side].
+const END_PICKS = [
+  ['exit fort', ['fort'], 'def_wins'],
+  ['king in corner', ['def_corner', 'edge'], 'def_wins'],
+  ['king captured', ['king_captured'], 'atk_wins'],
+  ['defenders surrounded', ['surrounded'], 'atk_wins'],
+  ['defenders without moves', ['no_moves_atk'], 'atk_wins'],
+  ['repetition (attackers win)', ['threefold'], 'atk_wins'],
+  ['attackers without moves', ['no_moves_def'], 'def_wins'],
+  ['undecided (limits)', ['max_plies', 'no_capture'], null],
+];
+let endPick = 'exit fort';
+try { endPick = localStorage.getItem('endPick') || endPick; } catch (e) {}
 try { smoothN = Math.max(1, parseInt(localStorage.getItem('smooth') || '1')); } catch (e) {}
 function smoothPts(pts) {
   if (smoothN <= 1) return pts;
@@ -402,7 +416,8 @@ function renderDetail(d) {
   const ENDS = [
     ['king captured', S[1], ['king_captured']],
     ['repetition (attackers win)', S[7], ['threefold']],
-    ['defenders immobilised', S[4], ['no_moves_atk', 'surrounded']],
+    ['defenders surrounded', S[4], ['surrounded']],
+    ['defenders without moves', S[5], ['no_moves_atk']],
     ['king in corner', S[0], ['def_corner', 'edge']],
     ['exit fort', S[2], ['fort']],
     ['attackers immobilised', S[6], ['no_moves_def']],
@@ -423,16 +438,20 @@ function renderDetail(d) {
   }
   lineChart('cEnd', ENDS.map(([label, color], k) => ds(label, color, endSeries[k])), { yLabel: '% of games', min: 0, max: 100 });
 
-  // Exit forts on their own scale: a few percent is invisible on the 0-100 chart above.
-  const fortAll = [], fortDef = [];
+  // One ending on its own scale: a few percent is invisible on the 0-100 chart above.
+  const pick = END_PICKS.find(e => e[0] === endPick) || END_PICKS[0];
+  const [, cols, side] = pick;
+  const allPts = [], sidePts = [];
   for (let i = 1; i < sp.length; i++) {
     const r = sp[i], p = back(i);
-    const g = r.games - p.games, f = (r.fort || 0) - (p.fort || 0), dw = r.def_wins - p.def_wins;
-    if (g <= 0) continue;
-    fortAll.push({ x: r.generated, y: 100 * f / g });
-    if (dw > 0) fortDef.push({ x: r.generated, y: 100 * f / dw });
+    const g = r.games - p.games; if (g <= 0) continue;
+    const n = cols.reduce((a, c) => a + ((r[c] || 0) - (p[c] || 0)), 0);
+    allPts.push({ x: r.generated, y: 100 * n / g });
+    const wins = side ? r[side] - p[side] : 0;
+    if (wins > 0) sidePts.push({ x: r.generated, y: 100 * n / wins });
   }
-  lineChart('cFortSp', [ds('% of all games', S[2], fortAll), ds('% of defender wins', S[0], fortDef)], { yLabel: '%', min: 0, digits: 2 });
+  const sideName = side === 'def_wins' ? '% of defender wins' : '% of attacker wins';
+  lineChart('cFortSp', [ds('% of all games', S[2], allPts)].concat(side ? [ds(sideName, S[0], sidePts)] : []), { yLabel: '%', min: 0, digits: 2 });
 
   const mx = (r) => r.generated;
   lineChart('cLoss', [ds('policy', S[0], smoothPts(m.map(r => ({ x: mx(r), y: r.policy })))), ds('value', S[1], smoothPts(m.map(r => ({ x: mx(r), y: r.value })))), ds('moves left', S[2], smoothPts(m.map(r => ({ x: mx(r), y: r.moves_left }))))], { digits: 3 });
@@ -553,6 +572,13 @@ $('startBtn').onclick = async () => {
 $('stopBtn').onclick = async () => { if (selected && confirm(`Stop ${selected}? It finishes the current step, saves a checkpoint and exits.`)) { await api('/api/stop', { name: selected }); loadDetail(); loadRuns(); } };
 $('resumeBtn').onclick = async () => { if (selected) { const r = await api('/api/resume', { name: selected }); if (r.error) alert(r.error); loadDetail(); loadRuns(); } };
 
+$('endPick').innerHTML = END_PICKS.map(e => `<option>${e[0]}</option>`).join('');
+$('endPick').value = endPick;
+$('endPick').onchange = () => {
+  endPick = $('endPick').value;
+  try { localStorage.setItem('endPick', endPick); } catch (e) {}
+  if (lastDetail) renderDetail(lastDetail);
+};
 $('smooth').value = smoothN;
 $('smooth').oninput = () => {
   smoothN = Math.max(1, parseInt($('smooth').value));
