@@ -60,7 +60,10 @@ def spawn_detached(cmd: list[str], log_path: Path, cwd: Path) -> int:
     log = open(log_path, "a", encoding="utf-8")
     kw: dict = {}
     if os.name == "nt":
-        kw["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | getattr(subprocess, "DETACHED_PROCESS", 0)
+        # A hidden console rather than none (DETACHED_PROCESS): every console program the
+        # trainer or a side-car starts (engine, nvidia-smi, match.py) inherits it instead of
+        # opening a window of its own.
+        kw["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
     else:
         kw["start_new_session"] = True
     p = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, cwd=str(cwd), **kw)

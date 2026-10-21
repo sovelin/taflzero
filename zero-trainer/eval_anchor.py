@@ -25,6 +25,8 @@ import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+# Console children of a windowless parent would each open a console window on Windows.
+NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
 TOOLS = HERE / "tools"
 
 
@@ -108,7 +110,7 @@ def run_match(args, ckpt: Path, anchor: Path) -> dict:
            "--opening-moves", str(args.opening_moves), "--max-plies", str(args.max_plies),
            "--variant", args.variant, "--json", str(out), "--quiet",
            "--progress", str(run_dir / "eval.progress.json")]
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=NO_WINDOW)
     result = json.loads(out.read_text(encoding="utf-8"))
     out.unlink(missing_ok=True)
     return result
@@ -120,7 +122,7 @@ def run_blind(args, ckpt: Path, playout: bool, out_path: Path) -> None:
            "--label", ckpt.stem]
     if playout:
         cmd.append("--playout")
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=NO_WINDOW)
 
 
 def main() -> int:

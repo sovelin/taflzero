@@ -28,7 +28,7 @@ import sys
 import time
 from pathlib import Path
 
-from eval_anchor import generated_at, step_of, stopped_for_good
+from eval_anchor import NO_WINDOW, generated_at, step_of, stopped_for_good
 
 HERE = Path(__file__).resolve().parent
 TOOLS = HERE / "tools"
@@ -203,7 +203,7 @@ def main() -> int:
                "--progress", str(progress_path), "--games-log", str(run_dir / "ladder.games.jsonl")]
         t0 = time.time()
         try:
-            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=NO_WINDOW)
             r = json.loads(out.read_text(encoding="utf-8"))
         except (subprocess.CalledProcessError, OSError, ValueError) as e:
             say(f"match failed for {a} vs {b}: {e}")

@@ -19,6 +19,7 @@ class Engine:
             [os.path.abspath(exe), "--net", os.path.abspath(net)],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
             text=True, bufsize=1, env=env,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
         self.lines: queue.Queue[str | None] = queue.Queue()
         threading.Thread(target=self._pump, daemon=True).start()

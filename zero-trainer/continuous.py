@@ -250,12 +250,16 @@ class Log:
         self._fh.close()
 
 
+# Console children of a windowless parent would each open a console window on Windows.
+NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+
+
 def gpu_stats() -> tuple[str, str]:
     """(utilisation %, memory used GB) of GPU 0 from nvidia-smi; blanks if unavailable."""
     try:
         out = subprocess.run(
             ["nvidia-smi", "--query-gpu=utilization.gpu,memory.used", "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True, text=True, timeout=5, creationflags=NO_WINDOW,
         ).stdout.strip().splitlines()[0]
         util, mem = (x.strip() for x in out.split(","))
         return util, f"{float(mem) / 1024:.2f}"
@@ -771,7 +775,7 @@ class ContinuousRun:
         logs: dict[int, object] = {}
         crashes: deque[float] = deque()
         env = dict(os.environ, TAFLZERO_ORT_THREADS="1", TAFLZERO_MLH_ALPHA=str(a.mlh_alpha))
-        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
+        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP | NO_WINDOW if os.name == "nt" else 0
 
         def spawn(i: int) -> None:
             if i not in logs:
