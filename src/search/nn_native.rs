@@ -288,13 +288,37 @@ impl NeuralNet {
 /// One forward pass: `input_data` holds `n` samples and is padded with zeros to
 /// `padded` samples (ORT plans execution per input shape, so callers keep to a few
 /// shapes). Returns `n` outputs.
-pub(super) fn run_inference(
+/// One net call's outputs for `n` samples, still flat: `policy` is `n * policy_size`
+/// logits, `value` and `moves_left` one number per sample.
+pub(super) struct FlatOutputs {
+    pub policy: Vec<f32>,
+    pub value: Vec<f32>,
+    pub moves_left: Option<Vec<f32>>,
+    pub policy_size: usize,
+}
+
+impl FlatOutputs {
+    /// Samples `from..to` as per-sample outputs.
+    pub fn slice(&self, from: usize, to: usize) -> Vec<NnOutput> {
+        (from..to)
+            .map(|i| NnOutput {
+                policy: self.policy[i * self.policy_size..(i + 1) * self.policy_size].to_vec(),
+                value: self.value[i],
+                moves_left: self.moves_left.as_ref().map(|d| d[i]),
+            })
+            .collect()
+    }
+}
+
+/// Runs the net on `padded` rows of which the first `n` are real; the outputs come
+/// back as flat vectors (one memcpy each), to be sliced per sample by the caller.
+pub(super) fn run_inference_flat(
     session: &mut Session,
     mut input_data: Vec<f32>,
     n: usize,
     padded: usize,
     board_size: usize,
-) -> Vec<NnOutput> {
+) -> FlatOutputs {
     input_data.resize(padded * get_sample_size(board_size), 0.0);
 
     let input_tensor = Array::from_shape_vec(
@@ -312,29 +336,32 @@ pub(super) fn run_inference(
     // Optional third output: a moves-left head. Nets exported without it
     // yield only 2 outputs, so read it only when present (backward compatible
     // with every historical net).
-    let moves_left_data: Option<Vec<f32>> = if outputs.len() > 2 {
+    let moves_left = if outputs.len() > 2 {
         outputs[2]
             .try_extract_tensor::<f32>()
             .ok()
-            .map(|(_, d)| d.to_vec())
+            .map(|(_, d)| d[..n].to_vec())
     } else {
         None
     };
 
     let policy_size = get_policy_size(board_size);
-    let mut results = Vec::with_capacity(n);
-    for i in 0..n {
-        let policy = policy_data[i * policy_size..(i + 1) * policy_size].to_vec();
-        let value = value_data[i];
-        let moves_left = moves_left_data.as_ref().map(|d| d[i]);
-        results.push(NnOutput {
-            policy,
-            value,
-            moves_left,
-        });
+    FlatOutputs {
+        policy: policy_data[..n * policy_size].to_vec(),
+        value: value_data[..n].to_vec(),
+        moves_left,
+        policy_size,
     }
+}
 
-    results
+pub(super) fn run_inference(
+    session: &mut Session,
+    input_data: Vec<f32>,
+    n: usize,
+    padded: usize,
+    board_size: usize,
+) -> Vec<NnOutput> {
+    run_inference_flat(session, input_data, n, padded, board_size).slice(0, n)
 }
 
 #[cfg(test)]

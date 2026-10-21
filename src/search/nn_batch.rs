@@ -9,9 +9,14 @@
 //! Numerically this is the same computation: every sample is an independent row
 //! of the batch, so a position evaluated here gets the same policy/value it gets
 //! from a private session (within kernel-selection rounding for a different shape).
+//!
+//! Handing the answers back is not free: with thousands of game threads, one
+//! batch means thousands of per-sample copies and thread wake-ups, about as long
+//! as the net call itself. A separate thread does that, so the serving thread runs
+//! the next batch on the GPU while the previous batch's answers go out.
 
 use super::nn_common::NnOutput;
-use super::nn_native::{NeuralNet, run_inference};
+use super::nn_native::{FlatOutputs, NeuralNet, run_inference, run_inference_flat};
 use crate::get_sample_size;
 use ort::session::Session;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -187,6 +192,23 @@ impl BatchServer {
         // so the game threads keep being served by the old net meanwhile; the new
         // session is swapped in between batches.
         let mut pending_reload: Option<mpsc::Receiver<Result<Session, String>>> = None;
+        // Answers go out on their own thread (see the module doc). The channel is
+        // unbounded but self-limiting: a batch's threads cannot ask again before
+        // they have been answered.
+        let (reply_tx, reply_rx) = mpsc::channel::<(Vec<Request>, FlatOutputs)>();
+        std::thread::Builder::new()
+            .name("nn-reply".into())
+            .spawn(move || {
+                for (taken, flat) in reply_rx {
+                    let mut at = 0;
+                    for r in taken {
+                        // A client that gave up (thread ended) just drops its receiver.
+                        let _ = r.reply.send(flat.slice(at, at + r.n));
+                        at += r.n;
+                    }
+                }
+            })
+            .expect("cannot start nn reply thread");
         // A throughput line a minute: how much of the time the net sat waiting for
         // requests (game threads selecting) against running them.
         let mut report = Report::new();
@@ -199,16 +221,13 @@ impl BatchServer {
             for r in &taken {
                 input.extend_from_slice(&r.input);
             }
-            let outputs = run_inference(&mut session, input, total, padded, self.board_size);
-            let mut outputs = outputs.into_iter();
-            for r in taken {
-                let out: Vec<NnOutput> = outputs.by_ref().take(r.n).collect();
-                // A client that gave up (thread ended) just drops its receiver.
-                let _ = r.reply.send(out);
-            }
+            let flat = run_inference_flat(&mut session, input, total, padded, self.board_size);
             self.batches.fetch_add(1, Ordering::Relaxed);
             self.served.fetch_add(total, Ordering::Relaxed);
             report.add(total, t1 - t0, t1.elapsed());
+            reply_tx
+                .send((taken, flat))
+                .expect("nn reply thread is gone");
 
             if let Some(rx) = &pending_reload {
                 match rx.try_recv() {
