@@ -2,7 +2,7 @@ use super::nn_common::{NUM_PLANES, NnOutput, build_input_data};
 use crate::board::Precomputed;
 use crate::board::position_export::BitPosition;
 use crate::{get_policy_size, get_sample_size};
-use ndarray::{Array, IxDyn};
+use ndarray::{Array, ArrayView, IxDyn};
 use ort::environment::Environment;
 #[cfg(feature = "cuda")]
 use ort::ep::CUDA;
@@ -11,7 +11,7 @@ use ort::ep::DirectML;
 #[cfg(feature = "openvino")]
 use ort::ep::OpenVINO;
 use ort::session::Session;
-use ort::value::{Value, ValueType};
+use ort::value::{TensorRef, Value, ValueType};
 use std::sync::{Arc, OnceLock};
 
 /// The process-wide ORT environment (ort 2.0 rc.14+ builds sessions from one).
@@ -289,7 +289,9 @@ impl NeuralNet {
 /// `padded` samples (ORT plans execution per input shape, so callers keep to a few
 /// shapes). Returns `n` outputs.
 /// One net call's outputs for `n` samples, still flat: `policy` is `n * policy_size`
-/// logits, `value` and `moves_left` one number per sample.
+/// logits, `value` and `moves_left` one number per sample. Reused across calls
+/// (`run_inference_flat` takes one back) so the batch server never allocates them anew.
+#[derive(Default)]
 pub(super) struct FlatOutputs {
     pub policy: Vec<f32>,
     pub value: Vec<f32>,
@@ -310,58 +312,71 @@ impl FlatOutputs {
     }
 }
 
-/// Runs the net on `padded` rows of which the first `n` are real; the outputs come
-/// back as flat vectors (one memcpy each), to be sliced per sample by the caller.
+/// Runs the net on the first `padded * sample_size` floats of `input` (resized up with
+/// zeros if shorter), of which the first `n` rows are real. The input is only borrowed
+/// and `out`'s vectors are refilled in place, so a caller that keeps both allocates
+/// nothing per call.
 pub(super) fn run_inference_flat(
     session: &mut Session,
-    mut input_data: Vec<f32>,
+    input: &mut Vec<f32>,
     n: usize,
     padded: usize,
     board_size: usize,
+    mut out: FlatOutputs,
 ) -> FlatOutputs {
-    input_data.resize(padded * get_sample_size(board_size), 0.0);
+    let sample_size = get_sample_size(board_size);
+    input.resize(padded * sample_size, 0.0);
 
-    let input_tensor = Array::from_shape_vec(
+    let view = ArrayView::from_shape(
         IxDyn(&[padded, NUM_PLANES, board_size, board_size]),
-        input_data,
+        &input[..],
     )
     .unwrap();
-
-    let input_value = Value::from_array(input_tensor).unwrap();
+    let input_value = TensorRef::from_array_view(view).unwrap();
     let outputs = session.run(ort::inputs![input_value]).unwrap();
 
     let (_, policy_data) = outputs[0].try_extract_tensor::<f32>().unwrap();
     let (_, value_data) = outputs[1].try_extract_tensor::<f32>().unwrap();
 
+    let policy_size = get_policy_size(board_size);
+    out.policy.clear();
+    out.policy
+        .extend_from_slice(&policy_data[..n * policy_size]);
+    out.value.clear();
+    out.value.extend_from_slice(&value_data[..n]);
     // Optional third output: a moves-left head. Nets exported without it
     // yield only 2 outputs, so read it only when present (backward compatible
     // with every historical net).
-    let moves_left = if outputs.len() > 2 {
-        outputs[2]
-            .try_extract_tensor::<f32>()
-            .ok()
-            .map(|(_, d)| d[..n].to_vec())
+    out.moves_left = if outputs.len() > 2 {
+        outputs[2].try_extract_tensor::<f32>().ok().map(|(_, d)| {
+            let mut ml = out.moves_left.take().unwrap_or_default();
+            ml.clear();
+            ml.extend_from_slice(&d[..n]);
+            ml
+        })
     } else {
         None
     };
-
-    let policy_size = get_policy_size(board_size);
-    FlatOutputs {
-        policy: policy_data[..n * policy_size].to_vec(),
-        value: value_data[..n].to_vec(),
-        moves_left,
-        policy_size,
-    }
+    out.policy_size = policy_size;
+    out
 }
 
 pub(super) fn run_inference(
     session: &mut Session,
-    input_data: Vec<f32>,
+    mut input_data: Vec<f32>,
     n: usize,
     padded: usize,
     board_size: usize,
 ) -> Vec<NnOutput> {
-    run_inference_flat(session, input_data, n, padded, board_size).slice(0, n)
+    run_inference_flat(
+        session,
+        &mut input_data,
+        n,
+        padded,
+        board_size,
+        FlatOutputs::default(),
+    )
+    .slice(0, n)
 }
 
 #[cfg(test)]

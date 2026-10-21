@@ -185,7 +185,6 @@ impl BatchServer {
     }
 
     fn serve(&self, mut session: Session, path: String, net_watch: bool) {
-        let sample_size = get_sample_size(self.board_size);
         let mut loaded_mtime = file_mtime(&path);
         let mut last_check = Instant::now();
         // A reload (session build + warm-up, about a second) runs on a helper thread
@@ -195,7 +194,10 @@ impl BatchServer {
         // Answers go out on their own thread (see the module doc). The channel is
         // unbounded but self-limiting: a batch's threads cannot ask again before
         // they have been answered.
+        // The flat output buffers come back on `spare` once handed out, and the
+        // input buffer lives across batches: ~25 MB a batch, allocated once.
         let (reply_tx, reply_rx) = mpsc::channel::<(Vec<Request>, FlatOutputs)>();
+        let (spare_tx, spare_rx) = mpsc::channel::<FlatOutputs>();
         std::thread::Builder::new()
             .name("nn-reply".into())
             .spawn(move || {
@@ -206,9 +208,11 @@ impl BatchServer {
                         let _ = r.reply.send(flat.slice(at, at + r.n));
                         at += r.n;
                     }
+                    let _ = spare_tx.send(flat);
                 }
             })
             .expect("cannot start nn reply thread");
+        let mut input: Vec<f32> = Vec::new();
         // A throughput line a minute: how much of the time the net sat waiting for
         // requests (game threads selecting) against running them.
         let mut report = Report::new();
@@ -217,11 +221,19 @@ impl BatchServer {
             let (taken, total) = self.take_batch();
             let t1 = Instant::now();
             let padded = total.div_ceil(BUCKET) * BUCKET;
-            let mut input = Vec::with_capacity(padded * sample_size);
+            input.clear();
             for r in &taken {
                 input.extend_from_slice(&r.input);
             }
-            let flat = run_inference_flat(&mut session, input, total, padded, self.board_size);
+            let spare = spare_rx.try_recv().unwrap_or_default();
+            let flat = run_inference_flat(
+                &mut session,
+                &mut input,
+                total,
+                padded,
+                self.board_size,
+                spare,
+            );
             self.batches.fetch_add(1, Ordering::Relaxed);
             self.served.fetch_add(total, Ordering::Relaxed);
             report.add(total, t1 - t0, t1.elapsed());

@@ -44,6 +44,10 @@ openvino = [ "ort/openvino" ]
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 ort = { version = "=2.0.0-rc.15" }
 ndarray = "0.17"
+# The datagen worker allocates ~45 MB of short-lived buffers per net batch from
+# thousands of threads; the system heap fragments and page-faults ~250k times a
+# second under that, and the process slows down by half within two hours.
+mimalloc = { version = "0.1", default-features = false }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.4", features = ["wasm_js"] }
