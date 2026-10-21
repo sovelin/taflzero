@@ -1,4 +1,6 @@
 pub mod gen_train_data;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod match_play;
 pub mod mcts;
 pub mod nn;
 pub mod search_data;

@@ -5,6 +5,7 @@ use taflzero::gen_train_data::{
     DaemonConfig, DatagenConfig, DatagenSink, GameLimits, SearchConfig, WorkerOverrides,
     gen_train_data, gen_train_data_into,
 };
+use taflzero::match_play::{MatchConfig, play_match};
 use taflzero::mcts::MCTSConfig;
 use taflzero::search::nn::{BatchServer, NeuralNet, fill_input};
 use taflzero::{ConsoleClient, UciRunState, get_sample_size};
@@ -31,6 +32,14 @@ struct CliArgs {
     threads: usize,
     /// Leaves per net call inside one search (1 = no virtual loss).
     search_batch: usize,
+    /// `--match`: paired match `--a` vs `--b` instead of UCI (see match_play).
+    match_mode: bool,
+    match_a: String,
+    match_b: String,
+    pairs: usize,
+    nodes: u64,
+    opening_moves: usize,
+    seed: Option<u64>,
 }
 
 fn parse_args() -> CliArgs {
@@ -54,6 +63,13 @@ fn parse_args() -> CliArgs {
     let mut daemon = DaemonConfig::default();
     let mut threads = 1usize;
     let mut search_batch = MCTSConfig::default_train().batch_size;
+    let mut match_mode = false;
+    let mut match_a = String::new();
+    let mut match_b = String::new();
+    let mut pairs = 50usize;
+    let mut nodes = 400u64;
+    let mut opening_moves = 16usize;
+    let mut seed: Option<u64> = None;
     let mut args = std::env::args().skip(1);
 
     // `--flag <usize>` with a lower bound; exits with a usage error otherwise.
@@ -237,6 +253,13 @@ fn parse_args() -> CliArgs {
             "--worker-id" => daemon.worker_id = Some(usize_arg(&mut args, "--worker-id", 0)),
             "--threads" => threads = usize_arg(&mut args, "--threads", 1),
             "--search-batch" => search_batch = usize_arg(&mut args, "--search-batch", 1),
+            "--match" => match_mode = true,
+            "--a" => match_a = path_arg(&mut args, "--a"),
+            "--b" => match_b = path_arg(&mut args, "--b"),
+            "--pairs" => pairs = usize_arg(&mut args, "--pairs", 1),
+            "--nodes" => nodes = usize_arg(&mut args, "--nodes", 1) as u64,
+            "--opening-moves" => opening_moves = usize_arg(&mut args, "--opening-moves", 0),
+            "--seed" => seed = Some(usize_arg(&mut args, "--seed", 0) as u64),
             _ => {
                 eprintln!("Unknown arg: {arg}");
                 eprintln!(
@@ -272,7 +295,72 @@ fn parse_args() -> CliArgs {
         daemon,
         threads,
         search_batch,
+        match_mode,
+        match_a,
+        match_b,
+        pairs,
+        nodes,
+        opening_moves,
+        seed,
     }
+}
+
+/// `--match`: one line per finished game, `game <pair> <a_attacks 0|1> <winner> <reason>
+/// <plies>`, then `done`. tools/match.py tallies them.
+fn run_match(cli: &CliArgs) {
+    if cli.match_a.is_empty() || cli.match_b.is_empty() {
+        eprintln!("--match needs --a and --b");
+        std::process::exit(2);
+    }
+    let board_size = cli.variant.rules().board_size;
+    let games = cli.pairs * 2;
+    let threads = cli.threads.clamp(1, games);
+    let server = |path: &str| {
+        // One leaf per game per call: the batch is the games on this net's move.
+        match BatchServer::start(
+            path,
+            board_size,
+            threads,
+            std::time::Duration::from_millis(1),
+            false,
+        ) {
+            Ok(s) if s.board_size() == board_size => s,
+            Ok(s) => {
+                eprintln!(
+                    "neural net '{path}' is built for a {0}x{0} board but this run needs {board_size}x{board_size}",
+                    s.board_size()
+                );
+                std::process::exit(2);
+            }
+            Err(err) => {
+                eprintln!("{err}");
+                std::process::exit(2);
+            }
+        }
+    };
+    let a = server(&cli.match_a);
+    let b = server(&cli.match_b);
+    let cfg = MatchConfig {
+        pairs: cli.pairs,
+        nodes: cli.nodes,
+        opening_moves: cli.opening_moves,
+        max_plies: cli.max_plies,
+        threads,
+        variant: cli.variant,
+        seed: cli.seed,
+    };
+    let out = std::sync::Mutex::new(std::io::stdout());
+    play_match(&a, &b, &cfg, &|g| {
+        use std::io::Write;
+        let mut o = out.lock().unwrap();
+        let _ = writeln!(
+            o,
+            "game {} {} {} {} {}",
+            g.pair, g.a_attacks as u8, g.winner, g.reason, g.plies
+        );
+        let _ = o.flush();
+    });
+    println!("done");
 }
 
 /// `worker.overrides` next to the datagen file wins over the command line: it is how
@@ -325,6 +413,10 @@ fn load_net_for(path: &str, board_size: usize, batch_size: usize) -> NeuralNet {
 fn main() {
     let mut cli = parse_args();
     apply_worker_overrides(&mut cli);
+    if cli.match_mode {
+        run_match(&cli);
+        return;
+    }
 
     if cli.datagen_path.is_none()
         && (cli.datagen_count.is_some()

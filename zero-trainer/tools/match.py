@@ -1,17 +1,23 @@
-"""Paired match between two nets at a fixed node budget, over UCI only.
+"""Paired match between two nets at a fixed node budget.
 
     python zero-trainer/tools/match.py --exe taflzero.exe --a net_a.onnx --b net_b.onnx
-        [--pairs 50] [--nodes 400] [--workers 2] [--opening-moves 16] [--max-plies 400]
+        [--pairs 50] [--nodes 400] [--threads 0] [--opening-moves 16] [--max-plies 400]
         [--variant copenhagen11x11] [--json out.json] [--seed N]
 
 Each pair: one random opening (`opening-moves` uniformly random legal moves from the
 start), played twice with the nets swapping sides. Score and Elo are for `--a`
-relative to `--b`. Games that hit `max-plies` count as draws. The engine's own `result`
-command decides the end of a game, so no second rules implementation is involved; it
-also names how the game ended (`def_fort`, `atk_capture`, ...), which the result and
-the progress file tally from `--a`'s side ("win" / "loss" / "draw" -> reason -> count).
-With `--progress`, every finished match is also appended to `eval.games.jsonl` next to
-that file (or `--games-log`): one line per match with each game's reason and length.
+relative to `--b`. Games that hit `max-plies` count as draws. The games are played by
+one engine process in match mode (`taflzero --match`, src/search/match_play.rs): every
+game is a thread there and the leaves of all games on one net's move go to the GPU in
+one call, so a match costs the GPU a fraction of what two UCI engines per pair did.
+`--threads 0` plays every game of the match at once. The engine names how each game
+ended (`def_fort`, `atk_capture`, ...), which the result and the progress file tally
+from `--a`'s side ("win" / "loss" / "draw" -> reason -> count). With `--progress`,
+every finished match is also appended to `eval.games.jsonl` next to that file (or
+`--games-log`): one line per match with each game's reason and length.
+
+`make_opening` / `play_game` below drive a UCI engine and stay for the tools that
+record games move by move (build_fort_bench.py).
 """
 
 from __future__ import annotations
@@ -21,8 +27,8 @@ import json
 import math
 import os
 import random
+import subprocess
 import sys
-import threading
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -82,6 +88,14 @@ def play_game(atk: Engine, dfn: Engine, opening: list[str], nodes: int, max_plie
     return "draw", "max_plies", len(cur)
 
 
+def parse_game_line(line: str) -> tuple[int, bool, str, str, int] | None:
+    """`game <pair> <a_attacks 0|1> <winner> <reason> <plies>` from the engine, else None."""
+    parts = line.split()
+    if len(parts) != 6 or parts[0] != "game":
+        return None
+    return int(parts[1]), parts[2] == "1", parts[3], parts[4], int(parts[5])
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--exe", required=True)
@@ -89,7 +103,8 @@ def main() -> None:
     ap.add_argument("--b", required=True)
     ap.add_argument("--pairs", type=int, default=50)
     ap.add_argument("--nodes", type=int, default=400)
-    ap.add_argument("--workers", type=int, default=2)
+    ap.add_argument("--threads", type=int, default=0, help="game threads in the engine; 0 = every game at once")
+    ap.add_argument("--workers", type=int, default=None, help="ignored (older callers); see --threads")
     ap.add_argument("--opening-moves", type=int, default=16)
     ap.add_argument("--max-plies", type=int, default=400)
     ap.add_argument("--variant", default="copenhagen11x11")
@@ -101,11 +116,8 @@ def main() -> None:
                     help="append one line per match with every game's ending (default: eval.games.jsonl next to --progress)")
     args = ap.parse_args()
 
-    rng = random.Random(args.seed)
     env = dict(os.environ, TAFLZERO_ORT_THREADS="1")
-    lock = threading.Lock()
     totals = {"w": 0, "l": 0, "d": 0, "pairs": 0}
-    next_pair = [0]
     t0 = time.time()
 
     err_path = (args.json + ".err") if args.json else None
@@ -114,7 +126,7 @@ def main() -> None:
     games: list[dict] = []
 
     def write_progress() -> None:
-        """Called under `lock`. Atomic rewrite so a reader never sees a half file."""
+        """Atomic rewrite so a reader never sees a half file."""
         if not args.progress:
             return
         n = totals["w"] + totals["l"] + totals["d"]
@@ -134,9 +146,6 @@ def main() -> None:
             json.dump(state, f)
         os.replace(tmp, args.progress)
 
-    with lock:
-        write_progress()
-
     def report_error(msg: str) -> None:
         line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}"
         print(line, file=sys.stderr, flush=True)
@@ -144,64 +153,55 @@ def main() -> None:
             with open(err_path, "a", encoding="utf-8") as f:
                 f.write(line + "\n")
 
-    def worker() -> None:
-        ea = eb = None
-        failures = 0
-        try:
-            while True:
-                with lock:
-                    if next_pair[0] >= args.pairs:
-                        return
-                    next_pair[0] += 1
-                try:
-                    if ea is None:
-                        ea = Engine(args.exe, args.a, args.variant, env)
-                        eb = Engine(args.exe, args.b, args.variant, env)
-                    opening = make_opening(ea, args.opening_moves, rng)
-                    r1, why1, len1 = play_game(ea, eb, opening, args.nodes, args.max_plies)  # a attacks
-                    r2, why2, len2 = play_game(eb, ea, opening, args.nodes, args.max_plies)  # b attacks
-                except Exception as e:  # engine crash or hang: log, restart engines, replay the pair
-                    failures += 1
-                    report_error(f"pair failed ({type(e).__name__}: {e}); restarting engines (failure {failures})")
-                    for eng in (ea, eb):
-                        if eng is not None:
-                            try:
-                                eng.proc.kill()
-                            except Exception:
-                                pass
-                    ea = eb = None
-                    with lock:
-                        next_pair[0] -= 1
-                    if failures >= 5:
-                        report_error("giving up on this worker after 5 failures")
-                        return
-                    continue
-                s1 = {"attackers": "w", "defenders": "l", "draw": "d"}[r1]
-                s2 = {"attackers": "l", "defenders": "w", "draw": "d"}[r2]
-                with lock:
-                    totals[s1] += 1
-                    totals[s2] += 1
-                    totals["pairs"] += 1
-                    recent.append(f"{r1[:3]}/{r2[:3]}")
-                    for side, s, why, plies in (("atk", s1, why1, len1), ("def", s2, why2, len2)):
-                        bucket = reasons[{"w": "win", "l": "loss", "d": "draw"}[s]]
-                        bucket[why] = bucket.get(why, 0) + 1
-                        games.append({"a_side": side, "score": s, "reason": why, "plies": plies})
-                    write_progress()
-                    if not args.quiet:
-                        n = totals["w"] + totals["l"] + totals["d"]
-                        sc = (totals["w"] + 0.5 * totals["d"]) / n
-                        print(f"pair {totals['pairs']}/{args.pairs}: {r1}/{r2} | W{totals['w']} L{totals['l']} D{totals['d']} | elo {elo_from_score(sc):+.0f}", flush=True)
-        finally:
-            for eng in (ea, eb):
-                if eng is not None:
-                    eng.close()
+    write_progress()
 
-    threads = [threading.Thread(target=worker, daemon=True) for _ in range(max(1, args.workers))]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
+    cmd = [os.path.abspath(args.exe), "--match", "--a", os.path.abspath(args.a), "--b", os.path.abspath(args.b),
+           "--pairs", str(args.pairs), "--nodes", str(args.nodes), "--opening-moves", str(args.opening_moves),
+           "--max-plies", str(args.max_plies), "--variant", args.variant,
+           "--threads", str(args.threads if args.threads > 0 else 2 * args.pairs)]
+    if args.seed is not None:
+        cmd += ["--seed", str(args.seed)]
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1, env=env,
+                            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+
+    # Games of a pair finish in any order; a pair is scored once both are in.
+    pending: dict[int, dict[bool, tuple[str, str, int]]] = {}
+    done = False
+    for line in proc.stdout:  # type: ignore[union-attr]
+        line = line.strip()
+        if line == "done":
+            done = True
+            break
+        g = parse_game_line(line)
+        if g is None:
+            continue
+        pair, a_attacks, winner, why, plies = g
+        pending.setdefault(pair, {})[a_attacks] = (winner, why, plies)
+        if len(pending[pair]) < 2:
+            continue
+        both = pending.pop(pair)
+        r1, why1, len1 = both[True]  # a attacks
+        r2, why2, len2 = both[False]  # b attacks
+        s1 = {"attackers": "w", "defenders": "l", "draw": "d"}[r1]
+        s2 = {"attackers": "l", "defenders": "w", "draw": "d"}[r2]
+        totals[s1] += 1
+        totals[s2] += 1
+        totals["pairs"] += 1
+        recent.append(f"{r1[:3]}/{r2[:3]}")
+        for side, sc, why, n_plies in (("atk", s1, why1, len1), ("def", s2, why2, len2)):
+            bucket = reasons[{"w": "win", "l": "loss", "d": "draw"}[sc]]
+            bucket[why] = bucket.get(why, 0) + 1
+            games.append({"a_side": side, "score": sc, "reason": why, "plies": n_plies})
+        write_progress()
+        if not args.quiet:
+            n = totals["w"] + totals["l"] + totals["d"]
+            sc = (totals["w"] + 0.5 * totals["d"]) / n
+            print(f"pair {totals['pairs']}/{args.pairs}: {r1}/{r2} | W{totals['w']} L{totals['l']} D{totals['d']} | elo {elo_from_score(sc):+.0f}", flush=True)
+    stderr = proc.stderr.read() if proc.stderr else ""  # type: ignore[union-attr]
+    proc.wait()
+    if not done or totals["pairs"] != args.pairs:
+        report_error(f"engine ended after {totals['pairs']}/{args.pairs} pairs (exit {proc.returncode}): {stderr.strip()[-500:]}")
+        sys.exit(1)
 
     n = totals["w"] + totals["l"] + totals["d"]
     score = (totals["w"] + 0.5 * totals["d"]) / n if n else 0.5
