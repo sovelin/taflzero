@@ -62,7 +62,8 @@ fn parse_args() -> CliArgs {
     let mut gumbel: Option<usize> = None;
     let mut daemon = DaemonConfig::default();
     let mut threads = 1usize;
-    let mut search_batch = MCTSConfig::default_train().batch_size;
+    // Datagen and UCI play both default to 8; `--match` follows play.
+    let mut search_batch = MCTSConfig::default_play().batch_size;
     let mut match_mode = false;
     let mut match_a = String::new();
     let mut match_b = String::new();
@@ -315,12 +316,13 @@ fn run_match(cli: &CliArgs) {
     let board_size = cli.variant.rules().board_size;
     let games = cli.pairs * 2;
     let threads = cli.threads.clamp(1, games);
+    let search_batch = cli.search_batch.max(1);
     let server = |path: &str| {
-        // One leaf per game per call: the batch is the games on this net's move.
+        // The batch is the games on this net's move, `search_batch` leaves each.
         match BatchServer::start(
             path,
             board_size,
-            threads,
+            threads * search_batch,
             std::time::Duration::from_millis(1),
             false,
         ) {
@@ -346,6 +348,7 @@ fn run_match(cli: &CliArgs) {
         opening_moves: cli.opening_moves,
         max_plies: cli.max_plies,
         threads,
+        search_batch,
         variant: cli.variant,
         seed: cli.seed,
     };

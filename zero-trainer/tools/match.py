@@ -104,6 +104,9 @@ def main() -> None:
     ap.add_argument("--pairs", type=int, default=50)
     ap.add_argument("--nodes", type=int, default=400)
     ap.add_argument("--threads", type=int, default=0, help="game threads in the engine; 0 = every game at once")
+    ap.add_argument("--search-batch", type=int, default=8,
+                    help="leaves per net call inside one search; 8 is what UCI play uses, 1 is plain MCTS "
+                         "(and an 8x longer chain of net calls per game, so a slower match)")
     ap.add_argument("--workers", type=int, default=None, help="ignored (older callers); see --threads")
     ap.add_argument("--opening-moves", type=int, default=16)
     ap.add_argument("--max-plies", type=int, default=400)
@@ -158,7 +161,8 @@ def main() -> None:
     cmd = [os.path.abspath(args.exe), "--match", "--a", os.path.abspath(args.a), "--b", os.path.abspath(args.b),
            "--pairs", str(args.pairs), "--nodes", str(args.nodes), "--opening-moves", str(args.opening_moves),
            "--max-plies", str(args.max_plies), "--variant", args.variant,
-           "--threads", str(args.threads if args.threads > 0 else 2 * args.pairs)]
+           "--threads", str(args.threads if args.threads > 0 else 2 * args.pairs),
+           "--search-batch", str(args.search_batch)]
     if args.seed is not None:
         cmd += ["--seed", str(args.seed)]
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1, env=env,

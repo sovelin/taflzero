@@ -5,9 +5,11 @@
 //! the self-play worker's big ones. Here every game of the match is a thread, each
 //! search asks for one leaf at a time, and the two batch servers (one per net) pool
 //! the leaves of all games that are on that side's move into one call. The games are
-//! the same games: a plain MCTS at the fixed node budget, one tree per side per game
-//! reused between moves as a UCI engine does, the opening played by random legal
-//! moves and then from both sides.
+//! the same games a UCI engine plays: `MCTSConfig::default_play` at the fixed node
+//! budget (its 8-leaf batches too, unless `search_batch` says otherwise: a game is a
+//! chain of `nodes * plies / search_batch` net calls, so this bounds the wall time of
+//! the whole match), one tree per side per game reused between moves, the opening
+//! played by random legal moves and then from both sides.
 
 use crate::board::Board;
 use crate::board::rules::RulesEnum;
@@ -34,6 +36,8 @@ pub struct MatchConfig {
     pub max_plies: usize,
     /// Game threads; every game of the match at once when it covers `2 * pairs`.
     pub threads: usize,
+    /// Leaves per net call inside one search (UCI play uses 8).
+    pub search_batch: usize,
     pub variant: RulesEnum,
     /// Seeds the openings; random when `None`.
     pub seed: Option<u64>,
@@ -125,9 +129,8 @@ fn play_game(
     let mut mg = MoveGen::new();
     let mut trees = (MCTSTree::new(), MCTSTree::new());
     let mut sd = SearchData::new();
-    // Plain MCTS: one leaf per net call, no virtual loss, greedy move choice.
     let mut config = MCTSConfig::default_play();
-    config.batch_size = 1;
+    config.batch_size = cfg.search_batch.max(1);
     for _ in 0..cfg.max_plies {
         if let Some((who, reason)) = result_reason(&mut board, &mut mg) {
             return (who, reason, plies);
@@ -249,6 +252,7 @@ mod tests {
             opening_moves: 4,
             max_plies: 5,
             threads: 8,
+            search_batch: 1,
             variant: RulesEnum::Copenhagen11x11,
             seed: Some(1),
         };
