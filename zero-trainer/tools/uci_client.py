@@ -64,11 +64,18 @@ class Engine:
 
     def result(self, moves: list[str], fen: str | None = None) -> str | None:
         """'attackers' / 'defenders' when the position is won, else None."""
+        return self.result_reason(moves, fen)[0]
+
+    def result_reason(self, moves: list[str], fen: str | None = None) -> tuple[str | None, str | None]:
+        """(winner, how the game ended) — e.g. ('defenders', 'def_fort') — or (None, None).
+        An engine older than the reason token gives (winner, None)."""
         self.position(moves, fen)
         self._send("result")
         line, _ = self._until("result")
-        who = line.split()[1]
-        return None if who == "none" else who
+        parts = line.split()
+        if parts[1] == "none":
+            return None, None
+        return parts[1], (parts[2] if len(parts) > 2 else None)
 
     def random_move(self, moves: list[str], fen: str | None = None) -> str | None:
         self.position(moves, fen)

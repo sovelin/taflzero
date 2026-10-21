@@ -193,7 +193,7 @@ def main() -> int:
             row = {"key": key, "ckpt": ckpt.stem, "step": step, "generated": gen, "anchor": anchor.stem,
                    "pairs": r["pairs"], "w": r["w"], "l": r["l"], "d": r["d"], "score": r["score"],
                    "elo": r["elo"], "ci": r["ci"], "nodes": args.nodes, "seconds": round(time.time() - t0, 1),
-                   "time": time.strftime("%Y-%m-%d %H:%M")}
+                   "time": time.strftime("%Y-%m-%d %H:%M"), "reasons": r.get("reasons")}
             with open(elo_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(row) + "\n")
             say(f"{ckpt.stem} vs {anchor.stem}: {r['w']}-{r['l']}-{r['d']} elo {r['elo']:+.0f} [{r['ci'][0]:+.0f}, {r['ci'][1]:+.0f}]")

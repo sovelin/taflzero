@@ -8,7 +8,7 @@ use crate::mcts::{C_PUCT, GumbelConfig, MCTSConfig, MCTSTree, mcts_search};
 use crate::movegen::MoveGen;
 use crate::search::nn::NeuralNet;
 use crate::search_data::SearchData;
-use crate::terminal::{TerminalType, check_terminal, get_terminal};
+use crate::terminal::{check_terminal, get_terminal};
 use rand::RngExt;
 use rand::SeedableRng;
 use rand::prelude::StdRng;
@@ -95,17 +95,6 @@ impl CurriculumBuffer {
 }
 
 // ─── Terminal type string ─────────────────────────────────────────────────────
-
-fn terminal_type_str(t: &TerminalType) -> &'static str {
-    match t {
-        TerminalType::KingCaptured => "atk_capture",
-        TerminalType::ThreefoldRepetition => "atk_threefold",
-        TerminalType::KingOnCorner => "def_corner",
-        TerminalType::DefendersSurrounded => "atk_surrounded",
-        TerminalType::FortCheck => "def_fort",
-        TerminalType::KingOnEdge => "def_edge",
-    }
-}
 
 // ─── Game loop ────────────────────────────────────────────────────────────────
 
@@ -218,7 +207,7 @@ fn play_game(
             // Terminals first: a game that ends exactly on the limit is still decided.
             if let Some(terminal) = get_terminal(&mut board) {
                 println!("{}", board);
-                terminal_str = Some(terminal_type_str(&terminal));
+                terminal_str = Some(terminal.name());
                 // A third repetition is an attacker win under the rules and is stored
                 // as one: a defence that only shuffles must learn that it loses.
                 game_result = Some(
@@ -654,6 +643,7 @@ pub fn dump_single_sample(output_path: &str) {
 mod tests {
     use super::*;
     use crate::mcts::export::{FLAG_LAST_OF_GAME, FLAG_RESULT_UNKNOWN};
+    use crate::terminal::TerminalType;
 
     fn play_from_start(
         limits: GameLimits,
@@ -732,10 +722,7 @@ mod tests {
             Some(TerminalType::ThreefoldRepetition)
         );
         assert_eq!(check_terminal(&mut board), Some(Side::ATTACKERS));
-        assert_eq!(
-            terminal_type_str(&TerminalType::ThreefoldRepetition),
-            "atk_threefold"
-        );
+        assert_eq!(TerminalType::ThreefoldRepetition.name(), "atk_threefold");
     }
 
     // Daemon mode: an unlimited run ends cleanly once the stop file appears, and the

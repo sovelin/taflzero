@@ -7,7 +7,11 @@
 Each pair: one random opening (`opening-moves` uniformly random legal moves from the
 start), played twice with the nets swapping sides. Score and Elo are for `--a`
 relative to `--b`. Games that hit `max-plies` count as draws. The engine's own `result`
-command decides the end of a game, so no second rules implementation is involved.
+command decides the end of a game, so no second rules implementation is involved; it
+also names how the game ended (`def_fort`, `atk_capture`, ...), which the result and
+the progress file tally from `--a`'s side ("win" / "loss" / "draw" -> reason -> count).
+With `--progress`, every finished match is also appended to `eval.games.jsonl` next to
+that file (or `--games-log`): one line per match with each game's reason and length.
 """
 
 from __future__ import annotations
@@ -62,19 +66,20 @@ def make_opening(eng: Engine, moves: int, rng: random.Random) -> list[str]:
     return cur
 
 
-def play_game(atk: Engine, dfn: Engine, opening: list[str], nodes: int, max_plies: int) -> str:
-    """'attackers' / 'defenders' / 'draw'. Attackers move first (Copenhagen)."""
+def play_game(atk: Engine, dfn: Engine, opening: list[str], nodes: int, max_plies: int) -> tuple[str, str, int]:
+    """('attackers' / 'defenders' / 'draw', how it ended, plies). Attackers move first
+    (Copenhagen)."""
     cur = list(opening)
     for ply in range(max_plies):
-        who = atk.result(cur)
+        who, reason = atk.result_reason(cur)
         if who:
-            return who
+            return who, reason or "unknown", len(cur)
         side_engine = atk if len(cur) % 2 == 0 else dfn
         best, _ = side_engine.search(cur, nodes)
         if best is None:
-            return "draw"
+            return "draw", "no_bestmove", len(cur)
         cur.append(best)
-    return "draw"
+    return "draw", "max_plies", len(cur)
 
 
 def main() -> None:
@@ -92,6 +97,8 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--quiet", action="store_true")
     ap.add_argument("--progress", default=None, help="JSON file rewritten after every pair (live score for a dashboard)")
+    ap.add_argument("--games-log", default=None,
+                    help="append one line per match with every game's ending (default: eval.games.jsonl next to --progress)")
     args = ap.parse_args()
 
     rng = random.Random(args.seed)
@@ -103,6 +110,8 @@ def main() -> None:
 
     err_path = (args.json + ".err") if args.json else None
     recent: list[str] = []
+    reasons: dict[str, dict[str, int]] = {"win": {}, "loss": {}, "draw": {}}
+    games: list[dict] = []
 
     def write_progress() -> None:
         """Called under `lock`. Atomic rewrite so a reader never sees a half file."""
@@ -117,7 +126,8 @@ def main() -> None:
             "w": totals["w"], "l": totals["l"], "d": totals["d"],
             "score": round(sc, 4), "elo": round(elo_from_score(sc), 1) if n else None,
             "ci": [round(lo, 1), round(hi, 1)] if n else None,
-            "recent": recent[-10:], "started": t0, "updated": time.time(), "nodes": args.nodes,
+            "recent": recent[-10:], "reasons": reasons, "started": t0, "updated": time.time(),
+            "nodes": args.nodes,
         }
         tmp = args.progress + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
@@ -148,8 +158,8 @@ def main() -> None:
                         ea = Engine(args.exe, args.a, args.variant, env)
                         eb = Engine(args.exe, args.b, args.variant, env)
                     opening = make_opening(ea, args.opening_moves, rng)
-                    r1 = play_game(ea, eb, opening, args.nodes, args.max_plies)  # a attacks
-                    r2 = play_game(eb, ea, opening, args.nodes, args.max_plies)  # b attacks
+                    r1, why1, len1 = play_game(ea, eb, opening, args.nodes, args.max_plies)  # a attacks
+                    r2, why2, len2 = play_game(eb, ea, opening, args.nodes, args.max_plies)  # b attacks
                 except Exception as e:  # engine crash or hang: log, restart engines, replay the pair
                     failures += 1
                     report_error(f"pair failed ({type(e).__name__}: {e}); restarting engines (failure {failures})")
@@ -173,6 +183,10 @@ def main() -> None:
                     totals[s2] += 1
                     totals["pairs"] += 1
                     recent.append(f"{r1[:3]}/{r2[:3]}")
+                    for side, s, why, plies in (("atk", s1, why1, len1), ("def", s2, why2, len2)):
+                        bucket = reasons[{"w": "win", "l": "loss", "d": "draw"}[s]]
+                        bucket[why] = bucket.get(why, 0) + 1
+                        games.append({"a_side": side, "score": s, "reason": why, "plies": plies})
                     write_progress()
                     if not args.quiet:
                         n = totals["w"] + totals["l"] + totals["d"]
@@ -196,8 +210,15 @@ def main() -> None:
         "a": os.path.basename(args.a), "b": os.path.basename(args.b),
         "pairs": totals["pairs"], "games": n, "w": totals["w"], "l": totals["l"], "d": totals["d"],
         "score": round(score, 4), "elo": round(elo_from_score(score), 1), "ci": [round(lo, 1), round(hi, 1)],
-        "nodes": args.nodes, "seconds": round(time.time() - t0, 1),
+        "nodes": args.nodes, "seconds": round(time.time() - t0, 1), "reasons": reasons,
     }
+    games_log = args.games_log or (os.path.join(os.path.dirname(os.path.abspath(args.progress)), "eval.games.jsonl")
+                                   if args.progress else None)
+    if games_log:
+        stem = lambda p: os.path.splitext(os.path.basename(p))[0]  # noqa: E731
+        with open(games_log, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"key": f"{stem(args.a)}|{stem(args.b)}", "time": time.strftime("%Y-%m-%d %H:%M"),
+                                "nodes": args.nodes, "reasons": reasons, "games": games}) + "\n")
     print(json.dumps(result))
     if args.json:
         with open(args.json, "w", encoding="utf-8") as f:

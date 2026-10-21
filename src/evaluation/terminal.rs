@@ -61,6 +61,20 @@ pub enum TerminalType {
     KingOnEdge = 6,
 }
 
+impl TerminalType {
+    /// The name the self-play gamelog and match reports use for this ending.
+    pub fn name(&self) -> &'static str {
+        match self {
+            TerminalType::KingCaptured => "atk_capture",
+            TerminalType::ThreefoldRepetition => "atk_threefold",
+            TerminalType::KingOnCorner => "def_corner",
+            TerminalType::DefendersSurrounded => "atk_surrounded",
+            TerminalType::FortCheck => "def_fort",
+            TerminalType::KingOnEdge => "def_edge",
+        }
+    }
+}
+
 /// Must agree with `check_terminal` on *whether* a position is terminal — the datagen
 /// loop ends games by this function and takes the winner from `check_terminal`, so a
 /// disagreement either drops won games or panics. Hence the same rule gates here.

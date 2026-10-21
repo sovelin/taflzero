@@ -207,15 +207,31 @@ function lineChart(id, datasets, opts = {}) {
 
 function ds(label, color, points, extra = {}) { return Object.assign({ label, data: points, borderColor: color, backgroundColor: color, pointStyle: 'circle' }, extra); }
 
-function renderLive(p, alive) {
+// How games ended, from the checkpoint's side: {win: {reason: n}, loss: {...}, draw: {...}}.
+const REASON = { atk_capture: 'king captured', atk_surrounded: 'surrounded', atk_no_moves: 'no moves', atk_threefold: 'threefold',
+  def_corner: 'corner', def_fort: 'fort', def_edge: 'edge', def_no_moves: 'no moves', max_plies: 'ply limit' };
+function reasonsText(r) {
+  if (!r) return '';
+  const part = (k, label) => {
+    const e = Object.entries(r[k] || {}).sort((a, b) => b[1] - a[1]);
+    return e.length ? `<b>${label}</b> ${e.map(([w, n]) => `${REASON[w] || w} ${n}`).join(', ')}` : '';
+  };
+  return [part('win', 'won by'), part('loss', 'lost to'), part('draw', 'drawn by')].filter(Boolean).join(' · ');
+}
+
+function renderLive(p, alive, eloRows = []) {
   const el = $('live');
   if (!p || !alive) { el.style.display = 'none'; return; }
   el.style.display = '';
+  // Latest finished match per anchor that recorded endings (older rows have none).
+  const last = {};
+  for (const e of eloRows) if (e.reasons) last[e.anchor] = e;
+  const finished = Object.values(last).map(e => `<div class="row"><span>${e.ckpt} vs <b>${e.anchor}</b> ${e.w}-${e.l}-${e.d}:</span><span>${reasonsText(e.reasons) || '–'}</span></div>`).join('');
   const age = Math.round((Date.now() / 1000 - (p.updated || 0)) / 60);
   const stale = age > 30 ? ` · no update for ${age} min` : '';
   const stem = f => (f || '').replace(/\.onnx$/, '');
-  if (p.phase === 'idle') { el.innerHTML = `Evaluation idle — waiting for a new checkpoint${stale}`; return; }
-  if (p.phase === 'blind') { el.innerHTML = `Evaluation: blind-spot metrics for <b>${stem(p.a)}</b>${stale}`; return; }
+  if (p.phase === 'idle') { el.innerHTML = `Evaluation idle — waiting for a new checkpoint${stale}` + finished; return; }
+  if (p.phase === 'blind') { el.innerHTML = `Evaluation: blind-spot metrics for <b>${stem(p.a)}</b>${stale}` + finished; return; }
   const n = p.games || 0, done = p.pairs_done || 0, total = p.pairs || 0;
   const sgn = x => (x > 0 ? '+' : '') + fmt(x, 0);
   const elo = p.elo == null ? '–' : sgn(p.elo);
@@ -225,7 +241,8 @@ function renderLive(p, alive) {
     <div class="bar"><div style="width:${total ? 100 * done / total : 0}%"></div></div>
     <div class="row"><span class="big">${elo}</span><span>${ci}</span><span>W${p.w || 0} L${p.l || 0} D${p.d || 0} · ${n} games · score ${n ? fmt(100 * (p.w + 0.5 * p.d) / n, 0) : '–'}%</span>
     <span class="spacer"></span><span class="recent">${(p.recent || []).join('  ')}</span></div>
-    <div class="sub">W/L from the checkpoint's side; each pair = one opening from both sides (result of game 1 / game 2)${stale}</div>`;
+    ${p.reasons ? `<div class="row">${reasonsText(p.reasons) || '–'}</div>` : ''}
+    <div class="sub">W/L from the checkpoint's side; each pair = one opening from both sides (result of game 1 / game 2)${stale}</div>` + finished;
 }
 
 // selfplay.csv rows are logging windows (cumulative counts + per-window avg_len); older runs
@@ -279,7 +296,7 @@ function renderDetail(d) {
     ['Window', fmtK(st.window), `buffer ${fmtK(st.buffer)}`],
     ['Last Elo', lastElo ? (lastElo.elo > 0 ? '+' : '') + fmt(lastElo.elo, 0) : '–', lastElo ? `vs ${lastElo.anchor} @${lastElo.ckpt.replace('step', '')}` : 'no matches yet'],
   ];
-  renderLive(d.eval_progress, d.eval_alive);
+  renderLive(d.eval_progress, d.eval_alive, d.elo);
   $('tiles').innerHTML = tiles.map(t => `<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="s">${t[2]}</div></div>`).join('');
 
   const S = SERIES();
