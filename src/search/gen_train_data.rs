@@ -299,6 +299,7 @@ impl Default for SearchConfig {
 pub struct WorkerOverrides {
     pub threads: Option<usize>,
     pub search_batch: Option<usize>,
+    pub ramp_seconds: Option<usize>,
 }
 
 impl WorkerOverrides {
@@ -321,6 +322,7 @@ impl WorkerOverrides {
             match key.trim() {
                 "threads" => out.threads = Some(value.max(1)),
                 "search_batch" => out.search_batch = Some(value.max(1)),
+                "ramp_seconds" => out.ramp_seconds = Some(value),
                 other => return Err(format!("line {}: unknown key '{other}'", i + 1)),
             }
         }
@@ -934,6 +936,7 @@ mod tests {
             "# a comment
 threads = 2048
 search_batch=1 # one leaf
+ramp_seconds=600
 
 ",
         )
@@ -942,7 +945,8 @@ search_batch=1 # one leaf
             o,
             WorkerOverrides {
                 threads: Some(2048),
-                search_batch: Some(1)
+                search_batch: Some(1),
+                ramp_seconds: Some(600)
             }
         );
         assert_eq!(

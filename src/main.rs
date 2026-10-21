@@ -32,6 +32,9 @@ struct CliArgs {
     threads: usize,
     /// Leaves per net call inside one search (1 = no virtual loss).
     search_batch: usize,
+    /// Game threads start spread over this many seconds, so a restarted worker does
+    /// not finish its first games all at once (a burst of short games in the data).
+    ramp_seconds: usize,
     /// `--match`: paired match `--a` vs `--b` instead of UCI (see match_play).
     match_mode: bool,
     match_a: String,
@@ -64,6 +67,7 @@ fn parse_args() -> CliArgs {
     let mut threads = 1usize;
     // Datagen and UCI play both default to 8; `--match` follows play.
     let mut search_batch = MCTSConfig::default_play().batch_size;
+    let mut ramp_seconds = 0usize;
     let mut match_mode = false;
     let mut match_a = String::new();
     let mut match_b = String::new();
@@ -254,6 +258,7 @@ fn parse_args() -> CliArgs {
             "--worker-id" => daemon.worker_id = Some(usize_arg(&mut args, "--worker-id", 0)),
             "--threads" => threads = usize_arg(&mut args, "--threads", 1),
             "--search-batch" => search_batch = usize_arg(&mut args, "--search-batch", 1),
+            "--ramp-seconds" => ramp_seconds = usize_arg(&mut args, "--ramp-seconds", 0),
             "--match" => match_mode = true,
             "--a" => match_a = path_arg(&mut args, "--a"),
             "--b" => match_b = path_arg(&mut args, "--b"),
@@ -296,6 +301,7 @@ fn parse_args() -> CliArgs {
         daemon,
         threads,
         search_batch,
+        ramp_seconds,
         match_mode,
         match_a,
         match_b,
@@ -386,6 +392,10 @@ fn apply_worker_overrides(cli: &mut CliArgs) {
             if let Some(b) = o.search_batch {
                 println!("[datagen] {file}: search_batch {} -> {b}", cli.search_batch);
                 cli.search_batch = b;
+            }
+            if let Some(r) = o.ramp_seconds {
+                println!("[datagen] {file}: ramp_seconds {} -> {r}", cli.ramp_seconds);
+                cli.ramp_seconds = r;
             }
         }
     }
@@ -554,7 +564,11 @@ fn main() {
                     cfg.daemon.thread = Some(t);
                     // The server reloads the net; threads must not try on their handle.
                     cfg.daemon.net_watch = false;
+                    let delay = std::time::Duration::from_secs_f64(
+                        cli.ramp_seconds as f64 * t as f64 / cli.threads as f64,
+                    );
                     scope.spawn(move || {
+                        std::thread::sleep(delay);
                         let mut nn = NeuralNet::shared(std::sync::Arc::clone(server));
                         server.client_started();
                         gen_train_data_into(sink, &mut nn, per_thread, variant, cfg);

@@ -147,6 +147,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--gumbel", type=int, default=None, help="Gumbel root search with this many considered moves")
     p.add_argument("--worker-threads", type=int, default=1,
                    help="game threads per worker process, served by one batching net (engine --threads)")
+    p.add_argument("--worker-ramp-seconds", type=int, default=0,
+                   help="spread the start of a worker's game threads over this many seconds (engine --ramp-seconds)")
     p.add_argument("--worker-search-batch", type=int, default=8,
                    help="leaves per net call inside one search (engine --search-batch); 1 = plain MCTS, "
                         "the GPU batch is pooled across the threads instead")
@@ -362,6 +364,8 @@ def worker_command(args: argparse.Namespace, run_dir: Path, worker_id: int, net_
         cmd += ["--threads", str(args.worker_threads)]
     if getattr(args, "worker_search_batch", 8) != 8:
         cmd += ["--search-batch", str(args.worker_search_batch)]
+    if getattr(args, "worker_ramp_seconds", 0) > 0:
+        cmd += ["--ramp-seconds", str(args.worker_ramp_seconds)]
     return cmd
 
 
