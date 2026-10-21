@@ -143,6 +143,7 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; }
         <div class="chart"><h3>Average game length</h3><div class="sub">plies</div><canvas id="cLen"></canvas></div>
         <div class="chart"><h3>Losses</h3><div class="sub">policy and value, per 100 steps</div><canvas id="cLoss"></canvas></div>
         <div class="chart"><h3>Blind-spot metrics</h3><div class="sub">attacker winrate the bare net gives: lost positions should fall, won positions should rise</div><canvas id="cBlind"></canvas></div>
+        <div class="chart" id="fortBox" style="display:none"><h3>Fort recognition</h3><div class="sub">attacker winrate the bare net gives k plies before g0213 completed a fort (truth: defenders win), lower = sees it; distance = mean gap to g0213's own values; dashed = anchors; read with won positions above</div><canvas id="cFort"></canvas></div>
         <div class="chart"><h3>Brier on his positions</h3><div class="sub">random 0.25, T2 g0213 0.096, his 0.087</div><canvas id="cBrier"></canvas></div>
         <div class="chart"><h3>Training throughput</h3><div class="sub">samples per second through the trainer (not generation)</div><canvas id="cSpeed"></canvas></div>
         <div class="chart"><h3>Self-play speed</h3><div class="sub">games per second, per logging window (positions/s in the tile)</div><canvas id="cGen"></canvas></div>
@@ -411,6 +412,23 @@ function renderDetail(d) {
   const ev = d.eval.map(r => ({ x: genOf(r.net), r })).sort((a, b) => a.x - b.x);
   lineChart('cBlind', [ds('lost positions (→ 5)', S[7], ev.map(e => ({ x: e.x, y: e.r.lost_pos }))), ds('won positions (→ 95)', S[2], ev.map(e => ({ x: e.x, y: e.r.won_pos })))], { yLabel: 'attacker winrate %', min: 0, max: 100 });
   lineChart('cBrier', [ds('brier', S[0], ev.map(e => ({ x: e.x, y: e.r.brier_his })))], { digits: 3, min: 0 });
+
+  // Fort metric: eval.jsonl rows of new checkpoints, fort.jsonl (backfill) for the rest and the anchors.
+  const fortBy = {};
+  for (const r of [...d.eval, ...(d.fort || [])]) if (r.fort_far != null || r.fort_near != null) fortBy[r.net] = r;
+  const isAnchor = n => (d.nets.anchors || []).includes(n) || !/^step\d+$/.test(n);
+  const fck = Object.values(fortBy).filter(r => !isAnchor(r.net)).map(r => ({ x: genOf(r.net), r })).sort((a, b) => a.x - b.x);
+  $('fortBox').style.display = fck.length ? '' : 'none';
+  if (fck.length) {
+    const sets = [ds('far (k ≥ 24)', S[0], fck.map(e => ({ x: e.x, y: e.r.fort_far }))),
+                  ds('near (k ≤ 8)', S[7], fck.map(e => ({ x: e.x, y: e.r.fort_near }))),
+                  ds('distance to g0213', S[3], fck.map(e => ({ x: e.x, y: e.r.fort_ref })))];
+    const span = [fck[0].x, fck[fck.length - 1].x];
+    Object.values(fortBy).filter(r => isAnchor(r.net)).forEach((r, i) => {
+      sets.push(ds(`${r.net} far`, S[(i + 4) % 8], span.map(x => ({ x, y: r.fort_far })), { borderDash: [6, 4], pointRadius: 0 }));
+    });
+    lineChart('cFort', sets, { yLabel: 'attacker winrate %', min: 0, max: 100 });
+  }
 
   $('log').textContent = d.log.join('\n');
   $('evalLog').textContent = d.eval_log.join('\n') || '(no evaluator output yet)';

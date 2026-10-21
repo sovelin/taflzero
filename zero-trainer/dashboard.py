@@ -150,6 +150,7 @@ def run_detail(run_dir: Path) -> dict:
     d["selfplay"] = read_csv(run_dir / "selfplay.csv")
     d["elo"] = read_jsonl(run_dir / "elo.jsonl")
     d["eval"] = read_jsonl(run_dir / "eval.jsonl")
+    d["fort"] = read_jsonl(run_dir / "fort.jsonl")  # tools/eval_fort.py backfill and anchors
     d["eval_progress"] = read_json(run_dir / "eval.progress.json")
     d["ladder"] = read_json(run_dir / "ladder.ratings.json")
     d["rr"] = rr_state(run_dir)
