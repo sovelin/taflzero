@@ -37,6 +37,8 @@ impl Board {
         self.was_capture = undo.was_capture;
         self.halfmove_clock = undo.halfmove_clock;
         self.halfmove_count = self.halfmove_count.saturating_sub(1);
+        self.last_moves = undo.last_moves;
+        self.ply = undo.ply;
 
         Ok(())
     }
@@ -52,6 +54,49 @@ mod tests {
         expect_attacker_on, expect_attackers_count, expect_defender_on, expect_defenders_count,
         expect_side_to_be,
     };
+
+    // History planes read `last_moves`/`ply`: make pushes the move in front and counts
+    // the ply, unmake gives back exactly the state before, a new position starts empty.
+    #[test]
+    fn move_history_round_trips_through_make_and_unmake() {
+        let mut board = Board::new();
+        board.setup_initial_position().unwrap();
+        let mut mg = crate::movegen::MoveGen::new();
+        let mut undos = Vec::new();
+        let mut played = Vec::new();
+        let mut states = vec![(board.last_moves, board.ply)];
+        for k in 0..6 {
+            mg.generate_moves(&board);
+            let mv = mg.moves()[k % mg.count];
+            let mut undo = UndoMove::new();
+            board.make_move(mv, &mut undo).unwrap();
+            played.push(mv);
+            undos.push(undo);
+            states.push((board.last_moves, board.ply));
+            assert_eq!(board.ply as usize, k + 1);
+            for (i, m) in board.last_moves.iter().enumerate() {
+                let want = played.len().checked_sub(i + 1).map(|j| played[j].raw());
+                assert_eq!(m.map(|m| m.raw()), want, "slot {i} after ply {}", k + 1);
+            }
+        }
+        while let Some(mut undo) = undos.pop() {
+            states.pop();
+            board.unmake_move(&mut undo).unwrap();
+            let (moves, ply) = states.last().unwrap();
+            assert_eq!(board.ply, *ply);
+            assert_eq!(
+                board.last_moves.map(|m| m.map(|m| m.raw())),
+                moves.map(|m| m.map(|m| m.raw()))
+            );
+        }
+        assert_eq!(board.ply, 0);
+        assert!(board.last_moves.iter().all(|m| m.is_none()));
+
+        board.make_move_simple(played[0]).unwrap();
+        board.set_fen(&board.get_fen()).unwrap();
+        assert_eq!(board.ply, 0);
+        assert!(board.last_moves.iter().all(|m| m.is_none()));
+    }
 
     #[test]
     fn test_unmake_move() {
