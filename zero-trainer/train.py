@@ -478,6 +478,7 @@ def main() -> None:
             model_kwargs["num_blocks"] = args.blocks
         model_kwargs["board_size"] = args.board_size
         model_kwargs["in_channels"] = plane_spec.num_planes
+        model_kwargs["planes"] = plane_spec.canonical
         if args.value_channels is not None:
             model_kwargs["value_channels"] = args.value_channels
         if args.se:

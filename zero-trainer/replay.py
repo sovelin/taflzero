@@ -1,8 +1,10 @@
 """Replay buffer and sliding window for the continuous trainer (plan §3.3).
 
 Samples are stored as raw v2 bytes grouped per game (`Chunk`) and decoded only
-when a batch is assembled, so the buffer costs ~700 B/sample.  `sample()`
-returns exactly the 12-tuple that `train.compute_batch_loss` unpacks.
+when a batch is assembled, so the buffer costs ~700 B/sample (plus 144 B/sample of
+side-file records when the data has them).  `sample()` returns exactly the 12-tuple
+that `train.compute_batch_loss` unpacks; the input planes follow the buffer's plane
+list (`planes`, dataset.parse_planes), extra planes stacked before the D4 symmetry.
 """
 
 from __future__ import annotations
@@ -21,6 +23,8 @@ from dataset import (
     _apply_board_sym,
     decode_aux_policy,
     decode_sample,
+    parse_planes,
+    stack_planes,
 )
 
 
@@ -50,10 +54,26 @@ class Chunk:
     source: str = ""             # file the game came from (window_start bookkeeping)
     offset: int = 0              # byte offset of the game's first sample in that file
     nbytes: int = field(default=0)
+    # Side-file records of the game's samples, (len, 144) uint8; None when the data
+    # has no side file (only the base planes can be trained on it).
+    feat: np.ndarray | None = None
+    first_sample: int = -1       # sample index of the game's first sample in its file
 
     def __post_init__(self) -> None:
         if not self.nbytes:
             self.nbytes = sum(len(r) for r in self.raw)
+            if self.feat is not None:
+                self.nbytes += self.feat.nbytes
+
+    @property
+    def nbytes_raw(self) -> int:
+        """Bytes the game takes in its sample file."""
+        return sum(len(r) for r in self.raw)
+
+    def attach_feat(self, records: np.ndarray) -> None:
+        assert records.shape[0] == len(self.raw), "one record per sample"
+        self.feat = records
+        self.nbytes += records.nbytes
 
     def __len__(self) -> int:
         return len(self.raw)
@@ -83,8 +103,10 @@ class ReplayBuffer:
     located (chunk, i) pair stays valid even if the chunk is evicted meanwhile."""
 
     def __init__(self, geom: BoardGeometry, z_lambda: float = 0.5, augment: bool = True,
-                 value_gamma: float = 1.0, max_bytes: int = 0, decode_threads: int = 1) -> None:
+                 value_gamma: float = 1.0, max_bytes: int = 0, decode_threads: int = 1,
+                 planes: str = "base") -> None:
         self._geom = geom
+        self._spec = parse_planes(planes)
         self._z_lambda = z_lambda
         self._augment = augment
         self._value_gamma = value_gamma
@@ -122,6 +144,10 @@ class ReplayBuffer:
         and records `bytes_capped` for the caller to warn about."""
         if len(chunk) == 0:
             return
+        if self._spec.needs_features and chunk.feat is None:
+            raise ValueError(
+                f"planes {self._spec.canonical!r} need the feature side file, but the game at "
+                f"{chunk.source}:{chunk.offset} has none (data from an engine without .feat files)")
         self._chunks.append(chunk)
         self._total += len(chunk)
         self._bytes += chunk.nbytes
@@ -139,6 +165,16 @@ class ReplayBuffer:
         for c in self._chunks:
             if c.source and (c.source not in starts or c.offset < starts[c.source]):
                 starts[c.source] = c.offset
+        return starts
+
+    def window_start_samples(self) -> dict[str, int]:
+        """Per source file: sample index of the oldest game still held (side-file
+        record index on resume); files whose games carry no index are left out."""
+        starts: dict[str, int] = {}
+        for c in self._chunks:
+            if c.source and c.first_sample >= 0 and (
+                    c.source not in starts or c.first_sample < starts[c.source]):
+                starts[c.source] = c.first_sample
         return starts
 
     def _cumulative(self) -> np.ndarray:
@@ -178,6 +214,9 @@ class ReplayBuffer:
             aux_legal = np.zeros(geom.policy_size, dtype=np.float32)
 
         planes = d.planes
+        if not self._spec.is_base:
+            record = chunk.feat[i] if chunk.feat is not None else None
+            planes = stack_planes(planes, self._spec, record, geom)
         legal = d.legal_mask
         policy = d.policy
         corner = d.corner_class

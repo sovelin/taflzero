@@ -98,8 +98,20 @@ class TaflAlphaZeroNet(nn.Module):
         gpool_channels: int = 0,
         aux_heads: bool = False,
         moves_left: bool = False,
+        planes: str | None = None,
     ) -> None:
         super().__init__()
+
+        # The input plane list (dataset.parse_planes) travels with the weights and
+        # into the ONNX metadata, so the engine knows what to feed the net. None =
+        # an old checkpoint: `base` when in_channels is 11.
+        if planes is not None:
+            from dataset import parse_planes
+
+            spec = parse_planes(planes)
+            if spec.num_planes != in_channels:
+                raise ValueError(f"planes {planes!r} are {spec.num_planes} channels, in_channels is {in_channels}")
+            planes = spec.canonical
 
         self.board_size = board_size
         self.sqs = board_size * board_size
@@ -117,6 +129,8 @@ class TaflAlphaZeroNet(nn.Module):
             "aux_heads": aux_heads,
             "moves_left": moves_left,
         }
+        if planes is not None:
+            self.model_kwargs["planes"] = planes
 
         self.stem = nn.Sequential(
             nn.Conv2d(in_channels, trunk_channels, kernel_size=3, padding=1, bias=False),
