@@ -263,6 +263,7 @@ pub fn game_records(
         &mut board,
         game[last].flags,
         game[last].value,
+        None,
         out,
     );
     stats.last_move_unresolved += end.unresolved as usize;
@@ -443,7 +444,7 @@ mod tests {
     use crate::board::types::Square;
     use crate::mcts::export::{LegalMask, PendingSample};
     use crate::mcts::utils::move_to_policy_index;
-    use crate::search::features::{has_bit, set_bit};
+    use crate::search::features::{TERMINAL_LIMIT, has_bit, set_bit, terminal_name};
 
     fn copenhagen(position: &str) -> Board {
         let mut b = Board::new();
@@ -642,11 +643,14 @@ mod tests {
             assert_eq!(rec.u16(offset::PLY), i as u16);
             assert_eq!(rec.u16(offset::PLIES_TO_END), 3 - i as u16);
             assert_eq!(rec.flags() & FEAT_LAST_PLY != 0, i == 2);
-            // Undecided game: nothing is known about the last move.
+            // Undecided game: nothing is known about the last move, and it ended on
+            // a limit.
             assert_eq!(
                 rec.flags() & (FEAT_KING_MOVE | FEAT_CAPTURE | FEAT_THREEFOLD),
                 0
             );
+            let terminal = if i == 2 { TERMINAL_LIMIT } else { 0 };
+            assert_eq!(rec.0[offset::TERMINAL], terminal);
         }
     }
 
@@ -687,6 +691,11 @@ mod tests {
         }
         let last = Rec(&recs[8]);
         assert_eq!(last.flags() & (FEAT_KING_MOVE | FEAT_CAPTURE), 0);
+        assert_eq!(
+            terminal_name(last.0[offset::TERMINAL]),
+            Some("atk_threefold")
+        );
+        assert!(recs[..8].iter().all(|r| r[offset::TERMINAL] == 0));
         assert_ne!(last.flags() & FEAT_LAST_PLY, 0);
     }
 

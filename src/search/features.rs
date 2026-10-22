@@ -39,6 +39,7 @@ pub mod offset {
     pub const PLY: usize = 72;
     pub const PLIES_TO_END: usize = 74;
     pub const FLAGS: usize = 76;
+    pub const TERMINAL: usize = 77;
     pub const CAP_NOW: usize = 80;
     pub const CAP_NEXT: usize = 96;
     pub const ATK_MOB: usize = 112;
@@ -179,6 +180,46 @@ struct LastMove {
     king: bool,
     capture: bool,
     threefold: bool,
+    terminal: u8,
+}
+
+/// Record byte 77 on a game's last sample: how the game ended. The names are the
+/// gamelog's terminal strings (`TerminalType::name` and the datagen's own no-moves
+/// and limit endings); dataset.py's FEAT_TERMINAL_NAMES mirrors this table.
+pub const TERMINAL_CODES: [(u8, &str); 9] = [
+    (1, "atk_capture"),
+    (2, "atk_surrounded"),
+    (3, "atk_no_moves"),
+    (4, "atk_threefold"),
+    (5, "def_corner"),
+    (6, "def_edge"),
+    (7, "def_fort"),
+    (8, "def_no_moves"),
+    (9, "max_plies"),
+];
+/// The game was cut off by the ply or no-capture limit.
+pub const TERMINAL_LIMIT: u8 = 9;
+/// Decided, but the replay could not tell how (candidate moves disagree).
+pub const TERMINAL_UNKNOWN: u8 = 255;
+
+/// Code of a gamelog terminal name; both limit endings map to `TERMINAL_LIMIT`.
+pub fn terminal_code(name: &str) -> u8 {
+    if name.starts_with("undecided") || name == "max_plies" {
+        return TERMINAL_LIMIT;
+    }
+    TERMINAL_CODES
+        .iter()
+        .find(|(_, n)| *n == name)
+        .map(|(c, _)| *c)
+        .unwrap_or(TERMINAL_UNKNOWN)
+}
+
+/// Gamelog name of a terminal code, `None` for 0 / unknown.
+pub fn terminal_name(code: u8) -> Option<&'static str> {
+    TERMINAL_CODES
+        .iter()
+        .find(|(c, _)| *c == code)
+        .map(|(_, n)| *n)
 }
 
 fn resolve_last_move(board: &mut Board, last_flags: u8, last_value: i8) -> Vec<LastMove> {
@@ -201,20 +242,32 @@ fn resolve_last_move(board: &mut Board, last_flags: u8, last_value: i8) -> Vec<L
         board.make_move(mv, &mut undo).expect("generated move");
         let capture = undo.captured_pieces_count > 0;
         let hit = match get_terminal(board) {
-            Some(t) => (check_terminal(board) == Some(winner))
-                .then_some(t == TerminalType::ThreefoldRepetition),
-            // Self-play also ends a game when the side to move has no move at all.
+            Some(t) => (check_terminal(board) == Some(winner)).then(|| {
+                (
+                    t == TerminalType::ThreefoldRepetition,
+                    terminal_code(t.name()),
+                )
+            }),
+            // Self-play also ends a game when the side to move has no move at all
+            // (the mover's side wins; named after the winner as in the gamelog).
             None => {
                 mg.generate_moves(board);
-                (mg.count == 0 && winner == stm).then_some(false)
+                (mg.count == 0 && winner == stm).then(|| {
+                    let name = match stm {
+                        Side::ATTACKERS => "atk_no_moves",
+                        Side::DEFENDERS => "def_no_moves",
+                    };
+                    (false, terminal_code(name))
+                })
             }
         };
         board.unmake_move(&mut undo).expect("unmake");
-        if let Some(threefold) = hit {
+        if let Some((threefold, terminal)) = hit {
             out.push(LastMove {
                 king,
                 capture,
                 threefold,
+                terminal,
             });
         }
     }
@@ -228,8 +281,10 @@ pub fn write_record(
     ply: usize,
     plies_to_end: usize,
     flags: u8,
+    terminal: u8,
 ) {
     let mut r = [0u8; FEAT_RECORD_BYTES];
+    r[offset::TERMINAL] = terminal;
     for (k, (from, to)) in hist.iter().enumerate() {
         r[offset::HIST + 2 * k] = *from;
         r[offset::HIST + 2 * k + 1] = *to;
@@ -260,6 +315,8 @@ pub struct GameEnd {
     pub ambiguous: bool,
     /// Final record flags per sample.
     pub flags: Vec<u8>,
+    /// Byte 77 of the last record.
+    pub terminal: u8,
 }
 
 /// Writes a finished game's records. `features[i]` and `move_flags[i]` (king move,
@@ -269,6 +326,12 @@ pub struct GameEnd {
 /// of the game, are read off the result: every legal move that ends the game with the
 /// recorded winner is a candidate, and a bit is set only when all candidates agree.
 /// Self-play and the replay tool both go through here, so their records are identical.
+///
+/// `terminal` is how the game ended when the caller knows it (self-play: the gamelog
+/// name's code); `None` reads it off the result too: the limit code for an undecided
+/// game, the candidates' common terminal for a decided one, `TERMINAL_UNKNOWN` when
+/// they disagree or there is none. The two agree whenever the replay can tell.
+#[allow(clippy::too_many_arguments)]
 pub fn finish_game(
     features: &[PositionFeatures],
     played: &[(u8, u8)],
@@ -276,6 +339,7 @@ pub fn finish_game(
     board: &mut Board,
     last_flags: u8,
     last_value: i8,
+    terminal: Option<u8>,
     out: &mut Vec<u8>,
 ) -> GameEnd {
     let n = features.len();
@@ -284,8 +348,13 @@ pub fn finish_game(
     let last = n - 1;
     move_flags[last] |= FEAT_LAST_PLY;
     let mut end = GameEnd::default();
+    let mut inferred = TERMINAL_LIMIT;
     if last_flags & FLAG_RESULT_UNKNOWN == 0 {
         let candidates = resolve_last_move(board, last_flags, last_value);
+        inferred = match candidates.first() {
+            Some(c) if candidates.iter().all(|x| x.terminal == c.terminal) => c.terminal,
+            _ => TERMINAL_UNKNOWN,
+        };
         if candidates.is_empty() {
             end.unresolved = true;
         } else {
@@ -302,6 +371,7 @@ pub fn finish_game(
             end.ambiguous = !(agree(|c| c.king) && agree(|c| c.capture) && agree(|c| c.threefold));
         }
     }
+    end.terminal = terminal.unwrap_or(inferred);
     for i in 0..n {
         let mut hist = [(NO_SQUARE, NO_SQUARE); 4];
         for (k, h) in hist.iter_mut().enumerate() {
@@ -312,7 +382,8 @@ pub fn finish_game(
         if end.threefold {
             move_flags[i] |= FEAT_THREEFOLD;
         }
-        write_record(out, &features[i], hist, i, n - i, move_flags[i]);
+        let term = if i == last { end.terminal } else { 0 };
+        write_record(out, &features[i], hist, i, n - i, move_flags[i], term);
     }
     end.flags = move_flags;
     end
