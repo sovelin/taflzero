@@ -667,7 +667,8 @@ function gvEnsureBoard() {
   gv.ready = (async () => {
     const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = '/vendor/taflground/dist/style.css'; document.head.appendChild(css);
     if (!window.Vue) await gvLoadScript('https://cdnjs.cloudflare.com/ajax/libs/vue/3.5.13/vue.global.prod.min.js');
-    await gvLoadScript('/vendor/taflground/dist/index.umd.cjs');
+    try { await gvLoadScript('/vendor/taflground/dist/index.umd.cjs'); }
+    catch (e) { throw new Error('taflground bundle missing: copy dist/index.umd.cjs of the taflground package into zero-trainer/dashboard/vendor/taflground/dist/ (27 MB, kept out of git)'); }
     const { createApp, reactive, h } = Vue, TG = window.TaflGround;
     gv.state = reactive({ pieces: [], highlight: null, size: 480 });
     const none = new Set();
