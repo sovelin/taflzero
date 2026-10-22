@@ -155,6 +155,7 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; }
         <strong id="dName" style="font-size:16px"></strong>
         <span id="dStatus" class="pill"></span>
         <span id="dPaused" class="pill" style="display:none">paused: trainer catching up</span>
+        <span id="dEngine" class="pill" title=""></span>
         <span class="spacer"></span>
         <button id="stopBtn" class="danger">Stop</button>
         <button id="resumeBtn">Resume</button>
@@ -406,6 +407,14 @@ function renderDetail(d) {
   $('dStatus').textContent = d.status + (d.eval_alive ? ' · eval on' : '');
   $('dStatus').className = 'pill ' + d.status;
   $('dPaused').style.display = d.paused ? '' : 'none';
+  // The engine the run recorded at its last start (config.json, continuous.py).
+  const cfg = d.config || {};
+  const engPath = cfg.engine_bin ? String(cfg.engine_bin).split(/[\\/]/).slice(-3).join('/') : '';
+  $('dEngine').textContent = engPath
+    ? `engine: ${engPath} · ${cfg.engine_version || 'version ?'} · ${(cfg.engine_sha256 || '').slice(0, 12) || 'sha ?'}`
+    : '';
+  $('dEngine').title = cfg.engine_bin ? `${cfg.engine_bin}\nsha256 ${cfg.engine_sha256 || '?'}` : '';
+  $('dEngine').style.display = engPath ? '' : 'none';
   $('stopBtn').disabled = !d.trainer_alive;
   $('resumeBtn').disabled = d.trainer_alive;
 

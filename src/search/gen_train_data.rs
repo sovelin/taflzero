@@ -1,14 +1,17 @@
 use crate::board::Board;
 use crate::board::position_export::BitPosition;
 use crate::board::rules::RulesEnum;
+use crate::board::types::Piece;
 use crate::board::types::Side;
 use crate::mcts::export::{KING_CORNER_NONE, LegalMask, PendingSample, king_corner_index};
 use crate::mcts::utils::move_to_policy_index;
 use crate::mcts::{C_PUCT, GumbelConfig, MCTSConfig, MCTSTree, mcts_search};
 use crate::movegen::MoveGen;
+use crate::search::features::{PositionFeatures, finish_game, position_features, terminal_code};
 use crate::search::nn::NeuralNet;
 use crate::search_data::SearchData;
 use crate::terminal::{check_terminal, get_terminal};
+use crate::undo::UndoMove;
 use rand::RngExt;
 use rand::SeedableRng;
 use rand::prelude::StdRng;
@@ -98,6 +101,16 @@ impl CurriculumBuffer {
 
 // ─── Game loop ────────────────────────────────────────────────────────────────
 
+/// A played game: its samples, the positions for the curriculum, the winner, the
+/// terminal's gamelog name and the side-file records.
+type PlayedGame = (
+    Vec<PendingSample>,
+    Vec<BitPosition>,
+    Option<Side>,
+    Option<&'static str>,
+    Vec<u8>,
+);
+
 fn play_game(
     nn: &mut NeuralNet,
     search_data: &mut SearchData,
@@ -105,13 +118,16 @@ fn play_game(
     search_cfg: &SearchConfig,
     limits: &GameLimits,
     rng: &mut StdRng,
-) -> (
-    Vec<PendingSample>,
-    Vec<BitPosition>,
-    Option<Side>,
-    Option<&'static str>,
-) {
+) -> PlayedGame {
     let mut board = start_board;
+
+    // The side-file records (features.rs): one per sample, from the board as it stands
+    // when the sample is taken, finished when the game ends.
+    let mut feat_mg = MoveGen::new();
+    let mut features: Vec<PositionFeatures> = vec![];
+    let mut played: Vec<(u8, u8)> = vec![];
+    let mut move_flags: Vec<u8> = vec![];
+    let mut last_undo = UndoMove::new();
 
     let mut res: Vec<PendingSample> = vec![];
     let mut board_history: Vec<BitPosition> = vec![];
@@ -196,9 +212,26 @@ fn play_game(
             let rep = board.rep_table.get(&board.zobrist).copied().unwrap_or(1);
             board_history.push(BitPosition::from_board(&board, rep));
 
+            features.push(position_features(&mut board, &mut feat_mg));
+            let king_move = board.board[mv.from()] == Piece::KING;
+
             let pieces_count = board.attackers_count + board.defenders_count;
-            board.make_move_simple(mv).expect("Make move failed");
+            board
+                .make_move(mv, &mut last_undo)
+                .expect("Make move failed");
             let new_pieces_count = board.attackers_count + board.defenders_count;
+            played.push((mv.from() as u8, mv.to() as u8));
+            move_flags.push(
+                if king_move {
+                    crate::search::features::FEAT_KING_MOVE
+                } else {
+                    0
+                } | if last_undo.captured_pieces_count > 0 {
+                    crate::search::features::FEAT_CAPTURE
+                } else {
+                    0
+                },
+            );
 
             if new_pieces_count != pieces_count {
                 no_capture_counter = 0;
@@ -258,7 +291,32 @@ fn play_game(
         last.set_last_of_game();
     }
 
-    (res, board_history, game_result, terminal_str)
+    // Side-file records. The last sample's move is read off the result exactly as
+    // the replay tool (`taflzero --features`) does, so both write the same bytes;
+    // only how the game ended is taken from what this game knows.
+    let mut feat_records =
+        Vec::with_capacity(res.len() * crate::search::features::FEAT_RECORD_BYTES);
+    if let Some(last) = res.last() {
+        // Back to the last sample's position: the last move made is its move.
+        board
+            .unmake_move(&mut last_undo)
+            .expect("unmake of the last move failed");
+        let n = res.len();
+        let mut flags = move_flags;
+        flags[n - 1] = 0;
+        finish_game(
+            &features,
+            &played[..n - 1],
+            flags,
+            &mut board,
+            last.flags(),
+            last.value(),
+            terminal_str.map(terminal_code),
+            &mut feat_records,
+        );
+    }
+
+    (res, board_history, game_result, terminal_str, feat_records)
 }
 
 // ─── Main datagen loop ────────────────────────────────────────────────────────
@@ -398,12 +456,25 @@ impl Default for DatagenConfig {
 /// each game is written under the lock in a single `write_all` + flush, so the
 /// file is always a sequence of whole games whatever the thread interleaving.
 pub struct DatagenSink {
-    writer: Mutex<BufWriter<std::fs::File>>,
+    writer: Mutex<GameFiles>,
     log: Mutex<BufWriter<std::fs::File>>,
 }
 
+/// The sample file and its feature side file (`workerN.bin` -> `workerN.feat`), written
+/// under one lock: a game's samples first, then its records, each flushed, so the side
+/// file lags the sample file by at most the game being written.
+struct GameFiles {
+    bin: BufWriter<std::fs::File>,
+    feat: Option<BufWriter<std::fs::File>>,
+}
+
+/// `workerN.bin` -> `workerN.feat`.
+pub fn feature_path(output_path: &str) -> std::path::PathBuf {
+    std::path::Path::new(output_path).with_extension("feat")
+}
+
 impl DatagenSink {
-    pub fn open(output_path: &str, log_path: &str) -> Self {
+    pub fn open(output_path: &str, log_path: &str, variant: RulesEnum) -> Self {
         let file = OpenOptions::new()
             .create(true)
             .append(true)
@@ -414,11 +485,60 @@ impl DatagenSink {
             .append(true)
             .open(log_path)
             .expect("Could not open gamelog file");
+        let feat = open_feature_file(output_path, variant);
         Self {
-            writer: Mutex::new(BufWriter::new(file)),
+            writer: Mutex::new(GameFiles {
+                bin: BufWriter::new(file),
+                feat,
+            }),
             log: Mutex::new(BufWriter::new(log_file)),
         }
     }
+}
+
+/// Opens the side file for appending, after making it cover every sample already in the
+/// sample file: a worker that died between its two writes left the last game without
+/// records, and the replay tool's code fills them in. A sample file with data but no side
+/// file (data from an engine before side files) gets none: its records could only come
+/// from replaying the whole file (`taflzero --features`), and the trainer reads such a
+/// file as base-only.
+#[cfg(not(target_arch = "wasm32"))]
+fn open_feature_file(output_path: &str, variant: RulesEnum) -> Option<BufWriter<std::fs::File>> {
+    let bin = std::path::Path::new(output_path);
+    let path = feature_path(output_path);
+    let bin_len = std::fs::metadata(bin).map(|m| m.len()).unwrap_or(0);
+    let feat_len = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+    if feat_len == 0 && bin_len > 0 {
+        println!(
+            "[datagen] {} has samples but no side file; not writing {} (make one with taflzero --features)",
+            bin.display(),
+            path.display()
+        );
+        return None;
+    }
+    if feat_len == 0 {
+        std::fs::write(&path, crate::search::features::feature_header())
+            .expect("Could not create feature file");
+    } else {
+        match crate::search::feature_dump::catch_up_features(bin, &path, variant) {
+            Ok(0) => {}
+            Ok(n) => println!("[datagen] {}: {n} missing records replayed", path.display()),
+            Err(err) => {
+                println!("[datagen] {}: {err}; not writing it", path.display());
+                return None;
+            }
+        }
+    }
+    let file = OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .expect("Could not open feature file");
+    Some(BufWriter::new(file))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn open_feature_file(_output_path: &str, _variant: RulesEnum) -> Option<BufWriter<std::fs::File>> {
+    None
 }
 
 fn stop_requested(daemon: &DaemonConfig) -> bool {
@@ -436,7 +556,7 @@ pub fn gen_train_data(
     variant: RulesEnum,
     cfg: DatagenConfig,
 ) {
-    let sink = DatagenSink::open(output_path, log_path);
+    let sink = DatagenSink::open(output_path, log_path, variant);
     gen_train_data_into(&sink, nn, game_limit, variant, cfg);
 }
 
@@ -540,7 +660,7 @@ pub fn gen_train_data_into(
             b
         };
 
-        let (res, board_history, game_result, terminal_str) = play_game(
+        let (res, board_history, game_result, terminal_str, feat_records) = play_game(
             nn,
             &mut search_data,
             start_board,
@@ -622,9 +742,14 @@ pub fn gen_train_data_into(
                     .write_to(&mut game_bytes)
                     .expect("Cannot serialize sample");
             }
-            let mut writer = sink.writer.lock().unwrap();
-            writer.write_all(&game_bytes).expect("Cannot write game");
-            writer.flush().expect("Cannot flush game");
+            let mut files = sink.writer.lock().unwrap();
+            files.bin.write_all(&game_bytes).expect("Cannot write game");
+            files.bin.flush().expect("Cannot flush game");
+            if let Some(feat) = files.feat.as_mut() {
+                feat.write_all(&feat_records)
+                    .expect("Cannot write feature records");
+                feat.flush().expect("Cannot flush feature records");
+            }
         }
 
         if game_result.is_some() {
@@ -713,7 +838,7 @@ mod tests {
             gumbel: None,
             ..SearchConfig::default()
         };
-        let (res, _, result, term) =
+        let (res, _, result, term, _) =
             play_game(&mut nn, &mut search_data, board, &search, &limits, &mut rng);
         (res, result, term)
     }
@@ -887,7 +1012,11 @@ mod tests {
             false,
         )
         .unwrap();
-        let sink = DatagenSink::open(out.to_str().unwrap(), log.to_str().unwrap());
+        let sink = DatagenSink::open(
+            out.to_str().unwrap(),
+            log.to_str().unwrap(),
+            RulesEnum::Copenhagen11x11,
+        );
         let cfg = DatagenConfig {
             search: SearchConfig {
                 full_nodes: 2,
@@ -927,6 +1056,98 @@ mod tests {
         let (batches, served) = server.stats();
         assert!(served >= samples as usize);
         assert!(batches > 0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // Self-play writes workerN.feat next to workerN.bin; replaying the .bin with the
+    // `taflzero --features` code gives the same bytes. A side file a game short (the
+    // worker died between its two writes) is completed when the files are reopened.
+    #[test]
+    fn datagen_side_file_matches_the_replay_byte_for_byte() {
+        let dir = std::env::temp_dir().join(format!("taflzero-feat-dg-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("worker0.bin");
+        let log = dir.join("worker0.gamelog");
+        let mut nn = NeuralNet::new("copenhagen11x11.onnx", 11, 8).unwrap();
+        let cfg = DatagenConfig {
+            search: SearchConfig {
+                full_nodes: 3,
+                cheap_nodes: 2,
+                full_prob: 0.5,
+                gumbel: None,
+                ..SearchConfig::default()
+            },
+            limits: GameLimits {
+                max_plies: 160,
+                max_no_capture: 400,
+            },
+            ..DatagenConfig::default()
+        };
+        gen_train_data(
+            out.to_str().unwrap(),
+            log.to_str().unwrap(),
+            &mut nn,
+            Some(400),
+            RulesEnum::Copenhagen11x11,
+            cfg,
+        );
+        let feat = std::fs::read(feature_path(out.to_str().unwrap())).unwrap();
+        let replayed = dir.join("replayed.feat");
+        let stats = crate::search::feature_dump::dump_features(
+            &out,
+            &replayed,
+            None,
+            RulesEnum::Copenhagen11x11,
+            2,
+        )
+        .unwrap();
+        println!("{}", stats.summary());
+        assert!(stats.records >= 400);
+        assert_eq!(
+            (feat.len() - 16) / 144,
+            stats.records,
+            "one record per sample"
+        );
+        let want = std::fs::read(&replayed).unwrap();
+        if feat != want {
+            let at = feat.iter().zip(&want).position(|(a, b)| a != b).unwrap();
+            panic!(
+                "side files differ at byte {at} (record {}, offset {})",
+                (at - 16) / 144,
+                (at - 16) % 144
+            );
+        }
+
+        // Drop the last game's records and reopen: they are replayed back in.
+        let bytes = std::fs::read(&out).unwrap();
+        let (samples, games) = count_samples(&bytes);
+        assert!(games >= 2);
+        let last_game = {
+            let mask = crate::mcts::export::legal_mask_bytes(11);
+            let mut pos = 0usize;
+            let mut starts = vec![0usize];
+            let mut i = 0;
+            while pos < bytes.len() {
+                let len_at = pos + 50 + mask;
+                let plen = u16::from_le_bytes([bytes[len_at], bytes[len_at + 1]]) as usize;
+                let flags = bytes[len_at + 2 + plen * 4 + 2];
+                pos = len_at + 2 + plen * 4 + 4;
+                i += 1;
+                if flags & FLAG_LAST_OF_GAME != 0 {
+                    starts.push(i);
+                }
+            }
+            samples - starts[starts.len() - 2]
+        };
+        let feat_path = feature_path(out.to_str().unwrap());
+        std::fs::write(&feat_path, &feat[..feat.len() - last_game * 144]).unwrap();
+        drop(DatagenSink::open(
+            out.to_str().unwrap(),
+            log.to_str().unwrap(),
+            RulesEnum::Copenhagen11x11,
+        ));
+        assert_eq!(std::fs::read(&feat_path).unwrap(), want);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

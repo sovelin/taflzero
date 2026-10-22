@@ -9,16 +9,35 @@ unfinished trailing game to the next poll (the offset stays at their start).
 
 Per game it derives `plies_left[i] = len - 1 - i`, the outcome (attackers /
 defenders / undecided) and the length, and returns one `Chunk` per game.
+
+Next to every `worker<N>.bin` a current engine writes `worker<N>.feat`, the feature
+side file (one 144-byte record per sample, record index = sample index in the .bin).
+When it exists, a game is ingested only once its records are there too (the worker
+writes the .bin first, so the .feat may lag by a game) and the chunk carries them
+(`Chunk.feat`). Files without one (T6's data) give chunks with `feat=None`, which can
+only train the base planes.
 """
 
 from __future__ import annotations
 
 import re
+import struct
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from dataset import BoardGeometry, FLAG_LAST_OF_GAME, RawSample, parse_samples
+import numpy as np
+
+from dataset import (
+    BIT_POSITION_BYTES,
+    FEAT_HEADER_BYTES,
+    FEAT_RECORD_BYTES,
+    BoardGeometry,
+    FLAG_LAST_OF_GAME,
+    RawSample,
+    feature_count,
+    parse_samples,
+)
 from replay import Chunk
 
 WORKER_BIN_RE = re.compile(r"^worker(\d+)\.bin$")
@@ -164,15 +183,61 @@ def group_games(samples: list[RawSample], base_offset: int = 0, source: str = ""
     return chunks, game_start_pos
 
 
+def feature_file(bin_path: Path) -> Path:
+    """`worker<N>.bin` -> `worker<N>.feat`."""
+    return bin_path.with_suffix(".feat")
+
+
+def samples_before(path: Path, geom: BoardGeometry, byte_offset: int, legacy: bool = False) -> int:
+    """Number of samples in `path` before `byte_offset` (a sample boundary).  Only
+    needed when a resumed run's state predates sample counting."""
+    tail = 2 if legacy else 4
+    pos = 0
+    n = 0
+    with open(path, "rb") as f:
+        while pos < byte_offset:
+            f.seek(pos + BIT_POSITION_BYTES + geom.legal_mask_bytes)
+            raw = f.read(2)
+            if len(raw) < 2:
+                break
+            pos += geom.fixed_header + struct.unpack("<H", raw)[0] * 4 + tail
+            n += 1
+    if pos != byte_offset:
+        raise ValueError(f"{path}: byte {byte_offset} is not a sample boundary")
+    return n
+
+
+def read_feature_records(path: Path, first: int, count: int) -> np.ndarray:
+    """Records `first .. first + count` of a side file, (count, 144) uint8."""
+    with open(path, "rb") as f:
+        f.seek(FEAT_HEADER_BYTES + first * FEAT_RECORD_BYTES)
+        raw = f.read(count * FEAT_RECORD_BYTES)
+    if len(raw) != count * FEAT_RECORD_BYTES:
+        raise ValueError(f"{path}: records {first}..{first + count} are not all there")
+    return np.frombuffer(raw, dtype=np.uint8).reshape(count, FEAT_RECORD_BYTES).copy()
+
+
 class Ingester:
     def __init__(self, data_dir: Path, geom: BoardGeometry, legacy: bool = False,
                  offsets: dict[str, int] | None = None,
-                 gamelog_offsets: dict[str, int] | None = None) -> None:
+                 gamelog_offsets: dict[str, int] | None = None,
+                 sample_offsets: dict[str, int] | None = None) -> None:
         self.data_dir = Path(data_dir)
         self.geom = geom
         self.legacy = legacy
         self.offsets: dict[str, int] = dict(offsets or {})
         self.gamelog_offsets: dict[str, int] = dict(gamelog_offsets or {})
+        # Samples consumed per file (the side-file record index of the next game).
+        self.sample_offsets: dict[str, int] = dict(sample_offsets or {})
+
+    def sample_index_at(self, path: Path, byte_offset: int) -> int:
+        """Sample index of `byte_offset` in `path`: from the running count when the
+        offset is the ingest position, else by counting."""
+        if byte_offset == 0:
+            return 0
+        if self.offsets.get(path.name) == byte_offset and path.name in self.sample_offsets:
+            return self.sample_offsets[path.name]
+        return samples_before(path, self.geom, byte_offset, self.legacy)
 
     # ─── discovery ──────────────────────────────────────────────────────────
 
@@ -196,18 +261,40 @@ class Ingester:
             f.seek(start)
             return f.read() if end is None else f.read(max(0, end - start))
 
-    def read_range(self, path: Path, start: int, end: int | None = None) -> tuple[list[Chunk], int]:
+    def read_range(self, path: Path, start: int, end: int | None = None,
+                   first_sample: int | None = None) -> tuple[list[Chunk], int]:
         """Parse [start, end) of one file into complete games.
 
         Returns (chunks, new_offset): `new_offset` is the absolute offset just
         past the last complete game (start of a deferred game / truncated
-        sample)."""
+        sample).  With `first_sample` (the sample index at `start`) and a side file
+        next to `path`, games whose records are not written yet are deferred too, and
+        the others carry their records."""
         buf = self._read_from(path, start, end)
         if not buf:
             return [], start
         samples, _consumed = parse_samples(buf, self.geom, self.legacy)
         chunks, used = group_games(samples, base_offset=start, source=path.name)
-        return chunks, start + used
+        feat = feature_file(path)
+        if first_sample is None or not feat.exists():
+            return chunks, start + used
+        available = feature_count(feat)
+        kept: list[Chunk] = []
+        index = first_sample
+        for c in chunks:
+            if index + len(c) > available:
+                break
+            c.first_sample = index
+            index += len(c)
+            kept.append(c)
+        if kept:
+            records = read_feature_records(feat, first_sample, index - first_sample)
+            at = 0
+            for c in kept:
+                c.attach_feat(records[at:at + len(c)])
+                at += len(c)
+        new_off = kept[-1].offset + kept[-1].nbytes_raw if kept else start
+        return kept, new_off
 
     def poll(self) -> IngestResult:
         """Read everything appended since the last poll, as complete games."""
@@ -221,8 +308,17 @@ class Ingester:
                 continue
             if size <= off:
                 continue
-            chunks, new_off = self.read_range(path, off)
+            # Sample counting only matters for files with a side file (and costs a scan
+            # when a resumed state predates it).
+            first = None
+            if feature_file(path).exists():
+                if name not in self.sample_offsets:
+                    self.sample_offsets[name] = self.sample_index_at(path, off)
+                first = self.sample_offsets[name]
+            chunks, new_off = self.read_range(path, off, first_sample=first)
             self.offsets[name] = new_off
+            if first is not None:
+                self.sample_offsets[name] += sum(len(c) for c in chunks)
             for c in chunks:
                 res.chunks.append(c)
                 res.samples += len(c)

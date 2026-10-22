@@ -27,6 +27,8 @@ impl Board {
         undo.was_capture = false;
         undo.halfmove_clock = self.halfmove_clock;
         undo.mv = mv;
+        undo.last_moves = self.last_moves;
+        undo.ply = self.ply;
 
         let from = mv.from();
         let to = mv.to();
@@ -105,6 +107,13 @@ impl Board {
         self.was_capture = undo.captured_pieces_count > 0;
 
         self.halfmove_count += 1;
+        self.last_moves = [
+            Some(mv),
+            undo.last_moves[0],
+            undo.last_moves[1],
+            undo.last_moves[2],
+        ];
+        self.ply = undo.ply.saturating_add(1);
         self.halfmove_clock = if self.was_capture {
             0
         } else {

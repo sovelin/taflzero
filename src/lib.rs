@@ -18,6 +18,17 @@ pub use moves::*;
 pub use search::*;
 pub use uci::*;
 
+/// `taflzero <cargo version> <git revision>`: what `--version` prints and UCI `id name`
+/// carries, so a run can record which engine produced its data.
+pub fn engine_version() -> String {
+    format!(
+        "{} {} {}",
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION"),
+        env!("TAFLZERO_GIT")
+    )
+}
+
 #[wasm_bindgen]
 pub fn hello() -> String {
     "Hello from Rust!".to_string()

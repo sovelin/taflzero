@@ -10,8 +10,8 @@ import numpy as np
 from pathlib import Path
 
 import onnx
-import onnxruntime as ort
-from onnxconverter_common import float16
+
+from export_onnx import get_planes_metadata, to_fp16
 
 
 def convert(input_path: Path, output_path: Path) -> None:
@@ -19,14 +19,19 @@ def convert(input_path: Path, output_path: Path) -> None:
     model = onnx.load(str(input_path))
 
     print("Converting to FP16 (keep_io_types=True)...")
-    model_fp16 = float16.convert_float_to_float16(model, keep_io_types=True)
+    # to_fp16 carries the `planes` metadata over: the engine needs it to load the net.
+    model_fp16 = to_fp16(model)
+    print(f"planes:  {get_planes_metadata(model_fp16) or '(none: an 11-plane base net)'}")
 
     onnx.save(model_fp16, str(output_path))
     print(f"Saved:   {output_path}")
 
 
 def validate(fp32_path: Path, fp16_path: Path, n_samples: int = 16) -> None:
+    import onnxruntime as ort
+
     print("\nValidating outputs...")
+    channels = onnx.load(str(fp32_path)).graph.input[0].type.tensor_type.shape.dim[1].dim_value or 11
     s32 = ort.InferenceSession(str(fp32_path), providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
     s16 = ort.InferenceSession(str(fp16_path), providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
 
@@ -35,7 +40,7 @@ def validate(fp32_path: Path, fp16_path: Path, n_samples: int = 16) -> None:
     value_diffs = []
 
     for _ in range(n_samples):
-        x = rng.standard_normal((1, 6, 11, 11)).astype(np.float32)
+        x = rng.standard_normal((1, channels, 11, 11)).astype(np.float32)
         p32, v32 = s32.run(None, {"input": x})
         p16, v16 = s16.run(None, {"input": x})
         policy_diffs.append(np.abs(p32 - p16).max())

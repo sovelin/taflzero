@@ -188,7 +188,7 @@ impl<O: UciOutput> UciController<O> {
             "uci" => {
                 self.send(&format!(
                     "id name {}\nid author Oleg Smirnov\nuciok",
-                    env!("CARGO_PKG_NAME")
+                    crate::engine_version()
                 ));
                 self.send("option name NNFile type string default ./copenhagen11x11.onnx");
                 self.send("option name MultiPV type spin default 1 min 1 max 1000");

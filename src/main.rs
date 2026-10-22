@@ -2,17 +2,18 @@ use taflzero::board::Board;
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
-use taflzero::board::position_export::BitPosition;
 use taflzero::board::rules::{RulesEnum, get_rules_enum_from_str};
+use taflzero::feature_dump::dump_features;
 use taflzero::gen_train_data::{
     DaemonConfig, DatagenConfig, DatagenSink, GameLimits, SearchConfig, WorkerOverrides,
     gen_train_data, gen_train_data_into,
 };
 use taflzero::match_play::{MatchConfig, play_match, replay_positions};
 use taflzero::mcts::MCTSConfig;
+use taflzero::movegen::MoveGen;
 use taflzero::mv::move_to_algebraic;
-use taflzero::search::nn::{BatchServer, NeuralNet, fill_input};
-use taflzero::{ConsoleClient, UciRunState, get_sample_size};
+use taflzero::search::nn::{BatchServer, NeuralNet, NnInput, fill_input};
+use taflzero::{ConsoleClient, UciRunState};
 
 struct CliArgs {
     net_path: String,
@@ -49,6 +50,11 @@ struct CliArgs {
     seed: Option<u64>,
     /// `--replay "<moves>"`: print the positions of a recorded game (see run_replay).
     replay: Option<String>,
+    /// `--features <samples.bin> --out <samples.feat>`: feature side file for the
+    /// input-plane probe instead of UCI (see feature_dump).
+    features_path: Option<String>,
+    out_path: Option<String>,
+    limit: Option<usize>,
 }
 
 fn parse_args() -> CliArgs {
@@ -82,6 +88,9 @@ fn parse_args() -> CliArgs {
     let mut opening_moves = 16usize;
     let mut seed: Option<u64> = None;
     let mut replay: Option<String> = None;
+    let mut features_path: Option<String> = None;
+    let mut out_path: Option<String> = None;
+    let mut limit: Option<usize> = None;
     let mut args = std::env::args().skip(1);
 
     // `--flag <usize>` with a lower bound; exits with a usage error otherwise.
@@ -274,6 +283,9 @@ fn parse_args() -> CliArgs {
             "--opening-moves" => opening_moves = usize_arg(&mut args, "--opening-moves", 0),
             "--seed" => seed = Some(usize_arg(&mut args, "--seed", 0) as u64),
             "--replay" => replay = Some(path_arg(&mut args, "--replay")),
+            "--features" => features_path = Some(path_arg(&mut args, "--features")),
+            "--out" => out_path = Some(path_arg(&mut args, "--out")),
+            "--limit" => limit = Some(usize_arg(&mut args, "--limit", 1)),
             _ => {
                 eprintln!("Unknown arg: {arg}");
                 eprintln!(
@@ -282,7 +294,8 @@ fn parse_args() -> CliArgs {
                      [--gumbel <considered>] [--max-plies N] [--max-no-capture N] \
                      [--net-watch] [--stop-file <path>] [--pause-file <path>] [--worker-id N] [--threads N] \
                      [--curriculum-fraction F] [--curriculum-path <path>] [--curriculum-max-size N] \
-                     [--dump-sample <output.bin>] [--nn-eval <fen>]"
+                     [--dump-sample <output.bin>] [--nn-eval <fen>] \
+                     [--features <samples.bin> --out <samples.feat> [--limit N] [--threads N]]"
                 );
                 std::process::exit(2);
             }
@@ -318,6 +331,34 @@ fn parse_args() -> CliArgs {
         opening_moves,
         seed,
         replay,
+        features_path,
+        out_path,
+        limit,
+    }
+}
+
+/// `--features`: replays the games of a sample file and writes the probe's side file.
+fn run_features(cli: &CliArgs) {
+    let (Some(input), Some(output)) = (&cli.features_path, &cli.out_path) else {
+        eprintln!("--features needs --out");
+        std::process::exit(2);
+    };
+    let t0 = std::time::Instant::now();
+    match dump_features(
+        std::path::Path::new(input),
+        std::path::Path::new(output),
+        cli.limit,
+        cli.variant,
+        cli.threads,
+    ) {
+        Ok(stats) => {
+            println!("{}", stats.summary());
+            println!("wrote {output} in {:.1} s", t0.elapsed().as_secs_f64());
+        }
+        Err(err) => {
+            eprintln!("--features aborted: {err}");
+            std::process::exit(1);
+        }
     }
 }
 
@@ -476,6 +517,10 @@ fn load_net_for(path: &str, board_size: usize, batch_size: usize) -> NeuralNet {
 }
 
 fn main() {
+    if std::env::args().nth(1).as_deref() == Some("--version") {
+        println!("{}", taflzero::engine_version());
+        return;
+    }
     let mut cli = parse_args();
     apply_worker_overrides(&mut cli);
     if let Some(moves) = cli.replay.clone() {
@@ -484,6 +529,10 @@ fn main() {
     }
     if cli.match_mode {
         run_match(&cli);
+        return;
+    }
+    if cli.features_path.is_some() {
+        run_features(&cli);
         return;
     }
 
@@ -515,11 +564,14 @@ fn main() {
             MCTSConfig::default_play().batch_size,
         );
 
-        let bit_pos = BitPosition::from_board(&board, 1);
-        let mut input = vec![0f32; get_sample_size(board.board_size())];
-        fill_input(&mut input, &bit_pos, board.precomputed());
+        let planes = nn.planes().clone();
+        let mut mg = MoveGen::new();
+        let pos = NnInput::from_board(&mut board, &mut mg, &planes);
+        let bit_pos = pos.bp;
+        let mut input = vec![0f32; planes.sample_size(board.board_size())];
+        fill_input(&mut input, &pos, &planes, board.precomputed());
 
-        let out = nn.evaluate_position(&bit_pos, board.precomputed());
+        let out = nn.evaluate_position(&pos, board.precomputed());
 
         let f2s = |xs: &[f32]| {
             xs.iter()
@@ -609,7 +661,7 @@ fn main() {
                 );
                 std::process::exit(2);
             }
-            let sink = DatagenSink::open(&path, &log_path);
+            let sink = DatagenSink::open(&path, &log_path, cli.variant);
             let per_thread = cli.datagen_count.map(|n| n.div_ceil(cli.threads));
             let variant = cli.variant;
             std::thread::scope(|scope| {

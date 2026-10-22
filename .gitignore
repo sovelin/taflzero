@@ -17,3 +17,6 @@ __pycache__/
 zero-trainer/runs/
 # taflground's built bundle (27 MB, private package): copied in by hand, see docs/plan-game-viewer.md
 zero-trainer/dashboard/vendor/taflground/dist/index.umd.cjs
+
+# input-plane probe output (side files, json, report)
+zero-trainer/probe_planes/

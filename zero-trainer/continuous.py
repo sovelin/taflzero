@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import math
 import os
@@ -47,8 +48,8 @@ import numpy as np
 import torch
 
 from az_micro_net import TaflAlphaZeroNet
-from dataset import geometry
-from export_onnx import export_model_to_onnx
+from dataset import geometry, parse_planes
+from export_onnx import export_model_to_onnx, to_fp16
 from ingest import TERMINAL_COLUMNS, Ingester, SelfplayStats, chunk_outcome
 from qnxx_io import load_qnxx, save_qnxx
 from replay import ReplayBuffer, replay_window
@@ -103,6 +104,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--gpool-channels", type=int, default=0)
     p.add_argument("--aux-heads", action="store_true")
     p.add_argument("--moves-left", action="store_true")
+    p.add_argument("--planes", type=str, default="base",
+                   help="input plane list (dataset.parse_planes); planes beyond base need the "
+                        "workers' .feat side files")
 
     # loop
     p.add_argument("--workers", type=int, default=None, help="engine processes (default cpu_count - train_threads - 1, max 8); 0 = trainer only")
@@ -136,6 +140,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--corner-weight", type=float, default=0.1)
     p.add_argument("--decided-policy-k", type=float, default=0.0)
     p.add_argument("--moves-left-weight", type=float, default=0.1)
+    p.add_argument("--cheap-value-weight", type=float, default=1.0,
+                   help="value-loss weight of cheap-search samples (policy_valid=0); pacing is unchanged")
 
     # engine
     p.add_argument("--full-nodes", type=int, default=160)
@@ -157,6 +163,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 _META_KEYS = {"config", "resume"}
+# Written into config.json by the run itself (which engine produced the data), not options.
+_RECORD_KEYS = {"engine_sha256", "engine_version", "engine_commit"}
 
 
 def _normalize_keys(d: dict) -> dict:
@@ -194,7 +202,7 @@ def parse_config(argv: list[str] | None = None) -> argparse.Namespace:
         defaults["run_dir"] = str(pre.resume)
     if pre.config is not None:
         defaults.update(_normalize_keys(json.loads(Path(pre.config).read_text(encoding="utf-8"))))
-    defaults = {k: v for k, v in defaults.items() if k not in _META_KEYS}
+    defaults = {k: v for k, v in defaults.items() if k not in _META_KEYS | _RECORD_KEYS}
     parser.set_defaults(**_coerce_for_parser(parser, defaults))
     args = parser.parse_args(argv)
     if args.run_dir is None:
@@ -205,6 +213,10 @@ def parse_config(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error("--engine-bin is required when --workers > 0")
     if args.lr is None:
         args.lr = 0.02 * args.batch / 1024 if args.optimizer == "sgd" else 5e-4
+    try:
+        args.planes = parse_planes(args.planes).canonical
+    except ValueError as e:
+        parser.error(f"--planes: {e}")
     return args
 
 
@@ -316,11 +328,31 @@ def training_lag(generated: int, step: int, batch: int, sample_reuse: float) -> 
 
 
 def build_model(args: argparse.Namespace) -> TaflAlphaZeroNet:
+    spec = parse_planes(args.planes)
     return TaflAlphaZeroNet(
+        in_channels=spec.num_planes, planes=spec.canonical,
         board_size=args.board_size, trunk_channels=args.channels, num_blocks=args.blocks,
         value_channels=args.value_channels, use_se=args.se, gpool_channels=args.gpool_channels,
         aux_heads=args.aux_heads, moves_left=args.moves_left,
     )
+
+
+def engine_identity(engine_bin: Path | None) -> dict:
+    """sha256 and `--version` of the engine executable, recorded in config.json so the
+    data can be traced to the engine that produced it."""
+    if engine_bin is None or not Path(engine_bin).exists():
+        return {"engine_sha256": None, "engine_version": None}
+    h = hashlib.sha256()
+    with open(engine_bin, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    try:
+        out = subprocess.run([str(engine_bin), "--version"], capture_output=True, text=True,
+                             timeout=30, creationflags=NO_WINDOW)
+        version = out.stdout.strip() if out.returncode == 0 and out.stdout.strip() else "unknown"
+    except (OSError, subprocess.SubprocessError):
+        version = "unknown"
+    return {"engine_sha256": h.hexdigest(), "engine_version": version}
 
 
 def build_optimizer(model: torch.nn.Module, args: argparse.Namespace) -> torch.optim.Optimizer:
@@ -413,6 +445,7 @@ class ContinuousRun:
         self.buffer = ReplayBuffer(
             self.geom, z_lambda=args.value_lambda, augment=True, value_gamma=args.value_gamma,
             max_bytes=args.buffer_max_bytes, decode_threads=args.decode_threads,
+            planes=args.planes,
         )
         self.stats = SelfplayStats()
         self.step = 0
@@ -440,6 +473,22 @@ class ContinuousRun:
             args.aux_policy_weight > 0.0 or args.corner_weight > 0.0
         )
 
+    def _write_config(self) -> None:
+        """config.json: the effective options plus the engine that produces the data."""
+        ident = engine_identity(self.args.engine_bin)
+        self.log(f"[init] engine {self.args.engine_bin} version={ident['engine_version']} "
+                 f"sha256={(ident['engine_sha256'] or '')[:12]}")
+        atomic_write_text(self.run_dir / "config.json",
+                          json.dumps(config_to_json(self.args) | ident, indent=2))
+
+    def _check_model_planes(self) -> None:
+        spec = parse_planes(self.args.planes)
+        have = self.model.model_kwargs.get("in_channels", 11)
+        recorded = self.model.model_kwargs.get("planes") or ("base" if have == 11 else None)
+        if have != spec.num_planes or (recorded is not None and recorded != spec.canonical):
+            raise SystemExit(f"the model reads planes {recorded!r} ({have} channels) but the run's "
+                             f"planes are {spec.canonical!r} ({spec.num_planes})")
+
     # ─── init ───────────────────────────────────────────────────────────────
 
     def _init_fresh(self) -> None:
@@ -455,9 +504,10 @@ class ContinuousRun:
         else:
             self.model = build_model(args)
             self.log(f"[init] new model {self.model.model_kwargs}")
+        self._check_model_planes()
         self.model.to(self.device)
         self.optimizer = build_optimizer(self.model, args)
-        atomic_write_text(self.run_dir / "config.json", json.dumps(config_to_json(args), indent=2))
+        self._write_config()
         self.export_latest()
         self.save_state()
 
@@ -467,6 +517,7 @@ class ContinuousRun:
             raise SystemExit(f"--resume: {self.run_dir} has no state.json / latest.qnxx")
         state = json.loads(self.state_path.read_text(encoding="utf-8"))
         self.model = load_qnxx(self.latest_qnxx).to(self.device)
+        self._check_model_planes()
         self.optimizer = build_optimizer(self.model, args)
         if self.optimizer_path.exists():
             opt = torch.load(self.optimizer_path, map_location="cpu", weights_only=False)
@@ -485,6 +536,8 @@ class ContinuousRun:
         offsets = {k: int(v) for k, v in state.get("offsets", {}).items()}
         self.ingester.offsets = dict(offsets)
         self.ingester.gamelog_offsets = {k: int(v) for k, v in state.get("gamelog_offsets", {}).items()}
+        self.ingester.sample_offsets = {k: int(v) for k, v in state.get("sample_offsets", {}).items()}
+        start_samples = {k: int(v) for k, v in state.get("window_start_samples", {}).items()}
 
         # Re-read the replay window: each file from the first game still in the
         # window up to the ingest offset (both are game boundaries).
@@ -496,12 +549,17 @@ class ContinuousRun:
             end = offsets.get(path.name, 0)
             if end <= start:
                 continue
-            chunks, _ = self.ingester.read_range(path, start, end)
+            first = None
+            if path.with_suffix(".feat").exists():
+                first = start_samples.get(path.name)
+                if first is None:
+                    first = self.ingester.sample_index_at(path, start)
+            chunks, _ = self.ingester.read_range(path, start, end, first_sample=first)
             for c in chunks:
                 self.buffer.add(c, window)
                 reloaded += len(c)
-        # Rewrite config.json so CLI overrides on resume are recorded.
-        atomic_write_text(self.run_dir / "config.json", json.dumps(config_to_json(args), indent=2))
+        # Rewrite config.json so CLI overrides (and the engine now in use) are recorded.
+        self._write_config()
         self.log(f"[resume] step={self.step} generated={self.stats.generated} games={self.stats.games} "
                  f"reloaded {reloaded} samples into the buffer")
         if not self.worker_net.exists():
@@ -544,9 +602,8 @@ class ContinuousRun:
             if self.args.export_fp16:
                 tmp16 = self.latest_fp16.with_name(self.latest_fp16.name + ".tmp")
                 import onnx
-                from onnxconverter_common import float16
                 m = onnx.load(str(path))
-                onnx.save(float16.convert_float_to_float16(m, keep_io_types=True), str(tmp16))
+                onnx.save(to_fp16(m), str(tmp16))
                 replace_with_retry(tmp16, self.latest_fp16)
         finally:
             if moved:
@@ -565,6 +622,7 @@ class ContinuousRun:
     def state_dict(self) -> dict:
         with self.lock:
             window_start = self.buffer.window_starts()
+            window_start_samples = self.buffer.window_start_samples()
             selfplay = self.stats.to_dict()
             buffer_len = len(self.buffer)
         return {
@@ -574,7 +632,9 @@ class ContinuousRun:
             "export_count": self.export_count,
             "offsets": dict(self.ingester.offsets),
             "gamelog_offsets": dict(self.ingester.gamelog_offsets),
+            "sample_offsets": dict(self.ingester.sample_offsets),
             "window_start": window_start,
+            "window_start_samples": window_start_samples,
             "window": self.current_window(),
             "buffer": buffer_len,
             "selfplay": selfplay,
@@ -621,7 +681,7 @@ class ContinuousRun:
         total, p_loss, v_loss, ap_loss, c_loss, ml_loss = compute_batch_loss(
             self.model, batch, self.device, 1.0, a.aux_policy_weight, a.corner_weight,
             self.use_aux, decided_policy_k=a.decided_policy_k, moves_left_weight=a.moves_left_weight,
-            amp_dtype=self.amp_dtype,
+            amp_dtype=self.amp_dtype, cheap_value_weight=a.cheap_value_weight,
         )
         loss = float(total.item())
         if not math.isfinite(loss):

@@ -23,7 +23,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, random_split
 
 from az_micro_net import TaflAlphaZeroNet
-from dataset import SelfPlayDataset
+from dataset import SelfPlayDataset, parse_planes
 from export_onnx import export_model_to_onnx
 from qnxx_io import save_qnxx, load_qnxx
 from training_utils import alpha_zero_loss, policy_loss_masked, moves_left_loss
@@ -52,6 +52,7 @@ def compute_batch_loss(
     decided_policy_k: float = 0.0,
     moves_left_weight: float = 0.0,
     amp_dtype: torch.dtype | None = None,
+    cheap_value_weight: float = 1.0,
 ):
     """Forward + all loss terms for one batch.
 
@@ -70,6 +71,10 @@ def compute_batch_loss(
     a ply / no-capture limit) are masked out of the value loss entirely.  Their
     value_target is the search's own root_q, and training on it feeds the
     net's evaluation back to itself.
+
+    `cheap_value_weight` scales the value loss of cheap-search samples
+    (policy_valid = 0, value target plain z); 1.0 = as every other sample, 0.0 =
+    value from full-search samples only (KataGo records only those).
 
     Returns (total, p_loss, v_loss, aux_p_loss, corner_loss) as tensors.
     """
@@ -90,6 +95,8 @@ def compute_batch_loss(
 
     weights = compute_sample_weights(planes, value_target, defender_weight)
     value_weights = weights * moves_left_valid.to(device)
+    if cheap_value_weight != 1.0:
+        value_weights = value_weights * (policy_valid + (1.0 - policy_valid) * cheap_value_weight)
 
     policy_weights = None
     if decided_policy_k > 0.0:
@@ -164,6 +171,7 @@ def compute_val_loss(
     aux_policy_weight: float = 0.0,
     corner_weight: float = 0.0,
     use_aux: bool = False,
+    cheap_value_weight: float = 1.0,
 ) -> tuple[float, float, float]:
     """Compute average validation loss over a few batches."""
     model.eval()
@@ -175,6 +183,7 @@ def compute_val_loss(
         loss, p_loss, v_loss, _, _, _ = compute_batch_loss(
             model, batch, device, defender_weight,
             aux_policy_weight, corner_weight, use_aux,
+            cheap_value_weight=cheap_value_weight,
         )
         total_loss += loss.item()
         total_p += p_loss.item()
@@ -225,6 +234,7 @@ def train(
     moves_left_weight: float = 0.0,
     checkpoint_every: int = 0,
     checkpoint_path=None,
+    cheap_value_weight: float = 1.0,
 ) -> dict:
     model.to(device)
     model.train()
@@ -293,6 +303,7 @@ def train(
             aux_policy_weight, corner_weight, use_aux,
             decided_policy_k=decided_policy_k,
             moves_left_weight=moves_left_weight,
+            cheap_value_weight=cheap_value_weight,
         )
 
         optimizer.zero_grad(set_to_none=True)
@@ -332,6 +343,7 @@ def train(
                 aux_policy_weight=aux_policy_weight,
                 corner_weight=corner_weight,
                 use_aux=use_aux,
+                cheap_value_weight=cheap_value_weight,
             )
 
             aux_str = f"aux_p={avg_ap:.4f}  corner={avg_c:.4f}  " if use_aux else ""
@@ -421,6 +433,10 @@ def main() -> None:
     parser.add_argument("--value-gamma", type=float, default=1.0, help="Per-ply discount of the game outcome z (z *= gamma**plies_remaining); 1.0 = off (flat +/-1). Try 0.99 to reward fast conversion of won positions.")
     parser.add_argument("--early-stopping-patience", type=int, default=0, help="Stop if val_loss doesn't improve for N checks (0 = disabled)")
     parser.add_argument("--no-restore-best", action="store_true", help="Always use final model weights, don't restore best val_loss checkpoint")
+    parser.add_argument("--planes", type=str, default="base", help="Input plane list, e.g. base,-throne,last2 (dataset.parse_planes, docs/probe-input-planes.md); a fresh model's in_channels follows it")
+    parser.add_argument("--features", type=Path, default=None, help="Feature side file from `taflzero --features` (needed by the last*/rep_dst/king12/ply/cap/mob planes)")
+    parser.add_argument("--limit", type=int, default=0, help="Use only the first N samples of --data (0 = all); with --features, the side file's record count when the data file has grown since")
+    parser.add_argument("--cheap-value-weight", type=float, default=1.0, help="Value-loss weight of cheap-search samples (policy_valid=0); 0 = value from full searches only")
     parser.add_argument("--seed", type=int, default=0, help="RNG seed for reproducible weight init + data order (0 = unseeded). Set equal across A/B runs to isolate one changed flag.")
     args = parser.parse_args()
 
@@ -440,6 +456,16 @@ def main() -> None:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    try:
+        plane_spec = parse_planes(args.planes)
+    except ValueError as e:
+        parser.error(str(e))
+    if plane_spec.needs_features and args.features is None:
+        parser.error(f"--planes {args.planes} needs --features")
+    # compute_sample_weights reads the side to move from channel 3.
+    if args.defender_weight != 1.0 and plane_spec.index_of("stm") != 3:
+        parser.error("--defender-weight needs the stm plane at channel 3 (keep base's first four planes)")
+
     # Load or create model
     if args.checkpoint and args.checkpoint.exists():
         print(f"Loading checkpoint: {args.checkpoint}")
@@ -451,6 +477,8 @@ def main() -> None:
         if args.blocks is not None:
             model_kwargs["num_blocks"] = args.blocks
         model_kwargs["board_size"] = args.board_size
+        model_kwargs["in_channels"] = plane_spec.num_planes
+        model_kwargs["planes"] = plane_spec.canonical
         if args.value_channels is not None:
             model_kwargs["value_channels"] = args.value_channels
         if args.se:
@@ -471,6 +499,10 @@ def main() -> None:
         model.to(device)
         print("Grafted a fresh moves-left head onto the loaded model")
 
+    if model.model_kwargs["in_channels"] != plane_spec.num_planes:
+        parser.error(f"the model reads {model.model_kwargs['in_channels']} planes, "
+                     f"--planes {args.planes} gives {plane_spec.num_planes}")
+
     # Load dataset
     print(f"Loading data: {args.data}")
     # A checkpoint carries its own board size; a fresh run takes it from the flag.
@@ -479,6 +511,7 @@ def main() -> None:
         args.data, window_size=args.window, z_lambda=args.value_lambda,
         legacy=args.legacy_data, board_size=board_size, value_gamma=args.value_gamma,
         need_moves_left=(model.has_moves_left and args.moves_left_weight > 0.0),
+        planes=args.planes, features=args.features, limit=args.limit,
     )
     print(f"Loaded {len(dataset)} samples" + (f" (window={args.window})" if args.window > 0 else ""))
 
@@ -517,6 +550,7 @@ def main() -> None:
         moves_left_weight=args.moves_left_weight,
         checkpoint_every=args.checkpoint_every,
         checkpoint_path=args.save_checkpoint,
+        cheap_value_weight=args.cheap_value_weight,
     )
 
     # Save outputs
