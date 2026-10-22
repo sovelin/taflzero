@@ -48,6 +48,7 @@ unrelated to the board side:
 
 from __future__ import annotations
 
+import copy
 import struct
 from collections import deque
 from dataclasses import dataclass
@@ -850,6 +851,18 @@ class SelfPlayDataset(Dataset):
         if self._feat is None:
             self._feat = open_features(self._features_path)
         return self._feat[int(self._feat_index[idx])]
+
+    def with_planes(self, planes: str, augment: bool | None = None) -> "SelfPlayDataset":
+        """The same samples with another plane list (and augmentation switch).  The
+        offset index, minutes of seeks on a large file, is shared, not rebuilt."""
+        spec = parse_planes(planes)
+        if spec.needs_features and self._features_path is None:
+            raise ValueError(f"planes {planes!r} need a feature side file (features=...)")
+        other = copy.copy(self)
+        other._spec = spec
+        if augment is not None:
+            other._augment = augment
+        return other
 
     def __getstate__(self):
         # DataLoader workers reopen the sample file and the side file themselves.

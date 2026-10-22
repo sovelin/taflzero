@@ -15,3 +15,6 @@ zero-trainer/weights
 dedup
 __pycache__/
 zero-trainer/runs/
+
+# input-plane probe output (side files, json, report)
+zero-trainer/probe_planes/
