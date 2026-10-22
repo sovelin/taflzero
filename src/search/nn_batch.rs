@@ -15,9 +15,8 @@
 //! as the net call itself. A separate thread does that, so the serving thread runs
 //! the next batch on the GPU while the previous batch's answers go out.
 
-use super::nn_common::NnOutput;
+use super::nn_common::{NnOutput, PlaneSet};
 use super::nn_native::{FlatOutputs, NeuralNet, run_inference, run_inference_flat};
-use crate::get_sample_size;
 use ort::session::Session;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, mpsc};
@@ -43,6 +42,8 @@ pub struct BatchServer {
     queue: Mutex<Queue>,
     arrived: Condvar,
     board_size: usize,
+    /// The net's input planes; clients fill their requests with these.
+    planes: PlaneSet,
     max_batch: usize,
     wait: Duration,
     /// Threads currently playing; a batch is closed as soon as half of them have a
@@ -72,12 +73,14 @@ impl BatchServer {
         net_watch: bool,
     ) -> Result<Arc<Self>, String> {
         let max_batch = max_batch.max(1).div_ceil(BUCKET) * BUCKET;
-        let (mut session, board_size) = NeuralNet::build_session(path, board_size, max_batch)?;
-        warm_buckets(&mut session, board_size, max_batch);
+        let (mut session, board_size, planes) =
+            NeuralNet::build_session(path, board_size, max_batch)?;
+        warm_buckets(&mut session, planes.len(), board_size, max_batch);
         let server = Arc::new(Self {
             queue: Mutex::new(Queue::default()),
             arrived: Condvar::new(),
             board_size,
+            planes,
             max_batch,
             wait,
             active: AtomicUsize::new(0),
@@ -96,6 +99,12 @@ impl BatchServer {
 
     pub fn board_size(&self) -> usize {
         self.board_size
+    }
+
+    /// Input planes of the served net (fixed for the server's life: a reload to a
+    /// net with other planes is refused).
+    pub fn planes(&self) -> &PlaneSet {
+        &self.planes
     }
 
     pub fn max_batch(&self) -> usize {
@@ -231,6 +240,7 @@ impl BatchServer {
                 &mut input,
                 total,
                 padded,
+                self.planes.len(),
                 self.board_size,
                 spare,
             );
@@ -266,15 +276,22 @@ impl BatchServer {
                 if mtime.is_some() && mtime != loaded_mtime {
                     loaded_mtime = mtime;
                     let (tx, rx) = mpsc::channel();
-                    let (path, board_size, max_batch) =
-                        (path.clone(), self.board_size, self.max_batch);
+                    let (path, board_size, max_batch, planes) = (
+                        path.clone(),
+                        self.board_size,
+                        self.max_batch,
+                        self.planes.clone(),
+                    );
                     std::thread::spawn(move || {
                         let built = match NeuralNet::build_session(&path, board_size, max_batch) {
-                            Ok((mut s, size)) if size == board_size => {
-                                warm_buckets(&mut s, size, max_batch);
+                            Ok((mut s, size, p)) if size == board_size && p == planes => {
+                                warm_buckets(&mut s, p.len(), size, max_batch);
                                 Ok(s)
                             }
-                            Ok((_, size)) => Err(format!("net is for a {size}x{size} board")),
+                            Ok((_, size, p)) if size == board_size => {
+                                Err(format!("net reads planes {p}, the served one {planes}"))
+                            }
+                            Ok((_, size, _)) => Err(format!("net is for a {size}x{size} board")),
                             Err(err) => Err(err),
                         };
                         let _ = tx.send(built);
@@ -331,18 +348,25 @@ impl Report {
 
 /// `build_session` warms up `max_batch` only; plan the smaller shapes too so the
 /// first short batch does not stall on ORT's per-shape setup.
-fn warm_buckets(session: &mut Session, board_size: usize, max_batch: usize) {
-    let sample_size = get_sample_size(board_size);
+fn warm_buckets(session: &mut Session, channels: usize, board_size: usize, max_batch: usize) {
+    let sample_size = channels * board_size * board_size;
     let mut b = BUCKET;
     while b < max_batch {
-        let _ = run_inference(session, vec![0.0; b * sample_size], b, b, board_size);
+        let _ = run_inference(
+            session,
+            vec![0.0; b * sample_size],
+            b,
+            b,
+            channels,
+            board_size,
+        );
         b += BUCKET;
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::super::nn_common::build_input_data;
+    use super::super::nn_common::{NnInput, build_input_data};
     use super::*;
     use crate::board::Board;
     use crate::board::position_export::BitPosition;
@@ -357,7 +381,7 @@ mod tests {
 
     /// `count` positions from random play (restarting after a terminal), plus a
     /// board to borrow the geometry from.
-    fn positions(seed: u64, count: usize) -> (Vec<BitPosition>, Board) {
+    fn positions(seed: u64, count: usize) -> (Vec<NnInput>, Board) {
         use rand::{RngExt, SeedableRng, rngs::StdRng};
         let mut rng = StdRng::seed_from_u64(seed);
         let mut movegen = crate::moves::movegen::MoveGen::new();
@@ -371,7 +395,7 @@ mod tests {
             }
             let mv = moves[rng.random_range(0..moves.len())];
             b.make_move_simple(mv).unwrap();
-            out.push(BitPosition::from_board(&b, 1));
+            out.push(NnInput::base(BitPosition::from_board(&b, 1)));
         }
         (out, fresh())
     }
@@ -401,7 +425,7 @@ mod tests {
                     let mut expect = NeuralNet::new("copenhagen11x11.onnx", 11, 8).unwrap();
                     server.client_started();
                     for chunk in pos.chunks(1 + t as usize * 2) {
-                        let refs: Vec<&BitPosition> = chunk.iter().collect();
+                        let refs: Vec<&NnInput> = chunk.iter().collect();
                         let got = shared.evaluate_batch(&refs, geom);
                         let want = expect.evaluate_batch(&refs, geom);
                         assert_eq!(got.len(), want.len());
@@ -437,7 +461,7 @@ mod tests {
         // And the server sees the same thing the local session sees for one sample.
         let (pos, board) = positions(7, 1);
         let geom = board.precomputed();
-        let input = build_input_data(&[&pos[0]], geom);
+        let input = build_input_data(&[&pos[0]], server.planes(), geom);
         let a = server.evaluate(input, 1).pop().unwrap();
         let b = local.evaluate_position(&pos[0], geom);
         assert!((a.value - b.value).abs() < 1e-4);
@@ -463,7 +487,7 @@ mod tests {
         let geom = board.precomputed();
         let mut shared = NeuralNet::shared(server.clone());
         server.client_started();
-        let refs: Vec<&BitPosition> = pos.iter().collect();
+        let refs: Vec<&NnInput> = pos.iter().collect();
         let before = shared.evaluate_batch(&refs, geom);
 
         // Same bytes, newer mtime: the next check (≥ 1 s after the last) starts a

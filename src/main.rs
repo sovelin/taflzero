@@ -2,7 +2,6 @@ use taflzero::board::Board;
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
-use taflzero::board::position_export::BitPosition;
 use taflzero::board::rules::{RulesEnum, get_rules_enum_from_str};
 use taflzero::feature_dump::dump_features;
 use taflzero::gen_train_data::{
@@ -11,8 +10,9 @@ use taflzero::gen_train_data::{
 };
 use taflzero::match_play::{MatchConfig, play_match};
 use taflzero::mcts::MCTSConfig;
-use taflzero::search::nn::{BatchServer, NeuralNet, fill_input};
-use taflzero::{ConsoleClient, UciRunState, get_sample_size};
+use taflzero::movegen::MoveGen;
+use taflzero::search::nn::{BatchServer, NeuralNet, NnInput, fill_input};
+use taflzero::{ConsoleClient, UciRunState};
 
 struct CliArgs {
     net_path: String,
@@ -507,11 +507,14 @@ fn main() {
             MCTSConfig::default_play().batch_size,
         );
 
-        let bit_pos = BitPosition::from_board(&board, 1);
-        let mut input = vec![0f32; get_sample_size(board.board_size())];
-        fill_input(&mut input, &bit_pos, board.precomputed());
+        let planes = nn.planes().clone();
+        let mut mg = MoveGen::new();
+        let pos = NnInput::from_board(&mut board, &mut mg, &planes);
+        let bit_pos = pos.bp;
+        let mut input = vec![0f32; planes.sample_size(board.board_size())];
+        fill_input(&mut input, &pos, &planes, board.precomputed());
 
-        let out = nn.evaluate_position(&bit_pos, board.precomputed());
+        let out = nn.evaluate_position(&pos, board.precomputed());
 
         let f2s = |xs: &[f32]| {
             xs.iter()

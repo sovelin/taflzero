@@ -580,6 +580,17 @@ FEAT_FLAG_LAST_PLY = 1 << 2
 FEAT_FLAG_THREEFOLD = 1 << 3
 
 FEAT_NO_SQUARE = 255
+
+# Byte 77: how the game ended, on its last sample (0 on every other sample). Codes are
+# the engine's (src/search/features.rs, TERMINAL_CODES); names are the gamelog's
+# terminal strings, which the dashboard's REASON table keys on. 9 = cut off by the ply
+# or no-capture limit, 255 = decided but the replay could not tell how.
+FEAT_TERMINAL = 77
+FEAT_TERMINAL_NAMES = {
+    1: "atk_capture", 2: "atk_surrounded", 3: "atk_no_moves", 4: "atk_threefold",
+    5: "def_corner", 6: "def_edge", 7: "def_fort", 8: "def_no_moves", 9: "max_plies",
+}
+FEAT_TERMINAL_UNKNOWN = 255
 PLY_PLANE_SCALE = 400.0
 
 # The 11 planes of decode_sample, in their order.
@@ -621,6 +632,35 @@ class PlaneSpec:
         """Channel of a base plane in the stack, or None if it was removed."""
         i = BASE_PLANES.index(name)
         return self.base.index(i) if i in self.base else None
+
+    @property
+    def canonical(self) -> str:
+        """The form the ONNX `planes` metadata carries and the engine's PlaneSet prints:
+        `base` for the 11 of today; otherwise `base` (if any base plane is kept) and its
+        removals in fixed order, then the extras in the listed order."""
+        parts: list[str] = []
+        if self.base:
+            parts.append("base")
+            for name, removed in _REMOVALS.items():
+                if all(BASE_PLANES.index(p) not in self.base for p in removed):
+                    parts.append(name)
+        parts += list(self.extras)
+        return ",".join(parts)
+
+    def channel_names(self) -> list[str]:
+        """One name per input channel, in order (shared with the Rust PlaneSet)."""
+        out = [BASE_PLANES[i] for i in self.base]
+        per_extra = {
+            "rep_dst": ["rep3", "rep2"], "king12": ["king1", "king2"], "ply": ["ply"],
+            "cap": ["cap_now", "cap_next"], "mob": ["atk_mob", "def_mob"], "ones": ["ones"],
+        }
+        for e in self.extras:
+            if e in _HISTORY:
+                for k in range({"last1": 1, "last2": 2, "last4": 4}[e]):
+                    out += [f"hist{k}_from", f"hist{k}_to"]
+            else:
+                out += per_extra[e]
+        return out
 
 
 def parse_planes(spec: str) -> PlaneSpec:

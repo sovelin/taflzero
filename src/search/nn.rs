@@ -12,7 +12,9 @@ mod nn_wasm;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use nn_batch::BatchServer;
-pub use nn_common::{NUM_PLANES, NnOutput, fill_input};
+pub use nn_common::{
+    BASE_PLANES, Extra, NnInput, NnOutput, PlaneSet, build_input_data, fill_input,
+};
 #[cfg(not(target_arch = "wasm32"))]
 pub use nn_native::*;
 #[cfg(target_arch = "wasm32")]

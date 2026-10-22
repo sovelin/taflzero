@@ -762,6 +762,7 @@ dependencies = [
  "rand",
  "rand_distr",
  "serde",
+ "serde_json",
  "sysinfo",
  "wasm-bindgen",
  "web-sys",

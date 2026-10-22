@@ -1,7 +1,6 @@
-use super::nn_common::{NUM_PLANES, NnOutput, build_input_data};
+use super::nn_common::{NnInput, NnOutput, PlaneSet, build_input_data};
 use crate::board::Precomputed;
-use crate::board::position_export::BitPosition;
-use crate::{get_policy_size, get_sample_size};
+use crate::get_policy_size;
 use ndarray::{Array, ArrayView, IxDyn};
 use ort::environment::Environment;
 #[cfg(feature = "cuda")]
@@ -43,6 +42,8 @@ pub struct NeuralNet {
     path: String,
     loaded_mtime: Option<std::time::SystemTime>,
     board_size: usize,
+    /// Input planes the net reads (ONNX metadata `planes`; 11 channels without it).
+    planes: PlaneSet,
     /// Every call is padded to this many samples. ORT plans execution per input
     /// shape, and a shape it has not seen pays that cost on every run, so the search
     /// must always hand it the one shape the session was warmed up on.
@@ -73,18 +74,62 @@ fn file_mtime(path: &str) -> Option<std::time::SystemTime> {
     std::fs::metadata(path).and_then(|m| m.modified()).ok()
 }
 
+/// Input channel count of the model, when its shape fixes it.
+fn model_channels(session: &Session) -> Option<usize> {
+    let input = session.inputs().first()?;
+    let ValueType::Tensor { shape, .. } = input.dtype() else {
+        return None;
+    };
+    let c = *shape.get(1)?;
+    (c >= 1).then_some(c as usize)
+}
+
+/// The plane set a net was trained with: ONNX metadata `planes` (written by
+/// export_onnx.py), or, for nets exported before it existed, `base` when the input
+/// has the 11 channels every such net has. The channel count must match either way.
+pub(super) fn model_planes(session: &Session, what: &str) -> Result<PlaneSet, String> {
+    let channels = model_channels(session);
+    let declared = session
+        .metadata()
+        .map_err(|e| format!("{what}: cannot read model metadata: {e}"))?
+        .custom("planes");
+    let planes = match declared {
+        Some(spec) => PlaneSet::parse(&spec)
+            .map_err(|e| format!("{what}: bad `planes` metadata {spec:?}: {e}"))?,
+        None => match channels {
+            Some(11) | None => PlaneSet::base(),
+            Some(c) => {
+                return Err(format!(
+                    "{what}: the net reads {c} input planes but has no `planes` metadata; \
+                     only 11-plane nets may omit it"
+                ));
+            }
+        },
+    };
+    if let Some(c) = channels
+        && c != planes.len()
+    {
+        return Err(format!(
+            "{what}: `planes` {planes} is {} channels but the net's input has {c}",
+            planes.len()
+        ));
+    }
+    Ok(planes)
+}
+
 impl NeuralNet {
     /// Loads a net and records the board size it was built for. `board_size` is only a
     /// fallback for models that leave their spatial dimensions dynamic — the model's own
     /// shape wins. Whether that size fits the current board is checked at search time.
     pub fn new(path: &str, board_size: usize, batch_size: usize) -> Result<Self, String> {
         println!("[NN] Loading model: {}", path);
-        let (session, board_size) = Self::build_session(path, board_size, batch_size)?;
+        let (session, board_size, planes) = Self::build_session(path, board_size, batch_size)?;
         Ok(Self {
             backend: Backend::Local(session),
             path: path.to_string(),
             loaded_mtime: file_mtime(path),
             board_size,
+            planes,
             batch_size,
         })
     }
@@ -95,6 +140,7 @@ impl NeuralNet {
     pub fn shared(server: Arc<BatchServer>) -> Self {
         Self {
             board_size: server.board_size(),
+            planes: server.planes().clone(),
             backend: Backend::Shared(server),
             path: String::new(),
             loaded_mtime: None,
@@ -119,7 +165,7 @@ impl NeuralNet {
         if mtime.is_none() || mtime == self.loaded_mtime {
             return Ok(false);
         }
-        let (session, board_size) =
+        let (session, board_size, planes) =
             Self::build_session(&self.path, self.board_size, self.batch_size)?;
         if board_size != self.board_size {
             return Err(format!(
@@ -127,17 +173,24 @@ impl NeuralNet {
                 self.board_size
             ));
         }
+        if planes != self.planes {
+            return Err(format!(
+                "reloaded net reads planes {planes}, the loaded one {}",
+                self.planes
+            ));
+        }
         self.backend = Backend::Local(session);
         self.loaded_mtime = mtime;
         Ok(true)
     }
 
-    /// Builds and warms up a session; returns it with the board size it is built for.
+    /// Builds and warms up a session; returns it with the board size and the plane set
+    /// it is built for.
     pub(super) fn build_session(
         path: &str,
         board_size: usize,
         batch_size: usize,
-    ) -> Result<(Session, usize), String> {
+    ) -> Result<(Session, usize, PlaneSet), String> {
         #[cfg(all(feature = "cuda", not(feature = "directml")))]
         println!("[NN] Backend: CUDA");
         #[cfg(all(feature = "directml", not(feature = "cuda")))]
@@ -204,11 +257,16 @@ impl NeuralNet {
             .map_err(|err| format!("cannot load neural net '{path}': {err}"))?;
 
         let board_size = model_board_size(&session).unwrap_or(board_size);
+        let planes = model_planes(&session, &format!("neural net '{path}'"))?;
+        if !planes.is_base() {
+            println!("[NN] Planes: {planes} ({} channels)", planes.len());
+        }
+        let channels = planes.len();
 
         // Warmup + benchmark
-        let warmup_input = vec![0.0f32; get_sample_size(board_size) * batch_size];
+        let warmup_input = vec![0.0f32; planes.sample_size(board_size) * batch_size];
         let warmup_tensor = Array::from_shape_vec(
-            IxDyn(&[batch_size, NUM_PLANES, board_size, board_size]),
+            IxDyn(&[batch_size, channels, board_size, board_size]),
             warmup_input,
         )
         .unwrap();
@@ -221,9 +279,9 @@ impl NeuralNet {
         let bench_runs = 10;
         let start = std::time::Instant::now();
         for _ in 0..bench_runs {
-            let input = vec![0.0f32; get_sample_size(board_size) * batch_size];
+            let input = vec![0.0f32; planes.sample_size(board_size) * batch_size];
             let tensor = Array::from_shape_vec(
-                IxDyn(&[batch_size, NUM_PLANES, board_size, board_size]),
+                IxDyn(&[batch_size, channels, board_size, board_size]),
                 input,
             )
             .unwrap();
@@ -238,7 +296,7 @@ impl NeuralNet {
             bench_runs
         );
 
-        Ok((session, board_size))
+        Ok((session, board_size, planes))
     }
 
     pub fn from_bytes(data: &[u8], board_size: usize, batch_size: usize) -> Result<Self, String> {
@@ -248,12 +306,14 @@ impl NeuralNet {
             .map_err(|err| format!("cannot load neural net from bytes: {err}"))?;
 
         let board_size = model_board_size(&session).unwrap_or(board_size);
+        let planes = model_planes(&session, "neural net from bytes")?;
 
         Ok(Self {
             backend: Backend::Local(session),
             path: String::new(),
             loaded_mtime: None,
             board_size,
+            planes,
             batch_size,
         })
     }
@@ -263,22 +323,24 @@ impl NeuralNet {
         self.board_size
     }
 
-    pub fn evaluate_position(&mut self, pos: &BitPosition, geom: &Precomputed) -> NnOutput {
+    /// Input planes this net reads; build its inputs with `NnInput::from_board`.
+    pub fn planes(&self) -> &PlaneSet {
+        &self.planes
+    }
+
+    pub fn evaluate_position(&mut self, pos: &NnInput, geom: &Precomputed) -> NnOutput {
         self.evaluate_batch(&[pos], geom).pop().unwrap()
     }
 
-    pub fn evaluate_batch(
-        &mut self,
-        positions: &[&BitPosition],
-        geom: &Precomputed,
-    ) -> Vec<NnOutput> {
+    pub fn evaluate_batch(&mut self, positions: &[&NnInput], geom: &Precomputed) -> Vec<NnOutput> {
         let n = positions.len();
-        let input_data = build_input_data(positions, geom);
+        let input_data = build_input_data(positions, &self.planes, geom);
         match &mut self.backend {
             // Pad up to the warmed-up shape; the tail samples are zeros and discarded.
             Backend::Local(session) => {
                 let padded = self.batch_size.max(n);
-                run_inference(session, input_data, n, padded, geom.board_size)
+                let channels = self.planes.len();
+                run_inference(session, input_data, n, padded, channels, geom.board_size)
             }
             Backend::Shared(server) => server.evaluate(input_data, n),
         }
@@ -321,14 +383,15 @@ pub(super) fn run_inference_flat(
     input: &mut Vec<f32>,
     n: usize,
     padded: usize,
+    channels: usize,
     board_size: usize,
     mut out: FlatOutputs,
 ) -> FlatOutputs {
-    let sample_size = get_sample_size(board_size);
+    let sample_size = channels * board_size * board_size;
     input.resize(padded * sample_size, 0.0);
 
     let view = ArrayView::from_shape(
-        IxDyn(&[padded, NUM_PLANES, board_size, board_size]),
+        IxDyn(&[padded, channels, board_size, board_size]),
         &input[..],
     )
     .unwrap();
@@ -366,6 +429,7 @@ pub(super) fn run_inference(
     mut input_data: Vec<f32>,
     n: usize,
     padded: usize,
+    channels: usize,
     board_size: usize,
 ) -> Vec<NnOutput> {
     run_inference_flat(
@@ -373,6 +437,7 @@ pub(super) fn run_inference(
         &mut input_data,
         n,
         padded,
+        channels,
         board_size,
         FlatOutputs::default(),
     )
@@ -414,7 +479,10 @@ mod tests {
         let mut board = crate::board::Board::new();
         board.set_rules(crate::board::rules::RulesEnum::Copenhagen11x11);
         board.setup_initial_position().unwrap();
-        let out = nn.evaluate_position(&BitPosition::from_board(&board, 1), board.precomputed());
+        let pos = NnInput::base(crate::board::position_export::BitPosition::from_board(
+            &board, 1,
+        ));
+        let out = nn.evaluate_position(&pos, board.precomputed());
         assert!(out.value.is_finite());
 
         let _ = std::fs::remove_dir_all(&dir);

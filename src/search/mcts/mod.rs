@@ -5,12 +5,11 @@ pub(crate) mod utils;
 pub use gumbel::GumbelConfig;
 
 use crate::board::Board;
-use crate::board::position_export::BitPosition;
 use crate::board::types::ZobristHash;
 use crate::movegen::MoveGen;
 use crate::mv::Move;
 use crate::search::mcts::utils::move_to_policy_index;
-use crate::search::nn::NeuralNet;
+use crate::search::nn::{NeuralNet, NnInput, PlaneSet};
 use crate::search_data::SearchData;
 use crate::search_root::SearchIterationResponse;
 use crate::terminal::check_terminal;
@@ -506,8 +505,7 @@ fn expand_node(
     nn: &mut NeuralNet,
     move_gen: &mut MoveGen,
 ) -> f32 {
-    let rep = board.rep_table.get(&board.zobrist).copied().unwrap_or(1);
-    let position = BitPosition::from_board(board, rep);
+    let position = NnInput::from_board(board, move_gen, nn.planes());
     let nn_out = nn.evaluate_position(&position, board.precomputed());
 
     let moves = get_left_moves(board, move_gen);
@@ -706,7 +704,7 @@ struct PendingLeaf {
     node_id: NodeId,
     path: Vec<NodeId>,
     terminal_value: Option<f32>,
-    position: Option<BitPosition>,
+    position: Option<NnInput>,
     legal_moves: Vec<Move>,
     child_zobrists: Vec<ZobristHash>,
     child_proofs: Vec<i8>,
@@ -736,6 +734,7 @@ fn select_leaf(
     move_stack: &mut MovesStack,
     move_gen: &mut MoveGen,
     config: &MCTSConfig,
+    nn_planes: &PlaneSet,
 ) -> Option<PendingLeaf> {
     let mut cur = tree.get_root_id();
     let mut path = vec![cur];
@@ -810,8 +809,7 @@ fn select_leaf(
         }
     } else {
         // Need NN evaluation — collect position and legal moves
-        let rep = board.rep_table.get(&board.zobrist).copied().unwrap_or(1);
-        let position = BitPosition::from_board(board, rep);
+        let position = NnInput::from_board(board, move_gen, nn_planes);
         let moves = get_left_moves(board, move_gen);
 
         let mut child_zobrists = Vec::with_capacity(moves.len());
@@ -950,6 +948,9 @@ pub fn mcts_search(
     let mut check_memory = false;
     let mut check_memory_count = 0;
     let mut mv_generator = MoveGen::new();
+    // Leaves are collected while `nn` is free; the planes decide what each leaf's
+    // input holds (extra features only for nets that read them).
+    let nn_planes = nn.planes().clone();
     let mut move_stack = MovesStack::new();
     let mut iteration: u64 = 0;
     let mut last_report_ms: u64 = 0;
@@ -1035,8 +1036,14 @@ pub fn mcts_search(
         let mut selected_nodes: HashSet<NodeId> = HashSet::with_capacity(this_batch);
 
         for _ in 0..this_batch {
-            if let Some(leaf) = select_leaf(board, tree, &mut move_stack, &mut mv_generator, config)
-            {
+            if let Some(leaf) = select_leaf(
+                board,
+                tree,
+                &mut move_stack,
+                &mut mv_generator,
+                config,
+                &nn_planes,
+            ) {
                 if !selected_nodes.insert(leaf.node_id) {
                     // Strict dedup: do not add the same leaf twice in one micro-batch.
                     break;
@@ -1060,7 +1067,7 @@ pub fn mcts_search(
             .collect();
 
         let nn_results = if !nn_indices.is_empty() {
-            let positions: Vec<&BitPosition> = nn_indices
+            let positions: Vec<&NnInput> = nn_indices
                 .iter()
                 .map(|&i| pending_leaves[i].position.as_ref().unwrap())
                 .collect();
