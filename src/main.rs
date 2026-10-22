@@ -604,7 +604,7 @@ fn main() {
                 );
                 std::process::exit(2);
             }
-            let sink = DatagenSink::open(&path, &log_path);
+            let sink = DatagenSink::open(&path, &log_path, cli.variant);
             let per_thread = cli.datagen_count.map(|n| n.div_ceil(cli.threads));
             let variant = cli.variant;
             std::thread::scope(|scope| {

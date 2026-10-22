@@ -357,6 +357,64 @@ fn process_batch(
     Ok((out, stats))
 }
 
+/// Appends to the side file `feat` the records of the whole games of `bin` it does not
+/// cover yet and returns how many it wrote. A self-play worker calls this when it opens
+/// its files: one that died between writing a game's samples and its records left the
+/// side file a game short. The side file must end on a game boundary of `bin`.
+pub fn catch_up_features(bin: &Path, feat: &Path, variant: RulesEnum) -> Result<usize, String> {
+    let feat_len = std::fs::metadata(feat)
+        .map_err(|e| format!("{}: {e}", feat.display()))?
+        .len() as usize;
+    let mut head = [0u8; FEAT_HEADER_BYTES];
+    File::open(feat)
+        .and_then(|mut f| f.read_exact(&mut head))
+        .map_err(|e| format!("{}: {e}", feat.display()))?;
+    if &head[..8] != FEAT_MAGIC || (feat_len - FEAT_HEADER_BYTES) % FEAT_RECORD_BYTES != 0 {
+        return Err("not a whole feature file".into());
+    }
+    let have = (feat_len - FEAT_HEADER_BYTES) / FEAT_RECORD_BYTES;
+
+    let file = File::open(bin).map_err(|e| format!("{}: {e}", bin.display()))?;
+    let mut reader = BufReader::with_capacity(8 << 20, file);
+    let mask_bytes = legal_mask_bytes(variant.rules().board_size);
+    let mut buf = Vec::new();
+    let mut seen = 0usize;
+    let mut boundary = true; // the sample at `seen` starts a game
+    let mut games: Vec<Vec<SampleHead>> = Vec::new();
+    let mut current: Vec<SampleHead> = Vec::new();
+    while let Some(s) = read_sample(&mut reader, mask_bytes, &mut buf)? {
+        let last = s.flags & FLAG_LAST_OF_GAME != 0;
+        if seen >= have {
+            if seen == have && !boundary {
+                return Err(format!("its {have} records end inside a game"));
+            }
+            current.push(s);
+            if last {
+                games.push(std::mem::take(&mut current));
+            }
+        }
+        boundary = last;
+        seen += 1;
+    }
+    if seen < have {
+        return Err(format!("{have} records but only {seen} samples"));
+    }
+    if games.is_empty() {
+        return Ok(0);
+    }
+    let mut out = Vec::new();
+    let mut stats = FeatureStats::default();
+    for (k, g) in games.iter().enumerate() {
+        game_records(g, variant, k, &mut out, &mut stats)?;
+    }
+    let mut f = std::fs::OpenOptions::new()
+        .append(true)
+        .open(feat)
+        .map_err(|e| format!("{}: {e}", feat.display()))?;
+    f.write_all(&out).map_err(|e| e.to_string())?;
+    Ok(stats.records)
+}
+
 fn part_path(out: &Path) -> PathBuf {
     let mut s = out.as_os_str().to_owned();
     s.push(".part");
