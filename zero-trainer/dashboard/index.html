@@ -114,6 +114,7 @@ pre.log { background: var(--surface); border: 1px solid var(--line); border-radi
 .msg { color: var(--bad); font-size: 12px; min-height: 1.2em; }
 .desc { font-size: 12px; color: var(--ink-2); margin-top: 4px; }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.row .spacer { flex: 1; }
 details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; }
 </style>
 </head>
@@ -174,7 +175,8 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; }
         <div id="rrMsg" class="sub"></div>
         <div id="rrLive"></div>
       </details>
-      <div class="row smooth">Smoothing <input type="range" id="smooth" min="1" max="90" value="1"> <span id="smoothVal" class="sub"></span></div>
+      <div class="row smooth">Smoothing <input type="range" id="smooth" min="1" max="90" value="1"> <span id="smoothVal" class="sub"></span>
+        <span class="spacer"></span><span class="sub">drag across a chart to zoom all charts to those positions, double-click to reset</span> <button id="zoomReset" disabled>Reset zoom</button></div>
       <div class="charts">
         <div class="chart"><h3>Elo against anchors <button class="details" id="vsOpen">Details</button><button class="details" id="gvOpen" style="margin-right:6px">Games</button></h3><div class="sub">paired games at fixed nodes; shaded = 95% CI</div><canvas id="cElo"></canvas></div>
         <div class="chart" id="ladderBox" style="display:none"><h3>Checkpoint ladder</h3><div class="sub" id="ladderSub"></div><canvas id="cLadder"></canvas></div>
@@ -316,6 +318,77 @@ function smoothPts(pts) {
   return out;
 }
 
+// Drag-to-zoom along the x axis, shared by every chart: all of them plot against positions
+// generated, so a band dragged on one sets the range of all. Only x is zoomed: a chart
+// with fixed bounds (0-100 %) keeps them, the others fit y to their data in the range.
+// The charts are rebuilt on every refresh, so the range lives here and goes into each new
+// set of options. Double-click on any chart or the Reset zoom button clears it.
+let xZoom = null, dragBand = null;
+function setXZoom(range) {
+  xZoom = range;
+  $('zoomReset').disabled = !xZoom;
+  if (lastDetail) {
+    renderDetail(lastDetail);
+    if ($('vsModal').classList.contains('open')) renderVs(lastDetail);
+  }
+}
+// Draws the band being dragged, full height of the plot area.
+const dragBandPlugin = {
+  id: 'dragBand',
+  afterDraw(chart) {
+    if (!dragBand || dragBand.chart !== chart) return;
+    const { ctx, chartArea: a } = chart;
+    const x0 = Math.max(a.left, Math.min(dragBand.x0, dragBand.x1)), x1 = Math.min(a.right, Math.max(dragBand.x0, dragBand.x1));
+    ctx.save();
+    ctx.fillStyle = css('--s1') + '2e';
+    ctx.strokeStyle = css('--s1');
+    ctx.fillRect(x0, a.top, x1 - x0, a.bottom - a.top);
+    ctx.strokeRect(x0, a.top, x1 - x0, a.bottom - a.top);
+    ctx.restore();
+  },
+};
+function attachDragZoom(chart) {
+  const canvas = chart.canvas;
+  const px = (ev) => ev.clientX - canvas.getBoundingClientRect().left;
+  canvas.addEventListener('mousedown', (ev) => {
+    if (ev.button !== 0) return;
+    const x = px(ev), a = chart.chartArea;
+    if (x < a.left || x > a.right) return;
+    dragBand = { chart, x0: x, x1: x };
+    ev.preventDefault();
+  });
+  canvas.addEventListener('mousemove', (ev) => {
+    if (dragBand && dragBand.chart === chart) { dragBand.x1 = px(ev); chart.draw(); }
+  });
+}
+window.addEventListener('mouseup', () => {
+  if (!dragBand) return;
+  const { chart, x0, x1 } = dragBand;
+  dragBand = null;
+  chart.draw();
+  if (Math.abs(x1 - x0) < 6) return;  // a click, not a drag
+  const sx = chart.scales.x, a = chart.chartArea;
+  const clamp = (v) => Math.max(a.left, Math.min(a.right, v));
+  setXZoom([sx.getValueForPixel(clamp(Math.min(x0, x1))), sx.getValueForPixel(clamp(Math.max(x0, x1)))]);
+});
+
+// y bounds of the visible datasets' points inside [x0, x1], padded by 5 %.
+function yRangeIn(datasets, x0, x1) {
+  let lo = Infinity, hi = -Infinity;
+  for (const d of datasets) {
+    if (d.hidden) continue;
+    for (const pt of d.data) {
+      if (pt == null || pt.y == null || isNaN(pt.y) || pt.x < x0 || pt.x > x1) continue;
+      const y = +pt.y;
+      if (y < lo) lo = y;
+      if (y > hi) hi = y;
+    }
+  }
+  if (lo === Infinity) return null;
+  const pad = (hi - lo) * 0.05 || Math.abs(hi) * 0.05 || 1;
+  return [lo - pad, hi + pad];
+}
+
 function lineChart(id, datasets, opts = {}) {
   const ctx = $(id);
   const ink2 = css('--ink-2'), line = css('--line');
@@ -328,7 +401,7 @@ function lineChart(id, datasets, opts = {}) {
       elements: { line: { borderWidth: 2, tension: 0 }, point: { radius: 0, hitRadius: 10, hoverRadius: 4 } },
       plugins: {
         legend: { display: datasets.filter(d => !d._ci).length > 1, position: 'bottom', labels: { color: ink2, boxWidth: 10, boxHeight: 10, usePointStyle: true, filter: (i) => !i.text.startsWith('_') } },
-        tooltip: { callbacks: { title: (items) => opts.xLabel + ' ' + fmtK(items[0]?.parsed?.x), label: (i) => i.dataset.label.startsWith('_') ? null : `${i.dataset.label}: ${fmt(i.parsed.y, opts.digits ?? 1)}` } },
+        tooltip: { callbacks: { title: (items) => (opts.xLabel || 'positions') + ' ' + fmtK(items[0]?.parsed?.x), label: (i) => i.dataset.label.startsWith('_') ? null : `${i.dataset.label}: ${fmt(i.parsed.y, opts.digits ?? 1)}` } },
       },
       scales: {
         x: { type: 'linear', grid: { color: line }, ticks: { color: ink2, callback: fmtK, maxTicksLimit: 8 }, title: { display: true, text: opts.xLabel || 'positions', color: ink2 } },
@@ -336,14 +409,28 @@ function lineChart(id, datasets, opts = {}) {
       },
     },
   };
+  config.plugins = [dragBandPlugin];
+  if (xZoom) {
+    Object.assign(config.options.scales.x, { min: xZoom[0], max: xZoom[1] });
+    const yr = yRangeIn(datasets, xZoom[0], xZoom[1]);
+    if (yr) {
+      if (opts.min == null) config.options.scales.y.min = yr[0];
+      if (opts.max == null) config.options.scales.y.max = yr[1];
+    }
+  }
   if (charts[id]) {
     // Keep series hidden from the legend hidden across refreshes.
     const hidden = new Set(charts[id].data.datasets.filter((_, i) => !charts[id].isDatasetVisible(i)).map(x => x.label));
     datasets.forEach(x => { if (hidden.has(x.label)) x.hidden = true; });
     charts[id].data.datasets = datasets; charts[id].options = config.options; charts[id].update();
   }
-  else charts[id] = new Chart(ctx, config);
+  else {
+    charts[id] = new Chart(ctx, config);
+    attachDragZoom(charts[id]);
+    ctx.ondblclick = () => { if (xZoom) setXZoom(null); };
+  }
 }
+$('zoomReset').onclick = () => setXZoom(null);
 
 function ds(label, color, points, extra = {}) { return Object.assign({ label, data: points, borderColor: color, backgroundColor: color, pointStyle: 'circle' }, extra); }
 
