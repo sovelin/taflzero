@@ -16,7 +16,7 @@ from training_utils import NEG_LARGE, alpha_zero_loss, masked_policy_logits, nor
 
 def test_model_output_shapes() -> None:
     model = TaflAlphaZeroNet()
-    x = torch.randn(4, 6, 11, 11)
+    x = torch.randn(4, 11, 11, 11)
     policy_logits, value = model(x)
 
     assert policy_logits.shape == (4, 4840)
@@ -38,7 +38,7 @@ def test_masked_logits_block_illegal_moves() -> None:
 
 def test_alpha_zero_loss_is_finite() -> None:
     model = TaflAlphaZeroNet()
-    x = torch.randn(3, 6, 11, 11)
+    x = torch.randn(3, 11, 11, 11)
     policy_logits, value_pred = model(x)
 
     legal_mask = torch.rand(3, 4840) < 0.1
@@ -68,7 +68,7 @@ def test_model_forward_on_cuda() -> None:
     device = torch.device("cuda")
     model = TaflAlphaZeroNet().to(device)
 
-    x = torch.randn(2, 6, 11, 11, device=device)
+    x = torch.randn(2, 11, 11, 11, device=device)
     policy_logits, value = model(x)
 
     assert policy_logits.is_cuda
@@ -99,7 +99,7 @@ def test_policy_logits_square_major_indexing() -> None:
     model = TaflAlphaZeroNet()
     model.policy_head = _DummyPolicyHead(policy)
 
-    x = torch.zeros(1, 6, 11, 11)
+    x = torch.zeros(1, 11, 11, 11)
     policy_logits, _ = model(x)
 
     expected = torch.empty(4840)
@@ -119,7 +119,7 @@ def test_onnx_export_matches_pytorch(tmp_path) -> None:
     model = TaflAlphaZeroNet()
     model.eval()
 
-    x = torch.randn(2, 6, 11, 11)
+    x = torch.randn(2, 11, 11, 11)
     with torch.no_grad():
         pt_policy, pt_value = model(x)
 
@@ -178,10 +178,11 @@ def test_rust_dump_sample_roundtrip(tmp_path) -> None:
     assert match, f"expected DUMP_SAMPLE in output, got: {result.stdout} {result.stderr}"
     expected_index = int(match.group(1))
 
-    dataset = SelfPlayDataset(out_path)
+    # z_lambda=1: the value target is the dumped result alone, not mixed with root_q.
+    dataset = SelfPlayDataset(out_path, augment=False, z_lambda=1.0)
     assert len(dataset) == 1
 
-    planes, legal_mask, pi_target, value = dataset[0]
+    planes, legal_mask, pi_target, value = dataset[0][:4]
 
     assert legal_mask[expected_index].item() is True
     assert torch.isclose(pi_target.sum(), torch.tensor(1.0), atol=1e-6)
