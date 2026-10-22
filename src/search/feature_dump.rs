@@ -15,175 +15,23 @@
 use crate::board::Board;
 use crate::board::position_export::BitPosition;
 use crate::board::rules::RulesEnum;
-use crate::board::types::{Piece, Side, Square};
-use crate::mcts::export::{FLAG_LAST_OF_GAME, FLAG_RESULT_UNKNOWN, legal_mask_bytes};
+use crate::board::types::{Piece, Side};
+use crate::mcts::export::{FLAG_LAST_OF_GAME, legal_mask_bytes};
 use crate::movegen::MoveGen;
 use crate::mv::Move;
-use crate::terminal::{TerminalType, check_terminal, get_terminal};
+use crate::search::features::{
+    FEAT_CAPTURE, FEAT_KING_MOVE, PositionFeatures, feature_header, finish_game, popcount,
+    position_features,
+};
 use crate::undo::UndoMove;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
 
-pub const FEAT_MAGIC: &[u8; 8] = b"TZFEAT01";
-pub const FEAT_HEADER_BYTES: usize = 16;
-pub const FEAT_RECORD_BYTES: usize = 144;
-
-/// `hist` entry for a ply that does not exist (the start of the game).
-pub const NO_SQUARE: u8 = 255;
-
-/// Record `flags`: the move played from this position moves the king.
-pub const FEAT_KING_MOVE: u8 = 1 << 0;
-/// The move played from this position captures at least one piece.
-pub const FEAT_CAPTURE: u8 = 1 << 1;
-/// This sample's move was the game's last ply.
-pub const FEAT_LAST_PLY: u8 = 1 << 2;
-/// The game ended by threefold repetition.
-pub const FEAT_THREEFOLD: u8 = 1 << 3;
-
-/// Record offsets (see the table in docs/probe-input-planes.md).
-pub mod offset {
-    pub const HIST: usize = 0;
-    pub const REP3: usize = 8;
-    pub const REP2: usize = 24;
-    pub const KING1: usize = 40;
-    pub const KING2: usize = 56;
-    pub const PLY: usize = 72;
-    pub const PLIES_TO_END: usize = 74;
-    pub const FLAGS: usize = 76;
-    pub const CAP_NOW: usize = 80;
-    pub const CAP_NEXT: usize = 96;
-    pub const ATK_MOB: usize = 112;
-    pub const DEF_MOB: usize = 128;
-}
-
-/// Square set packed like `BitPosition.planes`: square `i` is bit `i % 8` of byte `i / 8`.
-pub type SquareMask = [u8; 16];
-
-#[inline]
-fn set_bit(mask: &mut SquareMask, sq: Square) {
-    mask[sq / 8] |= 1 << (sq % 8);
-}
-
-#[inline]
-fn has_bit(mask: &SquareMask, sq: Square) -> bool {
-    (mask[sq / 8] >> (sq % 8)) & 1 == 1
-}
-
-fn popcount(mask: &SquareMask) -> u32 {
-    mask.iter().map(|b| b.count_ones()).sum()
-}
-
-/// The history-free part of a record: everything that follows from the board and its
-/// repetition table alone.
-#[derive(Default, Clone, Copy, Debug, PartialEq)]
-pub struct PositionFeatures {
-    pub rep3: SquareMask,
-    pub rep2: SquareMask,
-    pub king1: SquareMask,
-    pub king2: SquareMask,
-    pub cap_now: SquareMask,
-    pub cap_next: SquareMask,
-    pub atk_mob: SquareMask,
-    pub def_mob: SquareMask,
-}
-
-/// Plays every legal move of one side on `board` and takes it back, collecting
-/// destinations, captured squares and (for the side to move) how often the resulting
-/// position has been seen. The board is left exactly as it was.
-fn scan_side(
-    board: &mut Board,
-    mg: &mut MoveGen,
-    moves: &mut Vec<Move>,
-    mobility: &mut SquareMask,
-    captures: &mut SquareMask,
-    mut repeats: Option<(&mut SquareMask, &mut SquareMask)>,
-) {
-    mg.generate_moves(board);
-    moves.clear();
-    moves.extend_from_slice(mg.moves());
-    let mut undo = UndoMove::new();
-    for &mv in moves.iter() {
-        set_bit(mobility, mv.to());
-        board
-            .make_move(mv, &mut undo)
-            .expect("generated move failed to apply");
-        for c in undo.captured_pieces() {
-            set_bit(captures, c.square);
-        }
-        // The board's own table, which is what the threefold terminal reads: a count
-        // of 3 after the move means the move ends the game as an attacker win.
-        if let Some((rep3, rep2)) = repeats.as_mut() {
-            match board.rep_table.get(&board.zobrist).copied().unwrap_or(0) {
-                n if n >= 3 => set_bit(rep3, mv.to()),
-                2 => set_bit(rep2, mv.to()),
-                _ => {}
-            }
-        }
-        board
-            .unmake_move(&mut undo)
-            .expect("unmake of a generated move failed");
-    }
-}
-
-/// Features of the position on `board` (side to move as on the board). `board` is
-/// restored before returning.
-pub fn position_features(board: &mut Board, mg: &mut MoveGen) -> PositionFeatures {
-    let mut f = PositionFeatures::default();
-    let mut moves: Vec<Move> = Vec::with_capacity(256);
-    let stm = board.side_to_move;
-
-    let (stm_mob, opp_mob) = match stm {
-        Side::ATTACKERS => (&mut f.atk_mob, &mut f.def_mob),
-        Side::DEFENDERS => (&mut f.def_mob, &mut f.atk_mob),
-    };
-    scan_side(
-        board,
-        mg,
-        &mut moves,
-        stm_mob,
-        &mut f.cap_now,
-        Some((&mut f.rep3, &mut f.rep2)),
-    );
-    let stm_moves = moves.clone();
-
-    // A null move: the opponent's threats in the position as it stands.
-    board.flip_side();
-    scan_side(board, mg, &mut moves, opp_mob, &mut f.cap_next, None);
-    board.flip_side();
-
-    if board.king_sq >= 0 {
-        let king = board.king_sq as Square;
-        let defender_moves = if stm == Side::DEFENDERS {
-            &stm_moves
-        } else {
-            &moves
-        };
-        for mv in defender_moves.iter().filter(|mv| mv.from() == king) {
-            set_bit(&mut f.king1, mv.to());
-        }
-
-        // Second king move over the board as it stands: the king alone is moved, no
-        // captures are made (the usual approximation for a two-move reach plane).
-        let firsts: Vec<Square> = (0..board.sqs())
-            .filter(|&sq| has_bit(&f.king1, sq))
-            .collect();
-        for s in firsts {
-            board.clear_piece(king);
-            board.set_piece(s, Piece::KING).expect("place king");
-            mg.generate_moves_from(board, s);
-            for mv in mg.moves() {
-                let to = mv.to();
-                if to != king && !has_bit(&f.king1, to) {
-                    set_bit(&mut f.king2, to);
-                }
-            }
-            board.clear_piece(s);
-            board.set_piece(king, Piece::KING).expect("restore king");
-        }
-    }
-    f
-}
+pub use crate::search::features::{
+    FEAT_HEADER_BYTES, FEAT_LAST_PLY, FEAT_MAGIC, FEAT_RECORD_BYTES, FEAT_THREEFOLD, NO_SQUARE,
+    SquareMask, offset,
+};
 
 /// One sample as far as the replay needs it.
 #[derive(Clone, Copy)]
@@ -334,83 +182,6 @@ fn current_rep(board: &Board) -> u8 {
     board.rep_table.get(&board.zobrist).copied().unwrap_or(1)
 }
 
-/// What the last move of a decided game was, as far as the result tells: every legal
-/// move from the last sample that ends the game with the recorded winner.
-struct LastMove {
-    king: bool,
-    capture: bool,
-    threefold: bool,
-}
-
-fn resolve_last_move(board: &mut Board, last: &SampleHead) -> Vec<LastMove> {
-    if last.flags & FLAG_RESULT_UNKNOWN != 0 || last.value == 0 {
-        return Vec::new();
-    }
-    let stm = board.side_to_move;
-    let winner = if last.value > 0 {
-        stm
-    } else {
-        Side::opposite(stm)
-    };
-    let mut mg = MoveGen::new();
-    mg.generate_moves(board);
-    let moves: Vec<Move> = mg.moves().to_vec();
-    let mut undo = UndoMove::new();
-    let mut out = Vec::new();
-    for mv in moves {
-        let king = board.board[mv.from()] == Piece::KING;
-        board.make_move(mv, &mut undo).expect("generated move");
-        let capture = undo.captured_pieces_count > 0;
-        let hit = match get_terminal(board) {
-            Some(t) => (check_terminal(board) == Some(winner))
-                .then_some(t == TerminalType::ThreefoldRepetition),
-            // Self-play also ends a game when the side to move has no move at all.
-            None => {
-                mg.generate_moves(board);
-                (mg.count == 0 && winner == stm).then_some(false)
-            }
-        };
-        board.unmake_move(&mut undo).expect("unmake");
-        if let Some(threefold) = hit {
-            out.push(LastMove {
-                king,
-                capture,
-                threefold,
-            });
-        }
-    }
-    out
-}
-
-fn write_record(
-    out: &mut Vec<u8>,
-    f: &PositionFeatures,
-    hist: [(u8, u8); 4],
-    ply: usize,
-    plies_to_end: usize,
-    flags: u8,
-) {
-    let mut r = [0u8; FEAT_RECORD_BYTES];
-    for (k, (from, to)) in hist.iter().enumerate() {
-        r[offset::HIST + 2 * k] = *from;
-        r[offset::HIST + 2 * k + 1] = *to;
-    }
-    r[offset::REP3..offset::REP3 + 16].copy_from_slice(&f.rep3);
-    r[offset::REP2..offset::REP2 + 16].copy_from_slice(&f.rep2);
-    r[offset::KING1..offset::KING1 + 16].copy_from_slice(&f.king1);
-    r[offset::KING2..offset::KING2 + 16].copy_from_slice(&f.king2);
-    r[offset::PLY..offset::PLY + 2]
-        .copy_from_slice(&(ply.min(u16::MAX as usize) as u16).to_le_bytes());
-    r[offset::PLIES_TO_END..offset::PLIES_TO_END + 2]
-        .copy_from_slice(&(plies_to_end.min(u16::MAX as usize) as u16).to_le_bytes());
-    r[offset::FLAGS] = flags;
-    r[offset::CAP_NOW..offset::CAP_NOW + 16].copy_from_slice(&f.cap_now);
-    r[offset::CAP_NEXT..offset::CAP_NEXT + 16].copy_from_slice(&f.cap_next);
-    r[offset::ATK_MOB..offset::ATK_MOB + 16].copy_from_slice(&f.atk_mob);
-    r[offset::DEF_MOB..offset::DEF_MOB + 16].copy_from_slice(&f.def_mob);
-    out.extend_from_slice(&r);
-}
-
 /// Replays one game and appends its records to `out`.
 pub fn game_records(
     game: &[SampleHead],
@@ -485,45 +256,19 @@ pub fn game_records(
     }
 
     let last = n - 1;
-    move_flags[last] |= FEAT_LAST_PLY;
-    let mut threefold = false;
-    if game[last].flags & FLAG_RESULT_UNKNOWN == 0 {
-        let candidates = resolve_last_move(&mut board, &game[last]);
-        if candidates.is_empty() {
-            stats.last_move_unresolved += 1;
-        } else {
-            let all = |f: fn(&LastMove) -> bool| candidates.iter().all(f);
-            let any = |f: fn(&LastMove) -> bool| candidates.iter().any(f);
-            if all(|c| c.king) {
-                move_flags[last] |= FEAT_KING_MOVE;
-            }
-            if all(|c| c.capture) {
-                move_flags[last] |= FEAT_CAPTURE;
-            }
-            threefold = all(|c| c.threefold);
-            let agree = |f: fn(&LastMove) -> bool| all(f) || !any(f);
-            if !(agree(|c| c.king) && agree(|c| c.capture) && agree(|c| c.threefold)) {
-                stats.last_move_ambiguous += 1;
-            }
-        }
-    }
-    if threefold {
-        stats.threefold_games += 1;
-    }
-
-    for i in 0..n {
-        let mut hist = [(NO_SQUARE, NO_SQUARE); 4];
-        for (k, h) in hist.iter_mut().enumerate() {
-            if i > k {
-                *h = played[i - 1 - k];
-            }
-        }
-        let mut flags = move_flags[i];
-        if threefold {
-            flags |= FEAT_THREEFOLD;
-        }
-        let f = &features[i];
-        write_record(out, f, hist, i, n - i, flags);
+    let end = finish_game(
+        &features,
+        &played,
+        move_flags,
+        &mut board,
+        game[last].flags,
+        game[last].value,
+        out,
+    );
+    stats.last_move_unresolved += end.unresolved as usize;
+    stats.last_move_ambiguous += end.ambiguous as usize;
+    stats.threefold_games += end.threefold as usize;
+    for (f, flags) in features.iter().zip(&end.flags) {
         stats.rep3_nonempty += (popcount(&f.rep3) > 0) as usize;
         stats.rep2_nonempty += (popcount(&f.rep2) > 0) as usize;
         stats.king1_squares += popcount(&f.king1) as u64;
@@ -636,10 +381,9 @@ pub fn dump_features(
     let mut writer = BufWriter::with_capacity(8 << 20, out_file);
 
     let result = (|| -> Result<FeatureStats, String> {
-        let mut header = [0u8; FEAT_HEADER_BYTES];
-        header[..8].copy_from_slice(FEAT_MAGIC);
-        header[8..12].copy_from_slice(&(FEAT_RECORD_BYTES as u32).to_le_bytes());
-        writer.write_all(&header).map_err(|e| e.to_string())?;
+        writer
+            .write_all(&feature_header())
+            .map_err(|e| e.to_string())?;
 
         let mut stats = FeatureStats::default();
         let mut buf = Vec::new();
@@ -696,8 +440,10 @@ pub fn dump_features(
 mod tests {
     use super::*;
     use crate::board::set_board_from_str;
+    use crate::board::types::Square;
     use crate::mcts::export::{LegalMask, PendingSample};
     use crate::mcts::utils::move_to_policy_index;
+    use crate::search::features::{has_bit, set_bit};
 
     fn copenhagen(position: &str) -> Board {
         let mut b = Board::new();

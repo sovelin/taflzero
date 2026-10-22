@@ -1,5 +1,6 @@
 #[cfg(not(target_arch = "wasm32"))]
 pub mod feature_dump;
+pub mod features;
 pub mod gen_train_data;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod match_play;
