@@ -215,6 +215,8 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; }
       <select id="gvSource"><option value="selfplay">self-play</option><option value="match">anchor matches</option></select>
       <select id="gvWorker" title="self-play worker file"></select>
       <button id="gvReload" title="re-read the game list">Refresh list</button>
+      <select id="gvBoardTheme" title="board theme"></select>
+      <select id="gvPieceTheme" title="piece theme"></select>
       <span class="sub" id="gvSub"></span><span class="spacer"></span><button id="gvClose">Close</button></div>
     <div class="gv">
       <div class="gv-list"><table><thead id="gvHead"></thead><tbody id="gvRows"></tbody></table></div>
@@ -670,10 +672,20 @@ function gvEnsureBoard() {
     try { await gvLoadScript('/vendor/taflground/dist/index.umd.cjs'); }
     catch (e) { throw new Error('taflground bundle missing: copy dist/index.umd.cjs of the taflground package into zero-trainer/dashboard/vendor/taflground/dist/ (27 MB, kept out of git)'); }
     const { createApp, reactive, h } = Vue, TG = window.TaflGround;
-    gv.state = reactive({ pieces: [], highlight: null, size: 480 });
+    // Board and piece themes: taflground's enums, the choice kept per viewer in localStorage.
+    const themeKeys = (en) => Object.keys(en).filter(k => typeof en[k] !== 'function');
+    const pick = (store, en, fallback) => { let v = null; try { v = localStorage.getItem(store); } catch (e) {} return v && en[v] !== undefined ? v : fallback; };
+    gv.state = reactive({ pieces: [], highlight: null, size: 480,
+      boardTheme: pick('gvBoardTheme', TG.BoardTheme, 'CLASSIC_BROWN'), pieceTheme: pick('gvPieceTheme', TG.PieceTheme, 'ALPHA') });
+    for (const [id, en, key] of [['gvBoardTheme', TG.BoardTheme, 'boardTheme'], ['gvPieceTheme', TG.PieceTheme, 'pieceTheme']]) {
+      const sel = $(id);
+      sel.innerHTML = themeKeys(en).map(k => `<option value="${k}">${k.toLowerCase().replace(/_/g, ' ')}</option>`).join('');
+      sel.value = gv.state[key];
+      sel.onchange = () => { gv.state[key] = sel.value; try { localStorage.setItem(id, sel.value); } catch (e) {} };
+    }
     const none = new Set();
     createApp({ render: () => h(TG.TaflBoard, { piecesList: gv.state.pieces, selectableSquares: none, size: gv.state.size,
-      boardTheme: TG.BoardTheme.CLASSIC_BROWN, pieceTheme: TG.PieceTheme.ALPHA, highlightMove: gv.state.highlight,
+      boardTheme: TG.BoardTheme[gv.state.boardTheme], pieceTheme: TG.PieceTheme[gv.state.pieceTheme], highlightMove: gv.state.highlight,
       preMove: null, possibleMoves: [] }) }).mount('#gvBoard');
     await gvSelfTest();
   })();
