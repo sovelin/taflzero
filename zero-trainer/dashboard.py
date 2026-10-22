@@ -142,6 +142,21 @@ def run_status(run_dir: Path) -> dict:
     }
 
 
+def match_sides(path: Path) -> dict:
+    """Per match (key 'ckpt|anchor'): wins, losses and draws by the side the checkpoint
+    played, from tools/match.py's games log: {key: {"atk": [w, l, d], "def": [w, l, d]}}."""
+    out = {}
+    for m in read_jsonl(path):
+        sides = {"atk": [0, 0, 0], "def": [0, 0, 0]}
+        for g in m.get("games", []):
+            side = sides.get(g.get("a_side"))
+            i = {"w": 0, "l": 1, "d": 2}.get(g.get("score"))
+            if side is not None and i is not None:
+                side[i] += 1
+        out[m["key"]] = sides
+    return out
+
+
 def run_detail(run_dir: Path) -> dict:
     d = run_status(run_dir)
     d["config"] = read_json(run_dir / "config.json")
@@ -149,6 +164,7 @@ def run_detail(run_dir: Path) -> dict:
     d["metrics"] = read_csv(run_dir / "metrics.csv")
     d["selfplay"] = read_csv(run_dir / "selfplay.csv")
     d["elo"] = read_jsonl(run_dir / "elo.jsonl")
+    d["sides"] = match_sides(run_dir / "eval.games.jsonl")
     d["eval"] = read_jsonl(run_dir / "eval.jsonl")
     d["fort"] = read_jsonl(run_dir / "fort.jsonl")  # tools/eval_fort.py backfill and anchors
     d["eval_progress"] = read_json(run_dir / "eval.progress.json")

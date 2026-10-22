@@ -71,6 +71,23 @@ label { display: block; font-size: 12px; color: var(--ink-2); margin: 8px 0 2px;
 .chart { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
 .smooth input[type=range] { width: 220px; }
 .chart h3 select.endpick { width: auto; margin-left: 8px; font-size: 12px; padding: 1px 4px; }
+.chart h3 button.details { float: right; font-size: 12px; padding: 1px 8px; }
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; z-index: 10; overflow: auto; padding: 24px; }
+.modal.open { display: block; }
+.modal .box { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; max-width: 1400px; margin: 0 auto; padding: 16px 20px; }
+.modal .head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.modal .head h2 { margin: 0; text-transform: none; letter-spacing: 0; font-size: 16px; color: var(--ink); }
+.modal .head select { width: auto; }
+.modal .head .spacer { flex: 1; }
+.modal .tiles { margin-bottom: 12px; }
+.modal .charts { grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }
+.modal .chart canvas { height: 260px !important; }
+.modal table { border-collapse: collapse; width: 100%; margin-top: 14px; font-variant-numeric: tabular-nums; font-size: 13px; }
+.modal th, .modal td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.modal th { color: var(--ink-2); font-weight: 500; position: sticky; top: 0; background: var(--bg); }
+.modal td.num, .modal th.num { text-align: right; white-space: nowrap; }
+.modal td.why { color: var(--ink-2); font-size: 12px; }
+.modal .pos { color: var(--good); } .modal .neg { color: var(--bad); }
 .chart h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; }
 .chart .sub { color: var(--ink-3); font-size: 12px; margin-bottom: 6px; }
 .chart canvas { width: 100% !important; height: 240px !important; }
@@ -139,7 +156,7 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; }
       </details>
       <div class="row smooth">Smoothing <input type="range" id="smooth" min="1" max="90" value="1"> <span id="smoothVal" class="sub"></span></div>
       <div class="charts">
-        <div class="chart"><h3>Elo against anchors</h3><div class="sub">paired games at fixed nodes; shaded = 95% CI</div><canvas id="cElo"></canvas></div>
+        <div class="chart"><h3>Elo against anchors <button class="details" id="vsOpen">Details</button></h3><div class="sub">paired games at fixed nodes; shaded = 95% CI</div><canvas id="cElo"></canvas></div>
         <div class="chart" id="ladderBox" style="display:none"><h3>Checkpoint ladder</h3><div class="sub" id="ladderSub"></div><canvas id="cLadder"></canvas></div>
         <div class="chart"><h3>Self-play outcomes</h3><div class="sub">share of games, per logging window</div><canvas id="cOut"></canvas></div>
         <div class="chart"><h3>How games end</h3><div class="sub">share of games by final position, per logging window; real attacking progress = king captured, not repetition</div><canvas id="cEnd"></canvas></div>
@@ -161,6 +178,18 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; }
       <details><summary>Config</summary><pre class="log" id="cfg"></pre></details>
     </div>
   </main>
+</div>
+<div class="modal" id="vsModal">
+  <div class="box">
+    <div class="head"><h2>Matches against</h2><select id="vsPick"></select><span class="sub" id="vsSub"></span><span class="spacer"></span><button id="vsClose">Close</button></div>
+    <div class="tiles" id="vsTiles"></div>
+    <div class="charts">
+      <div class="chart"><h3>Outcomes by side</h3><div class="sub">share of each match's games: the checkpoint's wins and losses as attacker and as defender, draws (ply limit) by side</div><canvas id="cVsOut"></canvas></div>
+      <div class="chart"><h3>Won by</h3><div class="sub">share of each match's games the checkpoint won, by how the game ended</div><canvas id="cVsWin"></canvas></div>
+      <div class="chart"><h3>Lost to</h3><div class="sub">share of each match's games the checkpoint lost, by how the game ended</div><canvas id="cVsLoss"></canvas></div>
+    </div>
+    <table><thead><tr><th>checkpoint</th><th>time</th><th class="num">Elo</th><th class="num">W-L-D</th><th class="num">as attacker</th><th class="num">as defender</th><th class="why">won by</th><th class="why">lost to</th></tr></thead><tbody id="vsRows"></tbody></table>
+  </div>
 </div>
 <script>
 const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
@@ -227,6 +256,8 @@ const END_PICKS = [
 ];
 let endPick = 'exit fort';
 try { endPick = localStorage.getItem('endPick') || endPick; } catch (e) {}
+let vsPick = '';
+try { vsPick = localStorage.getItem('vsPick') || ''; } catch (e) {}
 try { smoothN = Math.max(1, parseInt(localStorage.getItem('smooth') || '1')); } catch (e) {}
 function smoothPts(pts) {
   // Centred: point i is the mean of points i-h..i+h, so a peak stays where it was
@@ -505,10 +536,80 @@ function renderDetail(d) {
     lineChart('cFort', sets, { yLabel: 'attacker winrate %', min: 0, max: 100 });
   }
 
+  if ($('vsModal').classList.contains('open')) renderVs(d);
   $('log').textContent = d.log.join('\n');
   $('evalLog').textContent = d.eval_log.join('\n') || '(no evaluator output yet)';
   $('cfg').textContent = JSON.stringify(d.config, null, 2);
 }
+
+// ─── match details modal: one anchor, every match the side-car played against it ───
+// The elo row's `reasons` name the winner's terminal (def_* = defenders won, atk_* =
+// attackers won); `sides` (eval.games.jsonl) gives W/L/D by the side the checkpoint played.
+const WHY_COLORS = { atk_capture: 1, atk_surrounded: 4, atk_no_moves: 5, atk_threefold: 7, def_corner: 0, def_edge: 0, def_fort: 2, def_no_moves: 6, max_plies: 3 };
+function whyText(o) {
+  const e = Object.entries(o || {}).sort((a, b) => b[1] - a[1]);
+  return e.length ? e.map(([w, n]) => `${REASON[w] || w} ${n}`).join(', ') : '–';
+}
+function renderVs(d) {
+  const S = SERIES();
+  const anchors = [...new Set(d.elo.filter(e => e.reasons).map(e => e.anchor))];
+  if (!anchors.length) { $('vsRows').innerHTML = '<tr><td colspan="8">no matches with endings recorded yet</td></tr>'; return; }
+  if (!anchors.includes(vsPick)) vsPick = anchors[anchors.length - 1];
+  const html = anchors.map(a => `<option>${a}</option>`).join('');
+  if ($('vsPick').innerHTML !== html) $('vsPick').innerHTML = html;
+  $('vsPick').value = vsPick;
+  const rows = d.elo.filter(e => e.anchor === vsPick && e.reasons).sort((p, q) => p.step - q.step);
+  const x = (e) => e.generated ?? e.step, n = (e) => e.w + e.l + e.d || 1;
+  const side = (e, s) => (d.sides || {})[e.key]?.[s];
+  const sum = (o, pref) => Object.entries(o || {}).reduce((a, [k, v]) => a + (k.startsWith(pref) ? v : 0), 0);
+  const pct = (f) => rows.map(e => ({ x: x(e), y: 100 * f(e) / n(e) }));
+  const games = rows.reduce((a, e) => a + e.w + e.l + e.d, 0);
+  $('vsSub').textContent = `${rows.length} matches, ${fmt(games)} games, ${rows[rows.length - 1].nodes} nodes, ${rows[rows.length - 1].pairs} pairs each`;
+
+  const last = rows[rows.length - 1], la = side(last, 'atk'), ld = side(last, 'def');
+  const wld = (t) => t ? `${t[0]}-${t[1]}-${t[2]}` : '–';
+  const trend = rows.length > 1 ? last.elo - rows[rows.length - 2].elo : null;
+  $('vsTiles').innerHTML = [
+    ['Last Elo', (last.elo > 0 ? '+' : '') + fmt(last.elo, 0), `${last.ckpt} · 95% CI ${fmt(last.ci[0], 0)}…${fmt(last.ci[1], 0)}`],
+    ['Score', `${last.w}-${last.l}-${last.d}`, `${fmt(100 * last.score, 1)}% of points${trend != null ? ` · ${trend > 0 ? '+' : ''}${fmt(trend, 0)} vs previous` : ''}`],
+    ['As attacker', wld(la), la ? `${fmt(100 * (la[0] + la[2] / 2) / (la[0] + la[1] + la[2] || 1), 0)}% of points` : 'W-L-D'],
+    ['As defender', wld(ld), ld ? `${fmt(100 * (ld[0] + ld[2] / 2) / (ld[0] + ld[1] + ld[2] || 1), 0)}% of points` : 'W-L-D'],
+    ['Won by', whyText(last.reasons.win), ''],
+    ['Lost to', whyText(last.reasons.loss), last.d ? `drawn ${whyText(last.reasons.draw)}` : ''],
+  ].map(t => `<div class="tile"><div class="k">${t[0]}</div><div class="v" style="font-size:${t[1].length > 12 ? 14 : 22}px">${t[1]}</div><div class="s">${t[2]}</div></div>`).join('');
+
+  // Outcomes by side. Draws by side come from `sides`; wins/losses from either source agree.
+  const sideSet = (lbl, color, s, i, extra) => ds(lbl, color, rows.map(e => { const t = side(e, s); return { x: x(e), y: t ? 100 * t[i] / n(e) : null }; }), extra);
+  const hasSides = rows.some(e => side(e, 'atk'));
+  lineChart('cVsOut', hasSides ? [
+    sideSet('won as attacker', S[1], 'atk', 0), sideSet('won as defender', S[0], 'def', 0),
+    sideSet('lost as attacker', S[1], 'atk', 1, { borderDash: [6, 4] }), sideSet('lost as defender', S[0], 'def', 1, { borderDash: [6, 4] }),
+    sideSet('drawn as attacker', S[3], 'atk', 2, { borderDash: [2, 3] }), sideSet('drawn as defender', S[3], 'def', 2, { borderDash: [2, 3], borderColor: S[3] + 'aa' }),
+  ] : [
+    ds('won as attacker', S[1], pct(e => sum(e.reasons.win, 'atk_'))), ds('won as defender', S[0], pct(e => sum(e.reasons.win, 'def_'))),
+    ds('lost as attacker', S[1], pct(e => sum(e.reasons.loss, 'def_')), { borderDash: [6, 4] }), ds('lost as defender', S[0], pct(e => sum(e.reasons.loss, 'atk_')), { borderDash: [6, 4] }),
+    ds('drawn', S[3], pct(e => e.d)),
+  ], { yLabel: '% of games', min: 0, max: 100 });
+
+  const keys = (part) => Object.keys(WHY_COLORS).filter(k => rows.some(e => (e.reasons[part] || {})[k]));
+  const whyLabel = (k, part) => `${REASON[k] || k} (${(k.startsWith('atk_') === (part === 'win')) ? 'as attacker' : 'as defender'})`;
+  lineChart('cVsWin', keys('win').map(k => ds(whyLabel(k, 'win'), S[WHY_COLORS[k]], pct(e => (e.reasons.win || {})[k] || 0))), { yLabel: '% of games', min: 0 });
+  lineChart('cVsLoss', keys('loss').map(k => ds(whyLabel(k, 'loss'), S[WHY_COLORS[k]], pct(e => (e.reasons.loss || {})[k] || 0))), { yLabel: '% of games', min: 0 });
+
+  $('vsRows').innerHTML = rows.slice().reverse().map(e => {
+    const a = side(e, 'atk'), f = side(e, 'def');
+    return `<tr><td>${e.ckpt}</td><td class="num">${(e.time || '').slice(5)}</td><td class="num ${e.elo >= 0 ? 'pos' : 'neg'}">${e.elo > 0 ? '+' : ''}${fmt(e.elo, 0)}</td><td class="num">${e.w}-${e.l}-${e.d}</td><td class="num">${wld(a)}</td><td class="num">${wld(f)}</td><td class="why">${whyText(e.reasons.win)}</td><td class="why">${whyText(e.reasons.loss)}${e.d ? ` · drawn ${whyText(e.reasons.draw)}` : ''}</td></tr>`;
+  }).join('');
+}
+$('vsOpen').onclick = () => { $('vsModal').classList.add('open'); if (lastDetail) renderVs(lastDetail); };
+$('vsClose').onclick = () => $('vsModal').classList.remove('open');
+$('vsModal').onclick = (ev) => { if (ev.target === $('vsModal')) $('vsModal').classList.remove('open'); };
+document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') $('vsModal').classList.remove('open'); });
+$('vsPick').onchange = () => {
+  vsPick = $('vsPick').value;
+  try { localStorage.setItem('vsPick', vsPick); } catch (e) {}
+  if (lastDetail) renderVs(lastDetail);
+};
 
 // ─── round robin panel ───
 const rrSel = new Set(['copenhagen11x11']);
