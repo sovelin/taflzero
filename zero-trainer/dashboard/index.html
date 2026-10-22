@@ -78,6 +78,9 @@ label { display: block; font-size: 12px; color: var(--ink-2); margin: 8px 0 2px;
 .modal .head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
 .modal .head h2 { margin: 0; text-transform: none; letter-spacing: 0; font-size: 16px; color: var(--ink); }
 .modal .head select { width: auto; }
+.vsTabs { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.vsTabs button { padding: 3px 10px; font-size: 13px; }
+.vsTabs button.on { background: var(--s1); border-color: var(--s1); color: #fff; }
 .modal .head label.gvTheme { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: 12px; white-space: nowrap; }
 .modal .head .spacer { flex: 1; }
 .modal .tiles { margin-bottom: 12px; }
@@ -203,7 +206,7 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; }
 </div>
 <div class="modal" id="vsModal">
   <div class="box">
-    <div class="head"><h2>Matches against</h2><select id="vsPick"></select><span class="sub" id="vsSub"></span><span class="spacer"></span><button id="vsClose">Close</button></div>
+    <div class="head"><h2>Matches against</h2><span class="vsTabs" id="vsPick"></span><span class="sub" id="vsSub"></span><span class="spacer"></span><button id="vsClose">Close</button></div>
     <div class="tiles" id="vsTiles"></div>
     <div class="charts">
       <div class="chart"><h3>Outcomes by side</h3><div class="sub">share of each match's games: the checkpoint's wins and losses as attacker and as defender, draws (ply limit) by side</div><canvas id="cVsOut"></canvas></div>
@@ -692,9 +695,9 @@ function renderVs(d) {
   const anchors = [...new Set(d.elo.filter(e => e.reasons).map(e => e.anchor))];
   if (!anchors.length) { $('vsRows').innerHTML = '<tr><td colspan="8">no matches with endings recorded yet</td></tr>'; return; }
   if (!anchors.includes(vsPick)) vsPick = anchors[anchors.length - 1];
-  const html = anchors.map(a => `<option>${a}</option>`).join('');
+  // One tab per anchor, the chosen one highlighted.
+  const html = anchors.map(a => `<button data-a="${a}" class="${a === vsPick ? 'on' : ''}">${a}</button>`).join('');
   if ($('vsPick').innerHTML !== html) $('vsPick').innerHTML = html;
-  $('vsPick').value = vsPick;
   const rows = d.elo.filter(e => e.anchor === vsPick && e.reasons).sort((p, q) => p.step - q.step);
   const x = (e) => e.generated ?? e.step, n = (e) => e.w + e.l + e.d || 1;
   const side = (e, s) => (d.sides || {})[e.key]?.[s];
@@ -744,8 +747,10 @@ $('vsOpen').onclick = () => { vsShow(); routeWrite(); };
 $('vsClose').onclick = vsHide;
 $('vsModal').onclick = (ev) => { if (ev.target === $('vsModal')) vsHide(); };
 document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') vsHide(); });
-$('vsPick').onchange = () => {
-  vsPick = $('vsPick').value;
+$('vsPick').onclick = (ev) => {
+  const b = ev.target.closest('button[data-a]');
+  if (!b) return;
+  vsPick = b.dataset.a;
   try { localStorage.setItem('vsPick', vsPick); } catch (e) {}
   if (lastDetail) renderVs(lastDetail);
 };
