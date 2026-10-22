@@ -216,6 +216,7 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; }
     <div class="head"><h2>Games</h2>
       <select id="gvSource"><option value="selfplay">self-play</option><option value="match">anchor matches</option></select>
       <select id="gvWorker" title="self-play worker file"></select>
+      <select id="gvPickMode" title="which games to list"><option value="newest">100 newest</option><option value="spread">100 over the whole run</option></select>
       <button id="gvReload" title="re-read the game list">Refresh list</button>
       <label class="gvTheme">Board <select id="gvBoardTheme" title="board theme"></select></label>
       <label class="gvTheme">Pieces <select id="gvPieceTheme" title="piece theme"></select></label>
@@ -734,7 +735,7 @@ function gvClose() { const was = $('gvModal').classList.contains('open'); $('gvM
 async function gvLoadList() {
   clearTimeout(gv.poll);
   if (!selected) return;
-  const q = `/api/games?name=${encodeURIComponent(selected)}&source=${gv.source}&n=100` + (gv.source === 'selfplay' ? `&worker=${gv.worker}` : '');
+  const q = `/api/games?name=${encodeURIComponent(selected)}&source=${gv.source}&n=100` + (gv.source === 'selfplay' ? `&worker=${gv.worker}&pick=${$('gvPickMode').value}` : '');
   $('gvSub').textContent = 'loading…';
   const r = await api(q);
   if (r.workers) {
@@ -742,13 +743,14 @@ async function gvLoadList() {
     if ($('gvWorker').innerHTML !== html) $('gvWorker').innerHTML = html;
     $('gvWorker').value = gv.worker;
   }
-  $('gvWorker').style.display = gv.source === 'selfplay' ? '' : 'none';
+  $('gvWorker').style.display = $('gvPickMode').style.display = gv.source === 'selfplay' ? '' : 'none';
   gv.games = r.games || [];
   const parts = [];
   if (r.error) parts.push(r.error);
   if (r.indexing != null) parts.push(`indexing worker${gv.worker}.bin… ${(100 * r.indexing).toFixed(0)}%`);
   if (r.index_error) parts.push('index error: ' + r.index_error);
-  if (gv.source === 'selfplay' && !r.error) parts.push((r.indexing != null ? `${gv.games.length} newest of the games indexed so far` : `${gv.games.length} newest games`) +(r.feat ? '' : ' · no .feat side file: endings unknown except limits'));
+  const spread = $('gvPickMode').value === 'spread';
+  if (gv.source === 'selfplay' && !r.error) parts.push(`${gv.games.length} ${spread ? 'spread over' : 'newest of'} ${fmt(r.indexed_games)} games${r.indexing != null ? ' indexed so far' : ''}` +(r.feat ? '' : ' · no .feat side file: endings unknown except limits'));
   if (gv.source === 'match' && !r.error) parts.push(gv.games.length ? `${gv.games.length} recorded games` : 'no match has recorded moves yet (needs an engine that prints moves/evals)');
   $('gvSub').textContent = parts.join(' · ');
   gvRenderList();
@@ -863,6 +865,8 @@ $('gvBoardWrap').addEventListener('wheel', (ev) => {
 }, { passive: false });
 $('gvSource').onchange = () => { gv.source = $('gvSource').value; gvLoadList(); };
 $('gvWorker').onchange = () => { gv.worker = +$('gvWorker').value; gvLoadList(); };
+$('gvPickMode').onchange = () => { try { localStorage.setItem('gvPickMode', $('gvPickMode').value); } catch (e) {} gvLoadList(); };
+try { const m = localStorage.getItem('gvPickMode'); if (m) $('gvPickMode').value = m; } catch (e) {}
 $('gvSlider').oninput = () => gvShow(+$('gvSlider').value);
 $('gvPrev').onclick = () => gvShow(gv.ply - 1);
 $('gvNext').onclick = () => gvShow(gv.ply + 1);

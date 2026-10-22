@@ -19,6 +19,7 @@ runs: on restart it finds them again through <run>/dashboard.pids.json.
 from __future__ import annotations
 
 import argparse
+import bisect
 import csv
 import json
 import os
@@ -393,7 +394,9 @@ VIEWER_TAIL_BYTES = 4            # value, root_q, flags, king_corner
 VIEWER_FLAG_POLICY_VALID = 1 << 0
 VIEWER_FLAG_LAST_OF_GAME = 1 << 1
 VIEWER_FLAG_RESULT_UNKNOWN = 1 << 2
-GAME_INDEX_KEEP = 5000           # games kept in the index (the newest)
+GAME_INDEX_MAX_LIST = 1000       # most games one list request returns
+GAME_INDEX_VERSION = 2           # 1 kept only the newest 5000 games; 2 keeps every game
+GAME_INDEX_SAVE_SECONDS = 30     # a long scan saves its progress this often, not per chunk
 GAME_INDEX_SYNC_BYTES = 64 << 20  # a smaller backlog is indexed inside the request
 GAME_INDEX_CHUNK = 64 << 20       # bytes read per step of the scan
 
@@ -458,7 +461,8 @@ class GameIndex:
 
     `{"bin_size": <bytes indexed>, "samples": <samples before bin_size>, "games":
     [[offset, samples, first_sample, bytes, result], …]}`: bin_size always ends on a
-    game boundary, games holds the newest GAME_INDEX_KEEP. Extending is a forward scan
+    game boundary, games holds every game in file order (a 60M-sample file has ~360k games,
+    a few MB of JSON), so a list can be the newest games or a spread over the whole run. Extending is a forward scan
     from bin_size, in the request for a small backlog, else in a background thread whose
     progress the API reports instead of blocking (the first index of a 50 GB file takes
     minutes). `lock` guards the fields, `scan_lock` lets one scan run at a time."""
@@ -472,12 +476,16 @@ class GameIndex:
         self.error: str | None = None
         self.bin_size, self.samples, self.games = 0, 0, []
         st = read_json(idx_path)
-        if st and isinstance(st.get("games"), list) and all(len(g) == 5 for g in st["games"]):
+        if (st and st.get("version") == GAME_INDEX_VERSION and isinstance(st.get("games"), list)
+                and all(len(g) == 5 for g in st["games"])):
             self.bin_size, self.samples, self.games = int(st["bin_size"]), int(st.get("samples", 0)), st["games"]
 
     def _save(self) -> None:
         tmp = self.idx_path.with_suffix(".tmp")
-        tmp.write_text(json.dumps({"bin_size": self.bin_size, "samples": self.samples, "games": self.games}),
+        with self.lock:
+            state = {"version": GAME_INDEX_VERSION, "bin_size": self.bin_size, "samples": self.samples,
+                     "games": list(self.games)}
+        tmp.write_text(json.dumps(state, separators=(",", ":")),
                        encoding="utf-8")
         os.replace(tmp, self.idx_path)
 
@@ -485,6 +493,7 @@ class GameIndex:
         """Scans [bin_size, upto) chunk by chunk, saving after each chunk."""
         start = self.bin_size
         want = GAME_INDEX_CHUNK
+        last_save = time.time()
         with open(self.bin_path, "rb") as f:
             while self.bin_size < upto:
                 f.seek(self.bin_size)
@@ -500,12 +509,17 @@ class GameIndex:
                     continue
                 want = GAME_INDEX_CHUNK
                 with self.lock:
-                    self.games = (self.games + games)[-GAME_INDEX_KEEP:]
+                    self.games.extend(games)
                     self.bin_size += used
                     self.samples += samples
                     if report:
                         self.progress = (self.bin_size - start) / max(1, upto - start)
-                self._save()
+                # Saving rewrites the whole list: every 30 s during a long scan, not per chunk.
+                if time.time() - last_save > GAME_INDEX_SAVE_SECONDS:
+                    self._save()
+                    last_save = time.time()
+        if self.bin_size > start:
+            self._save()
 
     def _run(self, upto: int) -> None:
         try:
@@ -638,8 +652,9 @@ def policy_move(index: int, n: int) -> dict:
     return {"from": frm, "to": r * n + c}
 
 
-def selfplay_games(run_dir: Path, worker: int, count: int) -> dict:
-    """The newest `count` indexed games of one worker, newest first."""
+def selfplay_games(run_dir: Path, worker: int, count: int, pick: str = "newest") -> dict:
+    """`count` indexed games of one worker, newest first: the newest ones, or with
+    pick="spread" evenly spaced over the whole file (first and last game included)."""
     bin_path = run_dir / "data" / f"worker{worker}.bin"
     workers = sorted(int(p.stem[6:]) for p in (run_dir / "data").glob("worker*.bin") if p.stem[6:].isdigit())
     if not bin_path.exists():
@@ -648,13 +663,19 @@ def selfplay_games(run_dir: Path, worker: int, count: int) -> dict:
     idx = game_index(run_dir, worker)
     indexing = idx.refresh()
     with idx.lock:
-        games = list(idx.games[-count:])
+        total = len(idx.games)
+        if pick == "spread" and total > count:
+            step = (total - 1) / max(1, count - 1)
+            games = [idx.games[round(i * step)] for i in range(count)]
+        else:
+            games = list(idx.games[-count:])
         error = idx.error
     feat = bin_path.with_suffix(".feat")
     out = [{"id": f"{worker}:{first}", "start_sample": first, "plies": samples, "len_plies": samples,
             "result": result, "reason": game_reason(feat, first + samples - 1, result)}
            for _offset, samples, first, _nbytes, result in reversed(games)]
-    res = {"games": out, "workers": workers, "feat": feat.exists(), "indexed_samples": idx.samples}
+    res = {"games": out, "workers": workers, "feat": feat.exists(), "indexed_samples": idx.samples,
+           "indexed_games": total, "pick": pick}
     if indexing is not None:
         res["indexing"] = round(indexing, 4)
     if error:
@@ -676,9 +697,11 @@ def selfplay_game(run_dir: Path, worker: int, first: int) -> dict:
     n = run_geometry(run_dir)[0]
     idx = game_index(run_dir, worker)
     with idx.lock:
-        hit = next((g for g in idx.games if g[2] == first), None)
+        # games are in file order, so first_sample is ascending: binary search.
+        i = bisect.bisect_left(idx.games, first, key=lambda g: g[2])
+        hit = idx.games[i] if i < len(idx.games) and idx.games[i][2] == first else None
     if hit is None:
-        return {"error": "game not in the index (older than the newest games kept)"}
+        return {"error": "game not in the index"}
     offset, samples, _, nbytes, _ = hit
     bin_path = run_dir / "data" / f"worker{worker}.bin"
     with open(bin_path, "rb") as f:
@@ -859,11 +882,12 @@ def make_handler(dash: Dashboard):
                     return
                 try:
                     if url.path == "/api/games":
-                        n = max(1, min(GAME_INDEX_KEEP, int(q.get("n", ["50"])[0])))
+                        n = max(1, min(GAME_INDEX_MAX_LIST, int(q.get("n", ["50"])[0])))
                         if q.get("source", ["selfplay"])[0] == "match":
                             res = match_games(run_dir, n)
                         else:
-                            res = selfplay_games(run_dir, int(q.get("worker", ["0"])[0]), n)
+                            res = selfplay_games(run_dir, int(q.get("worker", ["0"])[0]), n,
+                                                 q.get("pick", ["newest"])[0])
                     else:
                         gid = q.get("id", [""])[0]
                         if gid.startswith("m:"):
