@@ -78,6 +78,7 @@ label { display: block; font-size: 12px; color: var(--ink-2); margin: 8px 0 2px;
 .modal .head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
 .modal .head h2 { margin: 0; text-transform: none; letter-spacing: 0; font-size: 16px; color: var(--ink); }
 .modal .head select { width: auto; }
+.modal .head label.gvTheme { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: 12px; white-space: nowrap; }
 .modal .head .spacer { flex: 1; }
 .modal .tiles { margin-bottom: 12px; }
 .modal .charts { grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }
@@ -216,8 +217,8 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; }
       <select id="gvSource"><option value="selfplay">self-play</option><option value="match">anchor matches</option></select>
       <select id="gvWorker" title="self-play worker file"></select>
       <button id="gvReload" title="re-read the game list">Refresh list</button>
-      <select id="gvBoardTheme" title="board theme"></select>
-      <select id="gvPieceTheme" title="piece theme"></select>
+      <label class="gvTheme">Board <select id="gvBoardTheme" title="board theme"></select></label>
+      <label class="gvTheme">Pieces <select id="gvPieceTheme" title="piece theme"></select></label>
       <span class="sub" id="gvSub"></span><span class="spacer"></span><button id="gvClose">Close</button></div>
     <div class="gv">
       <div class="gv-list"><table><thead id="gvHead"></thead><tbody id="gvRows"></tbody></table></div>
