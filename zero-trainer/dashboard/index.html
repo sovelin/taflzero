@@ -88,6 +88,24 @@ label { display: block; font-size: 12px; color: var(--ink-2); margin: 8px 0 2px;
 .modal td.num, .modal th.num { text-align: right; white-space: nowrap; }
 .modal td.why { color: var(--ink-2); font-size: 12px; }
 .modal .pos { color: var(--good); } .modal .neg { color: var(--bad); }
+/* game viewer modal */
+.gv { display: grid; grid-template-columns: minmax(300px, 400px) 1fr; gap: 16px; align-items: start; }
+@media (max-width: 900px) { .gv { grid-template-columns: 1fr; } }
+.gv-list { max-height: 78vh; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+.modal .gv-list table { margin-top: 0; }
+.gv-list tr.game { cursor: pointer; }
+.gv-list tr.game:hover td { background: var(--surface); }
+.gv-list tr.game.sel td { background: var(--surface); font-weight: 600; }
+.gv-main { min-width: 0; }
+.gv-board { display: flex; justify-content: center; }
+.gv-nav { display: flex; align-items: center; gap: 8px; margin: 10px 0 4px; }
+.gv-nav input[type=range] { flex: 1; padding: 0; }
+.gv-nav .ply { font-variant-numeric: tabular-nums; min-width: 92px; text-align: right; }
+.gv-info { font-size: 13px; color: var(--ink-2); margin-bottom: 8px; }
+.gv-info b { color: var(--ink); }
+.gv-top { font-size: 13px; font-variant-numeric: tabular-nums; margin-top: 8px; }
+.gv-top span { display: inline-block; margin-right: 14px; }
+.modal .gv .chart canvas { height: 200px !important; }
 .chart h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; }
 .chart .sub { color: var(--ink-3); font-size: 12px; margin-bottom: 6px; }
 .chart canvas { width: 100% !important; height: 240px !important; }
@@ -156,7 +174,7 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; }
       </details>
       <div class="row smooth">Smoothing <input type="range" id="smooth" min="1" max="90" value="1"> <span id="smoothVal" class="sub"></span></div>
       <div class="charts">
-        <div class="chart"><h3>Elo against anchors <button class="details" id="vsOpen">Details</button></h3><div class="sub">paired games at fixed nodes; shaded = 95% CI</div><canvas id="cElo"></canvas></div>
+        <div class="chart"><h3>Elo against anchors <button class="details" id="vsOpen">Details</button><button class="details" id="gvOpen" style="margin-right:6px">Games</button></h3><div class="sub">paired games at fixed nodes; shaded = 95% CI</div><canvas id="cElo"></canvas></div>
         <div class="chart" id="ladderBox" style="display:none"><h3>Checkpoint ladder</h3><div class="sub" id="ladderSub"></div><canvas id="cLadder"></canvas></div>
         <div class="chart"><h3>Self-play outcomes</h3><div class="sub">share of games, per logging window</div><canvas id="cOut"></canvas></div>
         <div class="chart"><h3>How games end</h3><div class="sub">share of games by final position, per logging window; real attacking progress = king captured, not repetition</div><canvas id="cEnd"></canvas></div>
@@ -189,6 +207,25 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; }
       <div class="chart"><h3>Lost to</h3><div class="sub">share of each match's games the checkpoint lost, by how the game ended</div><canvas id="cVsLoss"></canvas></div>
     </div>
     <table><thead><tr><th>checkpoint</th><th>time</th><th class="num">Elo</th><th class="num">W-L-D</th><th class="num">as attacker</th><th class="num">as defender</th><th class="why">won by</th><th class="why">lost to</th></tr></thead><tbody id="vsRows"></tbody></table>
+  </div>
+</div>
+<div class="modal" id="gvModal">
+  <div class="box">
+    <div class="head"><h2>Games</h2>
+      <select id="gvSource"><option value="selfplay">self-play</option><option value="match">anchor matches</option></select>
+      <select id="gvWorker" title="self-play worker file"></select>
+      <button id="gvReload" title="re-read the game list">Refresh list</button>
+      <span class="sub" id="gvSub"></span><span class="spacer"></span><button id="gvClose">Close</button></div>
+    <div class="gv">
+      <div class="gv-list"><table><thead id="gvHead"></thead><tbody id="gvRows"></tbody></table></div>
+      <div class="gv-main">
+        <div class="gv-board" id="gvBoardWrap"><div id="gvBoard"></div></div>
+        <div class="gv-nav"><button id="gvPrev" title="previous ply (←)">◀</button><input type="range" id="gvSlider" min="0" max="0" value="0"><button id="gvNext" title="next ply (→)">▶</button><span class="ply" id="gvPly"></span></div>
+        <div class="gv-info" id="gvInfo">pick a game on the left</div>
+        <div class="chart"><h3 id="gvChartTitle">Evaluation</h3><div class="sub" id="gvChartSub"></div><canvas id="gvChart"></canvas></div>
+        <div class="gv-top" id="gvTop"></div>
+      </div>
+    </div>
   </div>
 </div>
 <script>
@@ -610,6 +647,196 @@ $('vsPick').onchange = () => {
   try { localStorage.setItem('vsPick', vsPick); } catch (e) {}
   if (lastDetail) renderVs(lastDetail);
 };
+
+// ─── game viewer modal (docs/plan-game-viewer.md) ───
+// The board is taflground (a Vue 3 component, served from /vendor/), mounted as a tiny
+// Vue app inside the modal; Vue and the 27 MB board bundle load on first open only.
+// Squares are the engine's flat index row * n + col, row 0 = rank 1 = bottom row,
+// which is taflground's numbering too (checked by gvSelfTest once the board is up).
+const gv = { source: 'selfplay', worker: 0, games: [], game: null, gameId: null, ply: 0, run: null,
+             state: null, chart: null, poll: null, ready: null };
+const GV_RESULT = { atk: 'attackers won', def: 'defenders won', draw: 'undecided (limit)', unknown: 'result unknown' };
+const gvAlg = (sq, n) => String.fromCharCode(97 + sq % n) + (Math.floor(sq / n) + 1);
+const gvSq = (alg, n = 11) => (parseInt(alg.slice(1)) - 1) * n + (alg.charCodeAt(0) - 97);
+const gvMove = (m, n) => m ? gvAlg(m.from, n) + '-' + gvAlg(m.to, n) : '';
+function gvLoadScript(src) {
+  return new Promise((ok, fail) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => fail(new Error('cannot load ' + src)); document.head.appendChild(s); });
+}
+function gvEnsureBoard() {
+  if (gv.ready) return gv.ready;
+  gv.ready = (async () => {
+    const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = '/vendor/taflground/dist/style.css'; document.head.appendChild(css);
+    if (!window.Vue) await gvLoadScript('https://cdnjs.cloudflare.com/ajax/libs/vue/3.5.13/vue.global.prod.min.js');
+    try { await gvLoadScript('/vendor/taflground/dist/index.umd.cjs'); }
+    catch (e) { throw new Error('taflground bundle missing: copy dist/index.umd.cjs of the taflground package into zero-trainer/dashboard/vendor/taflground/dist/ (27 MB, kept out of git)'); }
+    const { createApp, reactive, h } = Vue, TG = window.TaflGround;
+    gv.state = reactive({ pieces: [], highlight: null, size: 480 });
+    const none = new Set();
+    createApp({ render: () => h(TG.TaflBoard, { piecesList: gv.state.pieces, selectableSquares: none, size: gv.state.size,
+      boardTheme: TG.BoardTheme.CLASSIC_BROWN, pieceTheme: TG.PieceTheme.ALPHA, highlightMove: gv.state.highlight,
+      preMove: null, possibleMoves: [] }) }).mount('#gvBoard');
+    await gvSelfTest();
+  })();
+  return gv.ready;
+}
+// One-time check of the square convention: our algebraic mapping, and where the
+// component actually draws a1 and k11 (a1 bottom-left, k11 top-right).
+async function gvSelfTest() {
+  console.assert(gvSq('a1') === 0 && gvSq('k11') === 120 && gvSq('f6') === 60, 'gv: algebraic -> square mapping');
+  console.assert(gvAlg(0, 11) === 'a1' && gvAlg(120, 11) === 'k11' && gvAlg(60, 11) === 'f6', 'gv: square -> algebraic mapping');
+  gv.state.pieces = [{ sq: 0, type: 'attacker' }, { sq: 120, type: 'defender' }];
+  await Vue.nextTick();
+  const at = {};
+  for (const el of document.querySelectorAll('#gvBoard .piece-cell')) {
+    const left = parseFloat(el.style.getPropertyValue('--left')), top = parseFloat(el.style.getPropertyValue('--top'));
+    at[left < 50 ? 'low' : 'high'] = top;
+  }
+  console.assert(at.low > 50 && at.high < 50, 'gv: taflground draws square 0 bottom-left and 120 top-right', at);
+  gv.state.pieces = [];
+}
+function gvBoardSize() {
+  const w = $('gvBoardWrap').clientWidth || 480;
+  return Math.max(280, Math.min(560, w, window.innerHeight - 330));
+}
+async function gvOpen() {
+  $('gvModal').classList.add('open');
+  if (gv.run !== selected) { gv.run = selected; gv.games = []; gv.game = null; gv.gameId = null; }
+  try { await gvEnsureBoard(); } catch (e) { $('gvInfo').textContent = 'board failed to load: ' + e.message; }
+  if (gv.state) gv.state.size = gvBoardSize();
+  if (!gv.games.length) await gvLoadList(); else gvRenderList();
+  if (gv.game) gvShow(gv.ply);
+}
+function gvClose() { $('gvModal').classList.remove('open'); clearTimeout(gv.poll); }
+async function gvLoadList() {
+  clearTimeout(gv.poll);
+  if (!selected) return;
+  const q = `/api/games?name=${encodeURIComponent(selected)}&source=${gv.source}&n=100` + (gv.source === 'selfplay' ? `&worker=${gv.worker}` : '');
+  $('gvSub').textContent = 'loading…';
+  const r = await api(q);
+  if (r.workers) {
+    const html = r.workers.map(w => `<option value="${w}">worker ${w}</option>`).join('');
+    if ($('gvWorker').innerHTML !== html) $('gvWorker').innerHTML = html;
+    $('gvWorker').value = gv.worker;
+  }
+  $('gvWorker').style.display = gv.source === 'selfplay' ? '' : 'none';
+  gv.games = r.games || [];
+  const parts = [];
+  if (r.error) parts.push(r.error);
+  if (r.indexing != null) parts.push(`indexing worker${gv.worker}.bin… ${(100 * r.indexing).toFixed(0)}%`);
+  if (r.index_error) parts.push('index error: ' + r.index_error);
+  if (gv.source === 'selfplay' && !r.error) parts.push((r.indexing != null ? `${gv.games.length} newest of the games indexed so far` : `${gv.games.length} newest games`) +(r.feat ? '' : ' · no .feat side file: endings unknown except limits'));
+  if (gv.source === 'match' && !r.error) parts.push(gv.games.length ? `${gv.games.length} recorded games` : 'no match has recorded moves yet (needs an engine that prints moves/evals)');
+  $('gvSub').textContent = parts.join(' · ');
+  gvRenderList();
+  // Keep polling while the first index is built, so the list appears when it is done.
+  if (r.indexing != null && $('gvModal').classList.contains('open')) gv.poll = setTimeout(gvLoadList, 2000);
+}
+function gvRenderList() {
+  const sp = gv.source === 'selfplay';
+  $('gvHead').innerHTML = sp ? '<tr><th>game</th><th>result</th><th>ending</th><th class="num">plies</th></tr>'
+    : '<tr><th>checkpoint vs anchor</th><th>side</th><th>score</th><th>ending</th><th class="num">plies</th></tr>';
+  const res = (r) => ({ atk: 'atk', def: 'def', draw: 'draw', unknown: '?' })[r] || r;
+  $('gvRows').innerHTML = gv.games.map((g, i) => `<tr class="game${g.id === gv.gameId ? ' sel' : ''}" data-i="${i}">` + (sp
+    ? `<td>#${fmt(g.start_sample)}</td><td>${res(g.result)}</td><td class="why">${REASON[g.reason] || g.reason}</td><td class="num">${g.plies}</td>`
+    : `<td>${g.ckpt}<div class="why">vs ${g.anchor} · ${(g.time || '').slice(5)}</div></td><td>${g.a_side === 'atk' ? 'atk' : 'def'}</td><td>${({ w: 'won', l: 'lost', d: 'drawn' })[g.score] || g.score}</td><td class="why">${REASON[g.reason] || g.reason}</td><td class="num">${g.plies}</td>`) + '</tr>').join('')
+    || '<tr><td colspan="6" class="why">no games</td></tr>';
+  $('gvRows').querySelectorAll('tr.game').forEach(tr => tr.onclick = () => gvPick(gv.games[+tr.dataset.i]));
+}
+async function gvPick(g) {
+  gv.gameId = g.id; gvRenderList();
+  $('gvInfo').textContent = 'loading game…';
+  const d = await api(`/api/game?name=${encodeURIComponent(selected)}&id=${encodeURIComponent(g.id)}`);
+  if (d.error) { $('gvInfo').textContent = d.error; return; }
+  gv.game = d; gv.meta = g;
+  $('gvSlider').max = d.plies.length - 1;
+  gvRenderChart();
+  gvShow(0);
+}
+// Root values are stored from the mover's view; the chart shows the attackers' view.
+const gvAtkView = (p) => p.root_q == null ? null : (p.stm === 0 ? p.root_q : -p.root_q);
+function gvRenderChart() {
+  const d = gv.game, S = SERIES(), ink2 = css('--ink-2'), line = css('--line'), grey = css('--ink-3');
+  const finalZ = { atk: 1, def: -1, draw: 0 }[d.result];
+  const sets = [];
+  if (d.source === 'selfplay') {
+    $('gvChartTitle').textContent = 'Search value per ply (attackers\' view)';
+    $('gvChartSub').textContent = 'root Q of the self-play search; grey = cheap search (no policy target); dashed = final result z';
+    const pts = d.plies.map((p, i) => ({ x: i, y: gvAtkView(p) }));
+    sets.push({ label: 'root Q', data: pts, borderColor: S[0], backgroundColor: S[0], pointRadius: 0, borderWidth: 2,
+      segment: { borderColor: (c) => d.plies[c.p1DataIndex].cheap ? grey : S[0] } });
+  } else {
+    $('gvChartTitle').textContent = 'Engine evaluations (attackers\' view)';
+    $('gvChartSub').textContent = `each engine's root value on its own moves; the first ${d.opening} plies are the random opening; dashed = result`;
+    for (const [role, name, col] of [['ckpt', d.ckpt, S[0]], ['anchor', d.anchor, S[1]]]) {
+      sets.push({ label: `${name} (${role === 'ckpt' ? 'checkpoint' : 'anchor'})`, data: d.plies.map((p, i) => ({ x: i, y: p.role === role ? gvAtkView(p) : null })).filter(p => p.y != null),
+        borderColor: col, backgroundColor: col, pointRadius: 0, borderWidth: 2 });
+    }
+  }
+  if (finalZ != null) sets.push({ label: 'result', data: [{ x: 0, y: finalZ }, { x: d.plies.length - 1, y: finalZ }], borderColor: S[2], borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5 });
+  sets.push({ label: '_ply', data: [{ x: 0, y: -1 }, { x: 0, y: 1 }], borderColor: ink2, borderWidth: 1, pointRadius: 0 });
+  if (gv.chart) gv.chart.destroy();
+  gv.chart = new Chart($('gvChart'), {
+    type: 'line', data: { datasets: sets },
+    options: {
+      animation: false, responsive: true, maintainAspectRatio: false, parsing: false,
+      interaction: { mode: 'nearest', axis: 'x', intersect: false },
+      plugins: { legend: { position: 'bottom', labels: { color: ink2, boxWidth: 10, filter: (i) => !i.text.startsWith('_') } },
+                 tooltip: { filter: (i) => !i.dataset.label.startsWith('_'), callbacks: { title: (it) => 'ply ' + it[0]?.parsed?.x, label: (i) => `${i.dataset.label}: ${fmt(i.parsed.y, 3)}` } } },
+      scales: { x: { type: 'linear', min: 0, max: d.plies.length - 1, grid: { color: line }, ticks: { color: ink2 }, title: { display: true, text: 'ply', color: ink2 } },
+                y: { min: -1, max: 1, grid: { color: line }, ticks: { color: ink2 } } },
+      // Hovering the chart moves the board to that ply.
+      onHover: (ev, _els, chart) => {
+        const x = Math.round(chart.scales.x.getValueForPixel(ev.x));
+        if (x >= 0 && x < d.plies.length && x !== gv.ply) gvShow(x);
+      },
+    },
+  });
+}
+function gvShow(i) {
+  const d = gv.game;
+  if (!d) return;
+  i = Math.max(0, Math.min(d.plies.length - 1, i));
+  gv.ply = i;
+  const p = d.plies[i], n = d.board_size;
+  if (gv.state) { gv.state.pieces = p.pieces; gv.state.highlight = p.move; }
+  $('gvSlider').value = i;
+  $('gvPly').textContent = `ply ${i} / ${d.plies.length - 1}`;
+  const who = p.stm === 0 ? 'attackers' : 'defenders';
+  const last = i === d.plies.length - 1;
+  const val = p.root_q == null ? (p.opening ? 'opening (random move)' : '–') : `${fmt(p.root_q, 3)} for the mover` + (p.engine ? ` (${p.engine})` : '');
+  $('gvInfo').innerHTML = `<b>${who}</b> to move · ${p.move ? 'last move ' + gvMove(p.move, n) + ' · ' : ''}value ${val}` +
+    (p.cheap ? ' · cheap search' : '') + `<br>${GV_RESULT[d.result] || d.result} · ${REASON[d.reason] || d.reason}` +
+    (d.source === 'match' ? ` · ${d.ckpt} as ${d.a_side === 'atk' ? 'attacker' : 'defender'} vs ${d.anchor}` : '') +
+    (last && d.source === 'selfplay' ? ' · the final move is not stored (the terminal position is not a sample)' : '');
+  $('gvTop').innerHTML = p.top && p.top.length
+    ? `<b>search policy${p.cheap ? ' (cheap search: visits of a low-node search, not a training target)' : ''}</b> ` + p.top.map(t => `<span>${gvMove(t, n)} ${fmt(100 * t.share, 1)}%</span>`).join('')
+    : (d.source === 'match' ? '<span class="sub">no policy recorded for match games</span>' : '<span class="sub">no policy target (cheap search)</span>');
+  if (gv.chart) {
+    const cur = gv.chart.data.datasets[gv.chart.data.datasets.length - 1];
+    cur.data = [{ x: i, y: -1 }, { x: i, y: 1 }];
+    gv.chart.update('none');
+  }
+  $('gvRows').querySelectorAll('tr.game.sel').forEach(tr => tr.scrollIntoView({ block: 'nearest' }));
+}
+$('gvOpen').onclick = gvOpen;
+$('gvClose').onclick = gvClose;
+$('gvModal').onclick = (ev) => { if (ev.target === $('gvModal')) gvClose(); };
+$('gvReload').onclick = gvLoadList;
+$('gvSource').onchange = () => { gv.source = $('gvSource').value; gvLoadList(); };
+$('gvWorker').onchange = () => { gv.worker = +$('gvWorker').value; gvLoadList(); };
+$('gvSlider').oninput = () => gvShow(+$('gvSlider').value);
+$('gvPrev').onclick = () => gvShow(gv.ply - 1);
+$('gvNext').onclick = () => gvShow(gv.ply + 1);
+document.addEventListener('keydown', (ev) => {
+  if (!$('gvModal').classList.contains('open')) return;
+  if (ev.key === 'Escape') gvClose();
+  else if (ev.target.tagName === 'SELECT' || ev.target.tagName === 'INPUT' && ev.target.type !== 'range') return;
+  else if (ev.key === 'ArrowLeft') { gvShow(gv.ply - 1); ev.preventDefault(); }
+  else if (ev.key === 'ArrowRight') { gvShow(gv.ply + 1); ev.preventDefault(); }
+  else if (ev.key === 'Home') { gvShow(0); ev.preventDefault(); }
+  else if (ev.key === 'End' && gv.game) { gvShow(gv.game.plies.length - 1); ev.preventDefault(); }
+});
+window.addEventListener('resize', () => { if (gv.state && $('gvModal').classList.contains('open')) gv.state.size = gvBoardSize(); });
 
 // ─── round robin panel ───
 const rrSel = new Set(['copenhagen11x11']);

@@ -14,7 +14,10 @@ one call, so a match costs the GPU a fraction of what two UCI engines per pair d
 ended (`def_fort`, `atk_capture`, ...), which the result and the progress file tally
 from `--a`'s side ("win" / "loss" / "draw" -> reason -> count). With `--progress`,
 every finished match is also appended to `eval.games.jsonl` next to that file (or
-`--games-log`): one line per match with each game's reason and length.
+`--games-log`): one line per match with each game's reason and length, and, from an
+engine that prints them, the game's `moves` (space-separated, opening included) and
+`evals` (each searched move's root value from the mover's view) for the dashboard's
+game viewer.
 
 `make_opening` / `play_game` below drive a UCI engine and stay for the tools that
 record games move by move (build_fort_bench.py).
@@ -96,6 +99,70 @@ def parse_game_line(line: str) -> tuple[int, bool, str, str, int] | None:
     return int(parts[1]), parts[2] == "1", parts[3], parts[4], int(parts[5])
 
 
+def parse_record_line(line: str) -> tuple[str, int, bool, list[str] | list[float]] | None:
+    """`moves <pair> <a_attacks> <m1> …` / `evals <pair> <a_attacks> <v1> …` from the
+    engine (printed right after that game's `game` line), else None. Either list may be
+    empty: a game can end inside its opening, and the opening has no evals."""
+    parts = line.split()
+    if len(parts) < 3 or parts[0] not in ("moves", "evals"):
+        return None
+    try:
+        pair, a_attacks = int(parts[1]), parts[2] == "1"
+        rest: list[str] | list[float] = parts[3:] if parts[0] == "moves" else [float(v) for v in parts[3:]]
+    except ValueError:
+        return None
+    return parts[0], pair, a_attacks, rest
+
+
+class MatchStream:
+    """Turns the engine's match output into finished pairs.
+
+    Games of a pair finish in any order; a pair is handed out once both of its games
+    are in. A game is in once its record is complete: the engine prints `game`, `moves`
+    and `evals` of one game under one lock, so the `evals` line closes it, and so does
+    the next `game` line or `done` (an older engine prints no record lines at all).
+    """
+
+    def __init__(self) -> None:
+        self.games: dict[tuple[int, bool], dict] = {}
+        self.open: tuple[int, bool] | None = None
+        self.closed: dict[int, set[bool]] = {}
+        self.done = False
+
+    def _close(self) -> list[tuple[int, dict[bool, dict]]]:
+        key, self.open = self.open, None
+        if key is None:
+            return []
+        pair, a_attacks = key
+        sides = self.closed.setdefault(pair, set())
+        sides.add(a_attacks)
+        if len(sides) < 2:
+            return []
+        del self.closed[pair]
+        return [(pair, {s: self.games.pop((pair, s)) for s in (True, False)})]
+
+    def feed(self, line: str) -> list[tuple[int, dict[bool, dict]]]:
+        """Pairs completed by `line`: (pair, {a_attacks: {winner, reason, plies, moves?, evals?}})."""
+        line = line.strip()
+        if line == "done":
+            self.done = True
+            return self._close()
+        g = parse_game_line(line)
+        if g is not None:
+            out = self._close()
+            pair, a_attacks, winner, why, plies = g
+            self.games[(pair, a_attacks)] = {"winner": winner, "reason": why, "plies": plies}
+            self.open = (pair, a_attacks)
+            return out
+        rec = parse_record_line(line)
+        if rec is not None and rec[1:3] == self.open:
+            kind, _, _, values = rec
+            self.games[self.open][kind] = values  # type: ignore[index]
+            if kind == "evals":
+                return self._close()
+        return []
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--exe", required=True)
@@ -168,39 +235,35 @@ def main() -> None:
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1, env=env,
                             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
 
-    # Games of a pair finish in any order; a pair is scored once both are in.
-    pending: dict[int, dict[bool, tuple[str, str, int]]] = {}
-    done = False
+    stream = MatchStream()
     for line in proc.stdout:  # type: ignore[union-attr]
-        line = line.strip()
-        if line == "done":
-            done = True
+        for pair, both in stream.feed(line):
+            r1, why1, len1 = both[True]["winner"], both[True]["reason"], both[True]["plies"]  # a attacks
+            r2, why2, len2 = both[False]["winner"], both[False]["reason"], both[False]["plies"]  # b attacks
+            s1 = {"attackers": "w", "defenders": "l", "draw": "d"}[r1]
+            s2 = {"attackers": "l", "defenders": "w", "draw": "d"}[r2]
+            totals[s1] += 1
+            totals[s2] += 1
+            totals["pairs"] += 1
+            recent.append(f"{r1[:3]}/{r2[:3]}")
+            for side, sc, why, n_plies, rec in (("atk", s1, why1, len1, both[True]), ("def", s2, why2, len2, both[False])):
+                bucket = reasons[{"w": "win", "l": "loss", "d": "draw"}[sc]]
+                bucket[why] = bucket.get(why, 0) + 1
+                entry = {"a_side": side, "score": sc, "reason": why, "plies": n_plies}
+                # The game's record for the dashboard's viewer (absent from older engines).
+                if "moves" in rec:
+                    entry["moves"] = " ".join(rec["moves"])
+                if "evals" in rec:
+                    entry["evals"] = rec["evals"]
+                games.append(entry)
+            write_progress()
+            if not args.quiet:
+                n = totals["w"] + totals["l"] + totals["d"]
+                sc = (totals["w"] + 0.5 * totals["d"]) / n
+                print(f"pair {totals['pairs']}/{args.pairs}: {r1}/{r2} | W{totals['w']} L{totals['l']} D{totals['d']} | elo {elo_from_score(sc):+.0f}", flush=True)
+        if stream.done:
             break
-        g = parse_game_line(line)
-        if g is None:
-            continue
-        pair, a_attacks, winner, why, plies = g
-        pending.setdefault(pair, {})[a_attacks] = (winner, why, plies)
-        if len(pending[pair]) < 2:
-            continue
-        both = pending.pop(pair)
-        r1, why1, len1 = both[True]  # a attacks
-        r2, why2, len2 = both[False]  # b attacks
-        s1 = {"attackers": "w", "defenders": "l", "draw": "d"}[r1]
-        s2 = {"attackers": "l", "defenders": "w", "draw": "d"}[r2]
-        totals[s1] += 1
-        totals[s2] += 1
-        totals["pairs"] += 1
-        recent.append(f"{r1[:3]}/{r2[:3]}")
-        for side, sc, why, n_plies in (("atk", s1, why1, len1), ("def", s2, why2, len2)):
-            bucket = reasons[{"w": "win", "l": "loss", "d": "draw"}[sc]]
-            bucket[why] = bucket.get(why, 0) + 1
-            games.append({"a_side": side, "score": sc, "reason": why, "plies": n_plies})
-        write_progress()
-        if not args.quiet:
-            n = totals["w"] + totals["l"] + totals["d"]
-            sc = (totals["w"] + 0.5 * totals["d"]) / n
-            print(f"pair {totals['pairs']}/{args.pairs}: {r1}/{r2} | W{totals['w']} L{totals['l']} D{totals['d']} | elo {elo_from_score(sc):+.0f}", flush=True)
+    done = stream.done
     stderr = proc.stderr.read() if proc.stderr else ""  # type: ignore[union-attr]
     proc.wait()
     if not done or totals["pairs"] != args.pairs:
