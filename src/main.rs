@@ -4,6 +4,7 @@ use taflzero::board::Board;
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 use taflzero::board::position_export::BitPosition;
 use taflzero::board::rules::{RulesEnum, get_rules_enum_from_str};
+use taflzero::feature_dump::dump_features;
 use taflzero::gen_train_data::{
     DaemonConfig, DatagenConfig, DatagenSink, GameLimits, SearchConfig, WorkerOverrides,
     gen_train_data, gen_train_data_into,
@@ -46,6 +47,11 @@ struct CliArgs {
     nodes: u64,
     opening_moves: usize,
     seed: Option<u64>,
+    /// `--features <samples.bin> --out <samples.feat>`: feature side file for the
+    /// input-plane probe instead of UCI (see feature_dump).
+    features_path: Option<String>,
+    out_path: Option<String>,
+    limit: Option<usize>,
 }
 
 fn parse_args() -> CliArgs {
@@ -78,6 +84,9 @@ fn parse_args() -> CliArgs {
     let mut nodes = 400u64;
     let mut opening_moves = 16usize;
     let mut seed: Option<u64> = None;
+    let mut features_path: Option<String> = None;
+    let mut out_path: Option<String> = None;
+    let mut limit: Option<usize> = None;
     let mut args = std::env::args().skip(1);
 
     // `--flag <usize>` with a lower bound; exits with a usage error otherwise.
@@ -269,6 +278,9 @@ fn parse_args() -> CliArgs {
             "--nodes" => nodes = usize_arg(&mut args, "--nodes", 1) as u64,
             "--opening-moves" => opening_moves = usize_arg(&mut args, "--opening-moves", 0),
             "--seed" => seed = Some(usize_arg(&mut args, "--seed", 0) as u64),
+            "--features" => features_path = Some(path_arg(&mut args, "--features")),
+            "--out" => out_path = Some(path_arg(&mut args, "--out")),
+            "--limit" => limit = Some(usize_arg(&mut args, "--limit", 1)),
             _ => {
                 eprintln!("Unknown arg: {arg}");
                 eprintln!(
@@ -277,7 +289,8 @@ fn parse_args() -> CliArgs {
                      [--gumbel <considered>] [--max-plies N] [--max-no-capture N] \
                      [--net-watch] [--stop-file <path>] [--pause-file <path>] [--worker-id N] [--threads N] \
                      [--curriculum-fraction F] [--curriculum-path <path>] [--curriculum-max-size N] \
-                     [--dump-sample <output.bin>] [--nn-eval <fen>]"
+                     [--dump-sample <output.bin>] [--nn-eval <fen>] \
+                     [--features <samples.bin> --out <samples.feat> [--limit N] [--threads N]]"
                 );
                 std::process::exit(2);
             }
@@ -312,6 +325,34 @@ fn parse_args() -> CliArgs {
         nodes,
         opening_moves,
         seed,
+        features_path,
+        out_path,
+        limit,
+    }
+}
+
+/// `--features`: replays the games of a sample file and writes the probe's side file.
+fn run_features(cli: &CliArgs) {
+    let (Some(input), Some(output)) = (&cli.features_path, &cli.out_path) else {
+        eprintln!("--features needs --out");
+        std::process::exit(2);
+    };
+    let t0 = std::time::Instant::now();
+    match dump_features(
+        std::path::Path::new(input),
+        std::path::Path::new(output),
+        cli.limit,
+        cli.variant,
+        cli.threads,
+    ) {
+        Ok(stats) => {
+            println!("{}", stats.summary());
+            println!("wrote {output} in {:.1} s", t0.elapsed().as_secs_f64());
+        }
+        Err(err) => {
+            eprintln!("--features aborted: {err}");
+            std::process::exit(1);
+        }
     }
 }
 
@@ -431,6 +472,10 @@ fn main() {
     apply_worker_overrides(&mut cli);
     if cli.match_mode {
         run_match(&cli);
+        return;
+    }
+    if cli.features_path.is_some() {
+        run_features(&cli);
         return;
     }
 
