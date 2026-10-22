@@ -276,7 +276,7 @@ async function loadRuns() {
     const d = document.createElement('div');
     d.className = 'run' + (r.name === selected ? ' active' : '');
     d.innerHTML = `<div><div class="name">${r.name}</div><div class="meta">step ${fmt(r.step)} · ${fmtK(r.generated)} pos</div></div><span class="pill ${r.status}">${r.status}</span>`;
-    d.onclick = () => { selected = r.name; loadDetail(); loadRuns(); };
+    d.onclick = () => { selected = r.name; routeWrite(); loadDetail(); loadRuns(); };
     box.appendChild(d);
   }
 }
@@ -650,10 +650,12 @@ function renderVs(d) {
     return `<tr><td>${e.ckpt}</td><td class="num">${(e.time || '').slice(5)}</td><td class="num ${e.elo >= 0 ? 'pos' : 'neg'}">${e.elo > 0 ? '+' : ''}${fmt(e.elo, 0)}</td><td class="num">${e.w}-${e.l}-${e.d}</td><td class="num">${wld(a)}</td><td class="num">${wld(f)}</td><td class="why">${whyText(e.reasons.win)}</td><td class="why">${whyText(e.reasons.loss)}${e.d ? ` · drawn ${whyText(e.reasons.draw)}` : ''}</td></tr>`;
   }).join('');
 }
-$('vsOpen').onclick = () => { $('vsModal').classList.add('open'); if (lastDetail) renderVs(lastDetail); };
-$('vsClose').onclick = () => $('vsModal').classList.remove('open');
-$('vsModal').onclick = (ev) => { if (ev.target === $('vsModal')) $('vsModal').classList.remove('open'); };
-document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') $('vsModal').classList.remove('open'); });
+function vsShow() { $('vsModal').classList.add('open'); if (lastDetail) renderVs(lastDetail); }
+function vsHide() { if ($('vsModal').classList.contains('open')) { $('vsModal').classList.remove('open'); routeWrite(); } }
+$('vsOpen').onclick = () => { vsShow(); routeWrite(); };
+$('vsClose').onclick = vsHide;
+$('vsModal').onclick = (ev) => { if (ev.target === $('vsModal')) vsHide(); };
+document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') vsHide(); });
 $('vsPick').onchange = () => {
   vsPick = $('vsPick').value;
   try { localStorage.setItem('vsPick', vsPick); } catch (e) {}
@@ -728,7 +730,7 @@ async function gvOpen() {
   if (!gv.games.length) await gvLoadList(); else gvRenderList();
   if (gv.game) gvShow(gv.ply);
 }
-function gvClose() { $('gvModal').classList.remove('open'); clearTimeout(gv.poll); }
+function gvClose() { const was = $('gvModal').classList.contains('open'); $('gvModal').classList.remove('open'); clearTimeout(gv.poll); if (was) routeWrite(); }
 async function gvLoadList() {
   clearTimeout(gv.poll);
   if (!selected) return;
@@ -765,7 +767,7 @@ function gvRenderList() {
   $('gvRows').querySelectorAll('tr.game').forEach(tr => tr.onclick = () => gvPick(gv.games[+tr.dataset.i]));
 }
 async function gvPick(g) {
-  gv.gameId = g.id; gvRenderList();
+  gv.gameId = g.id; gvRenderList(); routeWrite();
   $('gvInfo').textContent = 'loading game…';
   const d = await api(`/api/game?name=${encodeURIComponent(selected)}&id=${encodeURIComponent(g.id)}`);
   if (d.error) { $('gvInfo').textContent = d.error; return; }
@@ -776,26 +778,29 @@ async function gvPick(g) {
 }
 // Root values are stored from the mover's view; the chart shows the attackers' view.
 const gvAtkView = (p) => p.root_q == null ? null : (p.stm === 0 ? p.root_q : -p.root_q);
+// The value head predicts the expected score in [-1, 1] (win +1, draw 0, loss -1), so
+// (v + 1) / 2 is the side's chance to win counting a draw as half: shown as a win chance.
+const gvAtkChance = (p) => { const v = gvAtkView(p); return v == null ? null : 50 * (v + 1); };
 function gvRenderChart() {
   const d = gv.game, S = SERIES(), ink2 = css('--ink-2'), line = css('--line'), grey = css('--ink-3');
-  const finalZ = { atk: 1, def: -1, draw: 0 }[d.result];
+  const finalZ = { atk: 100, def: 0, draw: 50 }[d.result];
   const sets = [];
   if (d.source === 'selfplay') {
-    $('gvChartTitle').textContent = 'Search value per ply (attackers\' view)';
-    $('gvChartSub').textContent = 'root Q of the self-play search; grey = cheap search (no policy target); dashed = final result z';
-    const pts = d.plies.map((p, i) => ({ x: i, y: gvAtkView(p) }));
-    sets.push({ label: 'root Q', data: pts, borderColor: S[0], backgroundColor: S[0], pointRadius: 0, borderWidth: 2,
+    $('gvChartTitle').textContent = 'Attackers\' win chance per ply';
+    $('gvChartSub').textContent = 'from the self-play search\'s root value (a draw counts half; defenders = 100 minus this); grey = cheap search; dashed = the result';
+    const pts = d.plies.map((p, i) => ({ x: i, y: gvAtkChance(p) }));
+    sets.push({ label: 'attackers win', data: pts, borderColor: S[0], backgroundColor: S[0], pointRadius: 0, borderWidth: 2,
       segment: { borderColor: (c) => d.plies[c.p1DataIndex].cheap ? grey : S[0] } });
   } else {
-    $('gvChartTitle').textContent = 'Engine evaluations (attackers\' view)';
-    $('gvChartSub').textContent = `each engine's root value on its own moves; the first ${d.opening} plies are the random opening; dashed = result`;
+    $('gvChartTitle').textContent = 'Attackers\' win chance per ply, by engine';
+    $('gvChartSub').textContent = `each engine's root value on its own moves as the attackers' win chance (a draw counts half); the first ${d.opening} plies are the random opening; dashed = the result`;
     for (const [role, name, col] of [['ckpt', d.ckpt, S[0]], ['anchor', d.anchor, S[1]]]) {
-      sets.push({ label: `${name} (${role === 'ckpt' ? 'checkpoint' : 'anchor'})`, data: d.plies.map((p, i) => ({ x: i, y: p.role === role ? gvAtkView(p) : null })).filter(p => p.y != null),
+      sets.push({ label: `${name} (${role === 'ckpt' ? 'checkpoint' : 'anchor'})`, data: d.plies.map((p, i) => ({ x: i, y: p.role === role ? gvAtkChance(p) : null })).filter(p => p.y != null),
         borderColor: col, backgroundColor: col, pointRadius: 0, borderWidth: 2 });
     }
   }
   if (finalZ != null) sets.push({ label: 'result', data: [{ x: 0, y: finalZ }, { x: d.plies.length - 1, y: finalZ }], borderColor: S[2], borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5 });
-  sets.push({ label: '_ply', data: [{ x: 0, y: -1 }, { x: 0, y: 1 }], borderColor: ink2, borderWidth: 1, pointRadius: 0 });
+  sets.push({ label: '_ply', data: [{ x: 0, y: 0 }, { x: 0, y: 100 }], borderColor: ink2, borderWidth: 1, pointRadius: 0 });
   if (gv.chart) gv.chart.destroy();
   gv.chart = new Chart($('gvChart'), {
     type: 'line', data: { datasets: sets },
@@ -803,9 +808,9 @@ function gvRenderChart() {
       animation: false, responsive: true, maintainAspectRatio: false, parsing: false,
       interaction: { mode: 'nearest', axis: 'x', intersect: false },
       plugins: { legend: { position: 'bottom', labels: { color: ink2, boxWidth: 10, filter: (i) => !i.text.startsWith('_') } },
-                 tooltip: { filter: (i) => !i.dataset.label.startsWith('_'), callbacks: { title: (it) => 'ply ' + it[0]?.parsed?.x, label: (i) => `${i.dataset.label}: ${fmt(i.parsed.y, 3)}` } } },
+                 tooltip: { filter: (i) => !i.dataset.label.startsWith('_'), callbacks: { title: (it) => 'ply ' + it[0]?.parsed?.x, label: (i) => i.dataset.label === 'result' ? `result: ${GV_RESULT[d.result] || d.result}` : `${i.dataset.label}: attackers ${fmt(i.parsed.y, 0)}% · defenders ${fmt(100 - i.parsed.y, 0)}%` } } },
       scales: { x: { type: 'linear', min: 0, max: d.plies.length - 1, grid: { color: line }, ticks: { color: ink2 }, title: { display: true, text: 'ply', color: ink2 } },
-                y: { min: -1, max: 1, grid: { color: line }, ticks: { color: ink2 } } },
+                y: { min: 0, max: 100, grid: { color: line }, ticks: { color: ink2, stepSize: 25, callback: (v) => v + '%' }, title: { display: true, text: 'attackers win', color: ink2 } } },
       // Hovering the chart moves the board to that ply.
       onHover: (ev, _els, chart) => {
         const x = Math.round(chart.scales.x.getValueForPixel(ev.x));
@@ -825,8 +830,10 @@ function gvShow(i) {
   $('gvPly').textContent = `ply ${i} / ${d.plies.length - 1}`;
   const who = p.stm === 0 ? 'attackers' : 'defenders';
   const last = i === d.plies.length - 1;
-  const val = p.root_q == null ? (p.opening ? 'opening (random move)' : '–') : `${fmt(p.root_q, 3)} for the mover` + (p.engine ? ` (${p.engine})` : '');
-  $('gvInfo').innerHTML = `<b>${who}</b> to move · ${p.move ? 'last move ' + gvMove(p.move, n) + ' · ' : ''}value ${val}` +
+  const ch = gvAtkChance(p);
+  const val = ch == null ? (p.opening ? 'opening (random move)' : 'no evaluation')
+    : `win chance <b>attackers ${fmt(ch, 0)}%</b> · <b>defenders ${fmt(100 - ch, 0)}%</b>` + (p.engine ? ` (${p.engine}'s search)` : '');
+  $('gvInfo').innerHTML = `<b>${who}</b> to move · ${p.move ? 'last move ' + gvMove(p.move, n) + ' · ' : ''}${val}` +
     (p.cheap ? ' · cheap search' : '') + `<br>${GV_RESULT[d.result] || d.result} · ${REASON[d.reason] || d.reason}` +
     (d.source === 'match' ? ` · ${d.ckpt} as ${d.a_side === 'atk' ? 'attacker' : 'defender'} vs ${d.anchor}` : '') +
     (last && d.source === 'selfplay' ? ' · the final move is not stored (the terminal position is not a sample)' : '');
@@ -835,15 +842,25 @@ function gvShow(i) {
     : (d.source === 'match' ? '<span class="sub">no policy recorded for match games</span>' : '<span class="sub">no policy target (cheap search)</span>');
   if (gv.chart) {
     const cur = gv.chart.data.datasets[gv.chart.data.datasets.length - 1];
-    cur.data = [{ x: i, y: -1 }, { x: i, y: 1 }];
+    cur.data = [{ x: i, y: 0 }, { x: i, y: 100 }];
     gv.chart.update('none');
   }
   $('gvRows').querySelectorAll('tr.game.sel').forEach(tr => tr.scrollIntoView({ block: 'nearest' }));
 }
-$('gvOpen').onclick = gvOpen;
+$('gvOpen').onclick = async () => { await gvOpen(); routeWrite(); };
 $('gvClose').onclick = gvClose;
 $('gvModal').onclick = (ev) => { if (ev.target === $('gvModal')) gvClose(); };
 $('gvReload').onclick = gvLoadList;
+// Wheel over the board steps through the game (down = forward). Deltas are summed so a
+// touchpad's stream of small events moves one ply per notch-sized scroll, not dozens.
+let gvWheelSum = 0;
+$('gvBoardWrap').addEventListener('wheel', (ev) => {
+  if (!gv.game) return;
+  ev.preventDefault();
+  gvWheelSum += ev.deltaMode === 1 ? ev.deltaY * 40 : ev.deltaY;
+  const steps = Math.trunc(gvWheelSum / 100);
+  if (steps) { gvWheelSum -= steps * 100; gvShow(gv.ply + steps); }
+}, { passive: false });
 $('gvSource').onchange = () => { gv.source = $('gvSource').value; gvLoadList(); };
 $('gvWorker').onchange = () => { gv.worker = +$('gvWorker').value; gvLoadList(); };
 $('gvSlider').oninput = () => gvShow(+$('gvSlider').value);
@@ -984,10 +1001,52 @@ function markStale() {
   if (age > 30) $('clock').textContent = `stale ${Math.round(age)} s`;
 }
 
+// ─── routes: #/<run>, #/<run>/details, #/<run>/games[/<game id>] ───
+// Written on every navigation (pushState, so Back/Forward walk them), read on load and
+// on popstate. The game id is the viewer's own ("0:62107696" self-play, "m:3:17" match).
+function routeNow() {
+  if (!selected) return '';
+  let h = '#/' + encodeURIComponent(selected);
+  if ($('vsModal').classList.contains('open')) h += '/details';
+  else if ($('gvModal').classList.contains('open')) h += '/games' + (gv.gameId ? '/' + encodeURIComponent(gv.gameId) : '');
+  return h;
+}
+function routeWrite() {
+  const h = routeNow();
+  if (h && h !== location.hash) history.pushState(null, '', h);
+}
+async function routeRead() {
+  const parts = location.hash.replace(/^#\/?/, '').split('/').map(decodeURIComponent).filter(Boolean);
+  const run = parts[0] && runs.some(r => r.name === parts[0]) ? parts[0] : (selected || (runs[0] && runs[0].name));
+  if (!run) return;
+  if (run !== selected) { selected = run; await loadRuns(); await refresh(); }
+  const view = parts[1] || '', gid = parts[2] || '';
+  if (view !== 'details') $('vsModal').classList.remove('open');
+  if (view !== 'games') { $('gvModal').classList.remove('open'); clearTimeout(gv.poll); }
+  if (view === 'details') vsShow();
+  if (view === 'games') {
+    if (gid) {
+      const src = gid.startsWith('m:') ? 'match' : 'selfplay';
+      const w = src === 'selfplay' ? gid.split(':')[0] : gv.worker;
+      if (gv.source !== src || String(gv.worker) !== String(w)) {
+        gv.source = src; gv.worker = w; gv.games = []; gv.game = null; gv.gameId = null;
+        $('gvSource').value = src;
+      }
+    }
+    await gvOpen();
+    if (gid && gid !== gv.gameId) {
+      const g = gv.games.find(x => x.id === gid);
+      if (g) await gvPick(g); else $('gvInfo').textContent = `game ${gid} is not among the listed games`;
+    }
+  }
+  history.replaceState(null, '', routeNow());
+}
+window.addEventListener('popstate', routeRead);
+
 (async () => {
   applyTheme(savedTheme);
   await loadPresets(); await loadRuns();
-  if (runs.length) { selected = runs[0].name; await refresh(); }
+  if (runs.length) { selected = runs[0].name; await routeRead(); if (!location.hash) await refresh(); }
   setInterval(refresh, 10000);
   setInterval(markStale, 5000);
   // Background tabs get their timers throttled to about once a minute: catch up as soon as the tab is shown again.

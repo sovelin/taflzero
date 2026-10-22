@@ -45,12 +45,20 @@ def pid_alive(pid: int) -> bool:
     if pid <= 0:
         return False
     if os.name == "nt":
-        try:
-            out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"], capture_output=True, text=True, timeout=10,
-                                 creationflags=subprocess.CREATE_NO_WINDOW).stdout
-        except Exception:
+        # OpenProcess + GetExitCodeProcess instead of `tasklist`: spawning tasklist cost
+        # ~200 ms a pid, and every request checks every run's pids (3 s per page load).
+        import ctypes
+        k32 = ctypes.windll.kernel32
+        handle = k32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
             return False
-        return str(pid) in out
+        try:
+            code = ctypes.c_ulong()
+            if not k32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return False
+            return code.value == 259  # STILL_ACTIVE
+        finally:
+            k32.CloseHandle(handle)
     try:
         os.kill(pid, 0)
         return True
@@ -74,6 +82,34 @@ def spawn_detached(cmd: list[str], log_path: Path, cwd: Path) -> int:
 
 # ─── run directory readers ───────────────────────────────────────────────────
 
+_FILE_CACHE: dict[tuple, tuple[float, int, object]] = {}
+_FILE_CACHE_LOCK = threading.Lock()
+
+
+def _cached(fn):
+    """Re-parse a file only when its size or mtime changed: a run's CSVs are thousands of
+    rows, and every page refresh asked for all of them (1.3 s for a stopped run whose
+    files never change). Callers must not mutate the returned rows."""
+    def wrapper(path: Path, *args):
+        try:
+            st = path.stat()
+        except OSError:
+            return fn(path, *args)
+        key = (fn.__name__, str(path), args)
+        with _FILE_CACHE_LOCK:
+            hit = _FILE_CACHE.get(key)
+        if hit and hit[0] == st.st_mtime and hit[1] == st.st_size:
+            return hit[2]
+        value = fn(path, *args)
+        with _FILE_CACHE_LOCK:
+            _FILE_CACHE[key] = (st.st_mtime, st.st_size, value)
+        return value
+    wrapper.__name__ = fn.__name__
+    wrapper.__doc__ = fn.__doc__
+    return wrapper
+
+
+@_cached
 def read_csv(path: Path, max_rows: int = 2000) -> list[dict]:
     if not path.exists():
         return []
@@ -94,6 +130,7 @@ def read_csv(path: Path, max_rows: int = 2000) -> list[dict]:
     return out
 
 
+@_cached
 def read_jsonl(path: Path) -> list[dict]:
     if not path.exists():
         return []
