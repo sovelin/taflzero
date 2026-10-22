@@ -7,9 +7,7 @@ use crate::mcts::export::{KING_CORNER_NONE, LegalMask, PendingSample, king_corne
 use crate::mcts::utils::move_to_policy_index;
 use crate::mcts::{C_PUCT, GumbelConfig, MCTSConfig, MCTSTree, mcts_search};
 use crate::movegen::MoveGen;
-use crate::search::features::{
-    PositionFeatures, feature_header, finish_game, position_features, terminal_code,
-};
+use crate::search::features::{PositionFeatures, finish_game, position_features, terminal_code};
 use crate::search::nn::NeuralNet;
 use crate::search_data::SearchData;
 use crate::terminal::{check_terminal, get_terminal};
@@ -519,7 +517,8 @@ fn open_feature_file(output_path: &str, variant: RulesEnum) -> Option<BufWriter<
         return None;
     }
     if feat_len == 0 {
-        std::fs::write(&path, feature_header()).expect("Could not create feature file");
+        std::fs::write(&path, crate::search::features::feature_header())
+            .expect("Could not create feature file");
     } else {
         match crate::search::feature_dump::catch_up_features(bin, &path, variant) {
             Ok(0) => {}
