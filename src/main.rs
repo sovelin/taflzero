@@ -468,6 +468,10 @@ fn load_net_for(path: &str, board_size: usize, batch_size: usize) -> NeuralNet {
 }
 
 fn main() {
+    if std::env::args().nth(1).as_deref() == Some("--version") {
+        println!("{}", taflzero::engine_version());
+        return;
+    }
     let mut cli = parse_args();
     apply_worker_overrides(&mut cli);
     if cli.match_mode {
