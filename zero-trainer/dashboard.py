@@ -22,6 +22,7 @@ import argparse
 import csv
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -331,6 +332,438 @@ class Dashboard:
         return {"ok": True}
 
 
+# ─── game viewer (docs/plan-game-viewer.md) ─────────────────────────────────
+#
+# Self-play games come from data/worker<w>.bin: every ply of a game is one sample and
+# the last carries FLAG_LAST_OF_GAME, so a game is a run of samples. A 50 GB file
+# cannot be scanned per request, so a per-file index of game boundaries
+# (data/games<w>.idx.json) is built once in a background thread and then extended
+# from where it stopped. Anchor-match games come from eval.games.jsonl (moves and evals
+# recorded by tools/match.py); their positions are replayed by `taflzero --replay`,
+# since the trainer has no rules engine of its own.
+#
+# The sample layout is read here directly (not through dataset.py) on purpose:
+# dataset.py imports torch, which costs the dashboard seconds of start-up and memory
+# for a few byte offsets. The constants mirror dataset.py's docstring.
+
+VIEWER_BIT_POSITION_BYTES = 50   # 3 x 16 plane bytes + stm + rep
+VIEWER_TAIL_BYTES = 4            # value, root_q, flags, king_corner
+VIEWER_FLAG_POLICY_VALID = 1 << 0
+VIEWER_FLAG_LAST_OF_GAME = 1 << 1
+VIEWER_FLAG_RESULT_UNKNOWN = 1 << 2
+GAME_INDEX_KEEP = 5000           # games kept in the index (the newest)
+GAME_INDEX_SYNC_BYTES = 64 << 20  # a smaller backlog is indexed inside the request
+GAME_INDEX_CHUNK = 64 << 20       # bytes read per step of the scan
+
+# The per-sample feature record of `taflzero --features` (docs/probe-input-planes.md):
+# a 16-byte header (magic, u32 record size, u32 reserved), then one record per sample;
+# byte 77 of the record of a game's last sample says how the game ended (codes from
+# src/search/features.rs on the probe branch; 0 = written before the byte existed,
+# 255 = the replay could not tell).
+FEAT_MAGIC = b"TZFEAT01"
+FEAT_HEADER_BYTES = 16
+FEAT_TERMINAL_OFFSET = 77
+FEAT_TERMINAL_CODES = {1: "atk_capture", 2: "atk_surrounded", 3: "atk_no_moves", 4: "atk_threefold",
+                       5: "def_corner", 6: "def_edge", 7: "def_fort", 8: "def_no_moves", 9: "max_plies"}
+
+
+def legal_mask_bytes(n: int) -> int:
+    return (n * n * 4 * (n - 1) + 7) // 8
+
+
+def sample_size(buf, pos: int, n: int) -> int | None:
+    """Byte size of the sample at `pos` in `buf`, None when `buf` ends inside it."""
+    at = pos + VIEWER_BIT_POSITION_BYTES + legal_mask_bytes(n)
+    if at + 2 > len(buf):
+        return None
+    size = at + 2 - pos + int.from_bytes(buf[at:at + 2], "little") * 4 + VIEWER_TAIL_BYTES
+    return size if pos + size <= len(buf) else None
+
+
+def scan_games(buf, n: int, base_offset: int, base_sample: int) -> tuple[list[list], int, int]:
+    """Whole games in `buf` (which starts on a game boundary): ([[offset, samples,
+    first_sample, bytes, result], …], bytes consumed, samples consumed). The consumed
+    counts stop at the end of the last complete game, so a game still being written
+    (or a sample cut by the read) is picked up by the next scan from its start. The
+    result is read here from the game's last sample, so listing games later reads
+    nothing but the index."""
+    hdr = VIEWER_BIT_POSITION_BYTES + legal_mask_bytes(n)
+    games: list[list] = []
+    pos = start = 0
+    count = samples = 0
+    end = len(buf)
+    while True:
+        at = pos + hdr
+        if at + 2 > end:
+            break
+        size = hdr + 2 + (buf[at] | buf[at + 1] << 8) * 4 + VIEWER_TAIL_BYTES
+        if pos + size > end:
+            break
+        count += 1
+        flags = buf[pos + size - 2]
+        if flags & VIEWER_FLAG_LAST_OF_GAME:
+            value = buf[pos + size - 4]
+            result = game_result(buf[pos + 48], value - 256 if value > 127 else value, flags)
+            games.append([base_offset + start, count, base_sample + samples, pos + size - start, result])
+            samples += count
+            start, count = pos + size, 0
+        pos += size
+    return games, start, samples
+
+
+class GameIndex:
+    """Game boundaries of one self-play file, persisted next to it.
+
+    `{"bin_size": <bytes indexed>, "samples": <samples before bin_size>, "games":
+    [[offset, samples, first_sample, bytes, result], …]}`: bin_size always ends on a
+    game boundary, games holds the newest GAME_INDEX_KEEP. Extending is a forward scan
+    from bin_size, in the request for a small backlog, else in a background thread whose
+    progress the API reports instead of blocking (the first index of a 50 GB file takes
+    minutes). `lock` guards the fields, `scan_lock` lets one scan run at a time."""
+
+    def __init__(self, bin_path: Path, idx_path: Path, board_size: int):
+        self.bin_path, self.idx_path, self.n = bin_path, idx_path, board_size
+        self.lock = threading.Lock()
+        self.scan_lock = threading.Lock()
+        self.thread: threading.Thread | None = None
+        self.progress: float | None = None
+        self.error: str | None = None
+        self.bin_size, self.samples, self.games = 0, 0, []
+        st = read_json(idx_path)
+        if st and isinstance(st.get("games"), list) and all(len(g) == 5 for g in st["games"]):
+            self.bin_size, self.samples, self.games = int(st["bin_size"]), int(st.get("samples", 0)), st["games"]
+
+    def _save(self) -> None:
+        tmp = self.idx_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"bin_size": self.bin_size, "samples": self.samples, "games": self.games}),
+                       encoding="utf-8")
+        os.replace(tmp, self.idx_path)
+
+    def _extend(self, upto: int, report: bool) -> None:
+        """Scans [bin_size, upto) chunk by chunk, saving after each chunk."""
+        start = self.bin_size
+        want = GAME_INDEX_CHUNK
+        with open(self.bin_path, "rb") as f:
+            while self.bin_size < upto:
+                f.seek(self.bin_size)
+                buf = f.read(min(want, upto - self.bin_size))
+                games, used, samples = scan_games(buf, self.n, self.bin_size, self.samples)
+                if used == 0:
+                    if len(buf) == upto - self.bin_size:
+                        break  # the tail is an unfinished game
+                    if want >= 1 << 30:
+                        # No game is a gigabyte long: the file is not what we think it is.
+                        raise ValueError(f"no complete game in {len(buf)} bytes at {self.bin_size}")
+                    want *= 2  # a game longer than one read: read more at once
+                    continue
+                want = GAME_INDEX_CHUNK
+                with self.lock:
+                    self.games = (self.games + games)[-GAME_INDEX_KEEP:]
+                    self.bin_size += used
+                    self.samples += samples
+                    if report:
+                        self.progress = (self.bin_size - start) / max(1, upto - start)
+                self._save()
+
+    def _run(self, upto: int) -> None:
+        try:
+            self._extend(upto, report=True)
+        except Exception as e:  # reported with the game list; the next request retries
+            self.error = f"{type(e).__name__}: {e}"
+        finally:
+            with self.lock:
+                self.progress = None
+                self.thread = None
+            self.scan_lock.release()
+
+    def refresh(self) -> float | None:
+        """Brings the index up to the file's current size. Returns None when it is
+        current, else the fraction done of a background build still running."""
+        if not self.scan_lock.acquire(blocking=False):
+            with self.lock:  # a scan is running: report it rather than wait for it
+                return self.progress if self.thread is not None else None
+        try:
+            size = self.bin_path.stat().st_size
+            if size < self.bin_size:  # the file was replaced: start over
+                with self.lock:
+                    self.bin_size, self.samples, self.games = 0, 0, []
+            backlog = size - self.bin_size
+            if backlog <= GAME_INDEX_SYNC_BYTES:
+                if backlog > 0:
+                    self._extend(size, report=False)
+                self.scan_lock.release()
+                return None
+            with self.lock:
+                self.error, self.progress = None, 0.0
+                self.thread = threading.Thread(target=self._run, args=(size,), daemon=True)
+            self.thread.start()  # owns scan_lock from here on and releases it when done
+            return 0.0
+        except BaseException:
+            if self.thread is None:
+                self.scan_lock.release()
+            raise
+
+
+GAME_INDEXES: dict[Path, GameIndex] = {}
+GAME_INDEXES_LOCK = threading.Lock()
+MATCH_REPLAYS: dict[str, list[bytes]] = {}  # match game id -> positions (BitPosition bytes)
+
+
+def run_geometry(run_dir: Path) -> tuple[int, str]:
+    cfg = read_json(run_dir / "config.json") or {}
+    return int(cfg.get("board_size") or 11), str(cfg.get("variant") or "copenhagen11x11")
+
+
+def game_index(run_dir: Path, worker: int) -> GameIndex:
+    bin_path = run_dir / "data" / f"worker{worker}.bin"
+    with GAME_INDEXES_LOCK:
+        idx = GAME_INDEXES.get(bin_path)
+        if idx is None:
+            idx = GameIndex(bin_path, bin_path.with_name(f"games{worker}.idx.json"), run_geometry(run_dir)[0])
+            GAME_INDEXES[bin_path] = idx
+        return idx
+
+
+def feat_terminal(feat_path: Path, sample: int) -> str:
+    """How the game ended, from the feature record of its last sample; 'unknown' when
+    there is no side file, it does not reach that sample, or the byte is unset."""
+    try:
+        with open(feat_path, "rb") as f:
+            head = f.read(FEAT_HEADER_BYTES)
+            if len(head) < FEAT_HEADER_BYTES or head[:8] != FEAT_MAGIC:
+                return "unknown"
+            rec = int.from_bytes(head[8:12], "little")
+            f.seek(FEAT_HEADER_BYTES + sample * rec + FEAT_TERMINAL_OFFSET)
+            b = f.read(1)
+    except OSError:
+        return "unknown"
+    return FEAT_TERMINAL_CODES.get(b[0], "unknown") if b else "unknown"
+
+
+def sample_fields(raw: bytes, n: int) -> dict:
+    """The scalar fields of one sample and its sparse policy target."""
+    at = VIEWER_BIT_POSITION_BYTES + legal_mask_bytes(n)
+    plen = int.from_bytes(raw[at:at + 2], "little")
+    pol = [(int.from_bytes(raw[at + 2 + 4 * i:at + 4 + 4 * i], "little"),
+            int.from_bytes(raw[at + 4 + 4 * i:at + 6 + 4 * i], "little")) for i in range(plen)]
+    tail = at + 2 + 4 * plen
+    value, root_q = [int.from_bytes(raw[tail + i:tail + i + 1], "little", signed=True) for i in (0, 1)]
+    return {"stm": raw[48], "policy": pol, "value": value, "root_q": root_q, "flags": raw[tail + 2]}
+
+
+def game_result(stm: int, value: int, flags: int) -> str:
+    """Winner from the last sample: `value` is z from the side to move (0 attackers)."""
+    if flags & VIEWER_FLAG_RESULT_UNKNOWN:
+        return "draw"
+    if value == 0:
+        return "unknown"
+    return "atk" if (value > 0) == (stm == 0) else "def"
+
+
+def board_pieces(planes: bytes, n: int) -> list[dict]:
+    """Pieces of a BitPosition: square bit i of plane p is planes[16p + i/8] bit i%8.
+    Squares are the engine's flat index row * n + col with row 0 = rank 1, which is
+    also taflground's numbering (row 0 drawn at the bottom)."""
+    out = []
+    for p, kind in enumerate(("attacker", "defender", "king")):
+        for sq in range(n * n):
+            if planes[16 * p + sq // 8] >> (sq % 8) & 1:
+                out.append({"sq": sq, "type": kind})
+    return out
+
+
+def recover_move(prev: bytes, cur: bytes, n: int) -> dict | None:
+    """The move between two consecutive positions (as feature_dump.rs recovers it): the
+    one square of the mover (prev's side to move; the king counts as a defender) that
+    empties, and the one empty square that a mover piece fills. Captures only remove
+    opponent pieces, so the rule holds for every pair in a game; None if it does not."""
+    bit = lambda bp, p, sq: bp[16 * p + sq // 8] >> (sq % 8) & 1  # noqa: E731
+    occ = lambda bp, sq: bit(bp, 0, sq) or bit(bp, 1, sq) or bit(bp, 2, sq)  # noqa: E731
+    mine = (lambda bp, sq: bit(bp, 0, sq)) if prev[48] == 0 else (lambda bp, sq: bit(bp, 1, sq) or bit(bp, 2, sq))
+    froms = [sq for sq in range(n * n) if mine(prev, sq) and not occ(cur, sq)]
+    tos = [sq for sq in range(n * n) if not occ(prev, sq) and mine(cur, sq)]
+    return {"from": froms[0], "to": tos[0]} if len(froms) == 1 and len(tos) == 1 else None
+
+
+def policy_move(index: int, n: int) -> dict:
+    """Policy index -> move: from * 4(n-1) + direction * (n-1) + distance - 1, with
+    directions Up (row - d), Down (row + d), Left (col - d), Right (col + d) as in
+    move_to_policy_index (src/search/mcts/utils.rs)."""
+    md = n - 1
+    frm, d, dist = index // (4 * md), (index // md) % 4, index % md + 1
+    r, c = divmod(frm, n)
+    r, c = {0: (r - dist, c), 1: (r + dist, c), 2: (r, c - dist), 3: (r, c + dist)}[d]
+    return {"from": frm, "to": r * n + c}
+
+
+def selfplay_games(run_dir: Path, worker: int, count: int) -> dict:
+    """The newest `count` indexed games of one worker, newest first."""
+    bin_path = run_dir / "data" / f"worker{worker}.bin"
+    workers = sorted(int(p.stem[6:]) for p in (run_dir / "data").glob("worker*.bin") if p.stem[6:].isdigit())
+    if not bin_path.exists():
+        return {"error": f"no {bin_path.name}", "workers": workers}
+    n = run_geometry(run_dir)[0]
+    idx = game_index(run_dir, worker)
+    indexing = idx.refresh()
+    with idx.lock:
+        games = list(idx.games[-count:])
+        error = idx.error
+    feat = bin_path.with_suffix(".feat")
+    out = [{"id": f"{worker}:{first}", "start_sample": first, "plies": samples, "len_plies": samples,
+            "result": result, "reason": game_reason(feat, first + samples - 1, result)}
+           for _offset, samples, first, _nbytes, result in reversed(games)]
+    res = {"games": out, "workers": workers, "feat": feat.exists(), "indexed_samples": idx.samples}
+    if indexing is not None:
+        res["indexing"] = round(indexing, 4)
+    if error:
+        res["index_error"] = error
+    return res
+
+
+def game_reason(feat: Path, last_sample: int, result: str) -> str:
+    """How a self-play game ended: the side file's terminal byte when there is one;
+    otherwise only an undecided game has a known reason (the ply / no-capture limit is
+    the only way a game ends undecided)."""
+    reason = feat_terminal(feat, last_sample) if feat.exists() else "unknown"
+    if reason == "unknown" and result == "draw":
+        reason = "max_plies"
+    return reason
+
+
+def selfplay_game(run_dir: Path, worker: int, first: int) -> dict:
+    n = run_geometry(run_dir)[0]
+    idx = game_index(run_dir, worker)
+    with idx.lock:
+        hit = next((g for g in idx.games if g[2] == first), None)
+    if hit is None:
+        return {"error": "game not in the index (older than the newest games kept)"}
+    offset, samples, _, nbytes, _ = hit
+    bin_path = run_dir / "data" / f"worker{worker}.bin"
+    with open(bin_path, "rb") as f:
+        f.seek(offset)
+        buf = f.read(nbytes)
+    raws, pos = [], 0
+    for _ in range(samples):
+        size = sample_size(buf, pos, n)
+        if size is None:
+            return {"error": "game cut short in the file"}
+        raws.append(buf[pos:pos + size])
+        pos += size
+    plies = []
+    for i, raw in enumerate(raws):
+        s = sample_fields(raw, n)
+        total = sum(v for _, v in s["policy"]) or 1
+        top = sorted(s["policy"], key=lambda e: -e[1])[:5]
+        plies.append({
+            "pieces": board_pieces(raw[:48], n), "stm": s["stm"],
+            "move": recover_move(raws[i - 1], raw, n) if i else None,
+            "root_q": round(s["root_q"] / 127, 4), "z": s["value"],
+            "policy_valid": bool(s["flags"] & VIEWER_FLAG_POLICY_VALID), "cheap": not s["flags"] & VIEWER_FLAG_POLICY_VALID,
+            "top": [dict(policy_move(mi, n), visits=v, share=round(v / total, 4)) for mi, v in top],
+        })
+    last = sample_fields(raws[-1], n)
+    result = game_result(last["stm"], last["value"], last["flags"])
+    reason = game_reason(bin_path.with_suffix(".feat"), first + samples - 1, result)
+    return {"source": "selfplay", "id": f"{worker}:{first}", "board_size": n, "plies": plies,
+            "result": result, "reason": reason}
+
+
+def match_games(run_dir: Path, count: int) -> dict:
+    """Games of eval.games.jsonl that carry their moves, newest first."""
+    out = []
+    for line, m in enumerate(read_jsonl(run_dir / "eval.games.jsonl")):
+        for i, g in enumerate(m.get("games", [])):
+            if g.get("moves"):
+                ck, _, anchor = str(m.get("key", "")).partition("|")
+                out.append({"id": f"m:{line}:{i}", "key": m.get("key"), "ckpt": ck, "anchor": anchor,
+                            "time": m.get("time"), "nodes": m.get("nodes"), "a_side": g.get("a_side"),
+                            "score": g.get("score"), "reason": g.get("reason"), "plies": g.get("plies")})
+    return {"games": out[::-1][:count]}
+
+
+def replay_moves(engine: Path, variant: str, moves: str) -> list[bytes]:
+    """Positions of a move list (start position first) from `taflzero --replay`."""
+    proc = subprocess.run([str(engine), "--replay", moves, "--variant", variant], capture_output=True, text=True,
+                          timeout=60, creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+    if proc.returncode != 0:
+        raise ValueError((proc.stderr or proc.stdout).strip()[-300:] or f"exit {proc.returncode}")
+    out = []
+    for line in proc.stdout.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[0].isdigit():
+            out.append(bytes.fromhex(parts[1]))
+    return out
+
+
+def match_game(run_dir: Path, engine: Path, gid: str) -> dict:
+    try:
+        _, line, index = gid.split(":")
+        m = read_jsonl(run_dir / "eval.games.jsonl")[int(line)]
+        g = m["games"][int(index)]
+    except (ValueError, IndexError, KeyError):
+        return {"error": "no such match game"}
+    moves = str(g.get("moves") or "").split()
+    if not moves:
+        return {"error": "this game has no recorded moves"}
+    n, variant = run_geometry(run_dir)
+    key = f"{run_dir.name}:{gid}"
+    positions = MATCH_REPLAYS.get(key)
+    if positions is None:
+        try:
+            positions = replay_moves(engine, variant, " ".join(moves))
+        except (OSError, ValueError, subprocess.TimeoutExpired) as e:
+            return {"error": f"replay failed: {e}"}
+        if len(MATCH_REPLAYS) > 200:
+            MATCH_REPLAYS.clear()
+        MATCH_REPLAYS[key] = positions
+    if len(positions) != len(moves) + 1:
+        return {"error": f"replay gave {len(positions)} positions for {len(moves)} moves"}
+    evals = list(g.get("evals") or [])
+    opening = len(moves) - len(evals)
+    ck, _, anchor = str(m.get("key", "")).partition("|")
+    a_attacks = g.get("a_side") == "atk"
+    plies = []
+    for i, bp in enumerate(positions):
+        stm = bp[48]
+        # evals[j] is the search at position opening + j, from its mover's view.
+        ev = evals[i - opening] if opening <= i < len(moves) else None
+        mover_is_a = (stm == 0) == a_attacks
+        mv = moves[i - 1] if i else None
+        plies.append({"pieces": board_pieces(bp[:48], n), "stm": stm,
+                      "move": algebraic_move(mv, n) if mv else None,
+                      "root_q": ev, "engine": (ck if mover_is_a else anchor) if ev is not None else None,
+                      # By role, not name: a net can play its own anchor.
+                      "role": ("ckpt" if mover_is_a else "anchor") if ev is not None else None,
+                      "opening": i < opening, "top": []})
+    score = g.get("score")
+    result = "draw" if score == "d" else ("atk" if (score == "w") == a_attacks else "def")
+    return {"source": "match", "id": gid, "board_size": n, "plies": plies, "result": result,
+            "reason": g.get("reason") or "unknown", "ckpt": ck, "anchor": anchor, "a_side": g.get("a_side"),
+            "opening": opening}
+
+
+def algebraic_move(mv: str, n: int) -> dict | None:
+    """'d1d3' -> {from, to} squares (file letter + rank number, rank 1 = row 0)."""
+    m = re.fullmatch(r"([a-z])(\d+)([a-z])(\d+)", mv)
+    if not m:
+        return None
+    sq = lambda f, r: (int(r) - 1) * n + (ord(f) - 97)  # noqa: E731
+    return {"from": sq(m[1], m[2]), "to": sq(m[3], m[4])}
+
+
+VENDOR = HERE / "dashboard" / "vendor"
+VENDOR_TYPES = {".js": "text/javascript", ".cjs": "text/javascript", ".css": "text/css", ".ts": "text/plain",
+                ".map": "application/json"}
+
+
+def vendor_file(url_path: str) -> tuple[bytes, str] | None:
+    """A file under dashboard/vendor/ for /vendor/<path>, never outside it."""
+    p = (VENDOR / url_path[len("/vendor/"):]).resolve()
+    if VENDOR.resolve() not in p.parents or not p.is_file():
+        return None
+    return p.read_bytes(), VENDOR_TYPES.get(p.suffix, "application/octet-stream")
+
+
 # ─── HTTP ────────────────────────────────────────────────────────────────────
 
 def make_handler(dash: Dashboard):
@@ -374,6 +807,43 @@ def make_handler(dash: Dashboard):
                     return
                 with LOCK:
                     self._json(run_detail(run_dir))
+            elif url.path in ("/api/games", "/api/game"):
+                # Game viewer. Not under LOCK: the first index of a big file runs in its
+                # own thread and these requests must not hold up the page's refresh.
+                name = q.get("name", [""])[0]
+                run_dir = dash.runs_dir / name
+                if not name or not run_dir.is_dir():
+                    self._json({"error": "no such run"}, 404)
+                    return
+                try:
+                    if url.path == "/api/games":
+                        n = max(1, min(GAME_INDEX_KEEP, int(q.get("n", ["50"])[0])))
+                        if q.get("source", ["selfplay"])[0] == "match":
+                            res = match_games(run_dir, n)
+                        else:
+                            res = selfplay_games(run_dir, int(q.get("worker", ["0"])[0]), n)
+                    else:
+                        gid = q.get("id", [""])[0]
+                        if gid.startswith("m:"):
+                            res = match_game(run_dir, dash.engine_bin, gid)
+                        else:
+                            w, _, first = gid.partition(":")
+                            res = selfplay_game(run_dir, int(w), int(first))
+                except (ValueError, OSError) as e:
+                    res = {"error": f"{type(e).__name__}: {e}"}
+                self._json(res, 400 if "error" in res and "games" not in res else 200)
+            elif url.path.startswith("/vendor/"):
+                hit = vendor_file(url.path)
+                if hit is None:
+                    self._json({"error": "not found"}, 404)
+                    return
+                body, ctype = hit
+                self.send_response(200)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "max-age=3600")
+                self.end_headers()
+                self.wfile.write(body)
             else:
                 self._json({"error": "not found"}, 404)
 
