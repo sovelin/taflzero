@@ -238,6 +238,11 @@ class Dashboard:
         (run_dir / "STOP").unlink(missing_ok=True)
 
         if resume:
+            # A resumed run keeps the engine it was running with (config.json's engine_bin),
+            # not whatever the dashboard was started with: two runs may need two builds.
+            own = (read_json(run_dir / "config.json") or {}).get("engine_bin")
+            if own and Path(own).exists():
+                engine = Path(own)
             cmd = [sys.executable, str(HERE / "continuous.py"), "--resume", str(run_dir), "--engine-bin", str(engine)]
             eval_cfg = (read_json(run_dir / "dashboard.eval.json") or {})
         else:
