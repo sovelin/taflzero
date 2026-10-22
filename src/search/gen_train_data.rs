@@ -103,6 +103,16 @@ impl CurriculumBuffer {
 
 // ─── Game loop ────────────────────────────────────────────────────────────────
 
+/// A played game: its samples, the positions for the curriculum, the winner, the
+/// terminal's gamelog name and the side-file records.
+type PlayedGame = (
+    Vec<PendingSample>,
+    Vec<BitPosition>,
+    Option<Side>,
+    Option<&'static str>,
+    Vec<u8>,
+);
+
 fn play_game(
     nn: &mut NeuralNet,
     search_data: &mut SearchData,
@@ -110,13 +120,7 @@ fn play_game(
     search_cfg: &SearchConfig,
     limits: &GameLimits,
     rng: &mut StdRng,
-) -> (
-    Vec<PendingSample>,
-    Vec<BitPosition>,
-    Option<Side>,
-    Option<&'static str>,
-    Vec<u8>,
-) {
+) -> PlayedGame {
     let mut board = start_board;
 
     // The side-file records (features.rs): one per sample, from the board as it stands

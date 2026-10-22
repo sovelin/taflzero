@@ -369,7 +369,8 @@ pub fn catch_up_features(bin: &Path, feat: &Path, variant: RulesEnum) -> Result<
     File::open(feat)
         .and_then(|mut f| f.read_exact(&mut head))
         .map_err(|e| format!("{}: {e}", feat.display()))?;
-    if &head[..8] != FEAT_MAGIC || (feat_len - FEAT_HEADER_BYTES) % FEAT_RECORD_BYTES != 0 {
+    if &head[..8] != FEAT_MAGIC || !(feat_len - FEAT_HEADER_BYTES).is_multiple_of(FEAT_RECORD_BYTES)
+    {
         return Err("not a whole feature file".into());
     }
     let have = (feat_len - FEAT_HEADER_BYTES) / FEAT_RECORD_BYTES;
