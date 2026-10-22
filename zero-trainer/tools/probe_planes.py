@@ -63,6 +63,7 @@ VARIANTS: dict[str, tuple[str, float]] = {
     "H": ("base,cap,mob", 1.0),
     "I": ("base,last2,rep_dst,king12,ply,cap,mob", 1.0),
     "J": ("base", 0.0),
+    "K": ("base,-throne,-corners,-edges,last2,rep_dst,king12,ply,cap,mob", 1.0),
 }
 
 SUBSETS = ("all", "tactical", "king_move", "repeat_game", "cheap")
