@@ -207,6 +207,24 @@ impl MCTSTree {
         &self.nodes[ROOT_ID]
     }
 
+    /// The search's value of the root from its side to move, in [-1, 1]: the
+    /// visit-weighted mean of the children's wins (stored from the root mover's view).
+    /// The same quantity self-play writes as `root_q`, unquantized; 0 before any child
+    /// has been visited.
+    pub fn root_q(&self) -> f32 {
+        let (mut wins, mut visits) = (0.0f32, 0.0f32);
+        for &child in self.get_root().children() {
+            let node = self.get_node(child);
+            wins += node.wins();
+            visits += node.visits();
+        }
+        if visits > 0.0 {
+            (wins / visits).clamp(-1.0, 1.0)
+        } else {
+            0.0
+        }
+    }
+
     pub fn get_pv_from(&self, node_id: NodeId) -> Vec<Move> {
         let mut cur = node_id;
 

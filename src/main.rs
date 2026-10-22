@@ -8,8 +8,9 @@ use taflzero::gen_train_data::{
     DaemonConfig, DatagenConfig, DatagenSink, GameLimits, SearchConfig, WorkerOverrides,
     gen_train_data, gen_train_data_into,
 };
-use taflzero::match_play::{MatchConfig, play_match};
+use taflzero::match_play::{MatchConfig, play_match, replay_positions};
 use taflzero::mcts::MCTSConfig;
+use taflzero::mv::move_to_algebraic;
 use taflzero::search::nn::{BatchServer, NeuralNet, fill_input};
 use taflzero::{ConsoleClient, UciRunState, get_sample_size};
 
@@ -46,6 +47,8 @@ struct CliArgs {
     nodes: u64,
     opening_moves: usize,
     seed: Option<u64>,
+    /// `--replay "<moves>"`: print the positions of a recorded game (see run_replay).
+    replay: Option<String>,
 }
 
 fn parse_args() -> CliArgs {
@@ -78,6 +81,7 @@ fn parse_args() -> CliArgs {
     let mut nodes = 400u64;
     let mut opening_moves = 16usize;
     let mut seed: Option<u64> = None;
+    let mut replay: Option<String> = None;
     let mut args = std::env::args().skip(1);
 
     // `--flag <usize>` with a lower bound; exits with a usage error otherwise.
@@ -269,6 +273,7 @@ fn parse_args() -> CliArgs {
             "--nodes" => nodes = usize_arg(&mut args, "--nodes", 1) as u64,
             "--opening-moves" => opening_moves = usize_arg(&mut args, "--opening-moves", 0),
             "--seed" => seed = Some(usize_arg(&mut args, "--seed", 0) as u64),
+            "--replay" => replay = Some(path_arg(&mut args, "--replay")),
             _ => {
                 eprintln!("Unknown arg: {arg}");
                 eprintln!(
@@ -312,11 +317,14 @@ fn parse_args() -> CliArgs {
         nodes,
         opening_moves,
         seed,
+        replay,
     }
 }
 
 /// `--match`: one line per finished game, `game <pair> <a_attacks 0|1> <winner> <reason>
-/// <plies>`, then `done`. tools/match.py tallies them.
+/// <plies>`, followed by `moves <pair> <a_attacks> <m1> <m2> …` (algebraic, the opening
+/// included) and `evals <pair> <a_attacks> <v1> …` (the mover's root value of each
+/// searched move), then `done`. tools/match.py tallies them and stores the record.
 fn run_match(cli: &CliArgs) {
     if cli.match_a.is_empty() || cli.match_b.is_empty() {
         eprintln!("--match needs --a and --b");
@@ -370,9 +378,50 @@ fn run_match(cli: &CliArgs) {
             "game {} {} {} {} {}",
             g.pair, g.a_attacks as u8, g.winner, g.reason, g.plies
         );
+        // The record of the game for the dashboard's viewer, right after its `game`
+        // line and under the same lock, so lines of concurrent games never interleave.
+        let moves: Vec<String> = g
+            .moves
+            .iter()
+            .map(|&mv| move_to_algebraic(mv, board_size))
+            .collect();
+        let evals: Vec<String> = g.evals.iter().map(|v| format!("{v:.4}")).collect();
+        let _ = writeln!(
+            o,
+            "moves {} {} {}",
+            g.pair,
+            g.a_attacks as u8,
+            moves.join(" ")
+        );
+        let _ = writeln!(
+            o,
+            "evals {} {} {}",
+            g.pair,
+            g.a_attacks as u8,
+            evals.join(" ")
+        );
         let _ = o.flush();
     });
     println!("done");
+}
+
+/// `--replay "<moves>"`: the positions of a recorded game for the dashboard's viewer,
+/// one line `<ply> <hex>` per position (ply 0 is the start position, then one after
+/// each move), the `BitPosition` as 100 hex digits (50 bytes), then `done`.
+fn run_replay(cli: &CliArgs, moves: &str) {
+    match replay_positions(cli.variant, moves) {
+        Ok(positions) => {
+            for (ply, p) in positions.iter().enumerate() {
+                let hex: String = p.as_bytes().iter().map(|b| format!("{b:02x}")).collect();
+                println!("{ply} {hex}");
+            }
+            println!("done");
+        }
+        Err(err) => {
+            eprintln!("{err}");
+            std::process::exit(1);
+        }
+    }
 }
 
 /// `worker.overrides` next to the datagen file wins over the command line: it is how
@@ -429,6 +478,10 @@ fn load_net_for(path: &str, board_size: usize, batch_size: usize) -> NeuralNet {
 fn main() {
     let mut cli = parse_args();
     apply_worker_overrides(&mut cli);
+    if let Some(moves) = cli.replay.clone() {
+        run_replay(&cli, &moves);
+        return;
+    }
     if cli.match_mode {
         run_match(&cli);
         return;
