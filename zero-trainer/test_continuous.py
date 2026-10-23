@@ -35,6 +35,8 @@ from replay import Chunk, ReplayBuffer, replay_window
 import continuous
 from continuous import (
     ContinuousRun,
+    lr_at,
+    parse_lr_schedule,
     pacing_allowed_steps,
     parse_config,
     training_lag,
@@ -186,6 +188,27 @@ def test_chunk_outcome_from_first_sample() -> None:
 
 
 # ─── pacing ─────────────────────────────────────────────────────────────────
+
+
+def test_lr_schedule_is_constant_without_entries_and_steps_down_with_them() -> None:
+    assert parse_lr_schedule(None) == []
+    assert parse_lr_schedule(" ") == []
+    assert parse_lr_schedule("60000:0.002, 20000:0.007") == [(20000, 0.007), (60000, 0.002)]
+    with pytest.raises(ValueError):
+        parse_lr_schedule("20000")
+    with pytest.raises(ValueError):
+        parse_lr_schedule("20000:0.007,20000:0.001")
+    sched = parse_lr_schedule("20000:0.007,60000:0.002")
+    # No schedule: the old behaviour, warmup then constant.
+    assert lr_at(250, 0.02, 500) == pytest.approx(0.01)
+    assert lr_at(10_000, 0.02, 500) == 0.02
+    # With one: base lr until the first step, then each entry's lr from its step on.
+    assert lr_at(19_999, 0.02, 500, sched) == 0.02
+    assert lr_at(20_000, 0.02, 500, sched) == 0.007
+    assert lr_at(59_999, 0.02, 500, sched) == 0.007
+    assert lr_at(60_000, 0.02, 500, sched) == 0.002
+    # Warmup scales whatever the schedule gives for those steps.
+    assert lr_at(250, 0.02, 500, [(1, 0.01)]) == pytest.approx(0.005)
 
 
 def test_pacing_allows_exactly_forty_steps() -> None:

@@ -117,6 +117,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--optimizer", choices=["sgd", "adamw"], default="sgd")
     p.add_argument("--weight-decay", type=float, default=1e-4)
     p.add_argument("--warmup-steps", type=int, default=500)
+    p.add_argument("--lr-schedule", type=str, default=None,
+                   help="piecewise-constant lr by trainer step, 'STEP:LR,STEP:LR,...': from each STEP "
+                        "on, that lr replaces --lr (warmup still applies); default none = constant lr")
     p.add_argument("--grad-clip", type=float, default=10.0)
     p.add_argument("--sample-reuse", type=float, default=4.0)
     p.add_argument("--min-samples", type=int, default=100_000)
@@ -217,6 +220,10 @@ def parse_config(argv: list[str] | None = None) -> argparse.Namespace:
         args.planes = parse_planes(args.planes).canonical
     except ValueError as e:
         parser.error(f"--planes: {e}")
+    try:
+        parse_lr_schedule(args.lr_schedule)
+    except ValueError as e:
+        parser.error(f"--lr-schedule: {e}")
     return args
 
 
@@ -362,11 +369,40 @@ def build_optimizer(model: torch.nn.Module, args: argparse.Namespace) -> torch.o
     return torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
 
-def lr_at(step: int, base_lr: float, warmup: int) -> float:
-    """Linear warmup from 0 over `warmup` steps, then constant (step is 1-based)."""
+def parse_lr_schedule(text: str | None) -> list[tuple[int, float]]:
+    """'20000:0.007,60000:0.002' -> [(20000, 0.007), (60000, 0.002)], sorted by step.
+    Empty or None is the constant schedule."""
+    if not text or not text.strip():
+        return []
+    out = []
+    for part in text.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        step_s, _, lr_s = part.partition(":")
+        try:
+            step, lr = int(step_s), float(lr_s)
+        except ValueError:
+            raise ValueError(f"expected STEP:LR, got {part!r}")
+        if step < 1 or lr <= 0:
+            raise ValueError(f"step must be >= 1 and lr > 0, got {part!r}")
+        out.append((step, lr))
+    out.sort()
+    if len({st for st, _ in out}) != len(out):
+        raise ValueError("duplicate step")
+    return out
+
+
+def lr_at(step: int, base_lr: float, warmup: int, schedule: list[tuple[int, float]] = ()) -> float:
+    """The lr for a 1-based step: `base_lr`, replaced from each schedule step on by that
+    entry's lr, then a linear warmup from 0 over the first `warmup` steps."""
+    lr = base_lr
+    for at, value in schedule:
+        if step >= at:
+            lr = value
     if warmup > 0 and step <= warmup:
-        return base_lr * step / warmup
-    return base_lr
+        return lr * step / warmup
+    return lr
 
 
 def worker_command(args: argparse.Namespace, run_dir: Path, worker_id: int, net_path: Path) -> list[str]:
@@ -420,6 +456,8 @@ class StepStats:
 class ContinuousRun:
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
+        self.lr_schedule = parse_lr_schedule(args.lr_schedule)
+        self._lr_logged: float | None = None
         self.run_dir = Path(args.run_dir).resolve()
         self.data_dir = self.run_dir / "data"
         self.ckpt_dir = self.run_dir / "ckpt"
@@ -674,7 +712,11 @@ class ContinuousRun:
 
     def train_step(self, batch) -> StepStats | None:
         a = self.args
-        lr = lr_at(self.step + 1, a.lr, a.warmup_steps)
+        lr = lr_at(self.step + 1, a.lr, a.warmup_steps, self.lr_schedule)
+        if self.step + 1 > a.warmup_steps and lr != self._lr_logged:
+            if self._lr_logged is not None:
+                self.log(f"[lr] step {self.step + 1}: {self._lr_logged:g} -> {lr:g} (schedule)")
+            self._lr_logged = lr
         for g in self.optimizer.param_groups:
             g["lr"] = lr
         self.model.train()
@@ -922,6 +964,7 @@ class ContinuousRun:
             self.log("[init] stale STOP file removed")
             self.stop_file.unlink()
         self.log(f"[init] run_dir={self.run_dir} workers={a.workers} batch={a.batch} lr={a.lr} "
+                 f"lr_schedule={a.lr_schedule or 'constant'} "
                  f"optimizer={a.optimizer} train_threads={a.train_threads} device={self.device} "
                  f"amp={'bf16' if self.amp_dtype is not None else 'none'}")
 
