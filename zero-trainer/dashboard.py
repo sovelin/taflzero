@@ -147,7 +147,7 @@ def read_jsonl(path: Path) -> list[dict]:
 
 def read_json(path: Path) -> dict | None:
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8-sig"))
     except Exception:
         return None
 
@@ -230,6 +230,21 @@ def anchor_nets(run_dir: Path) -> dict[str, Path]:
         if p.exists():
             out.setdefault(p.stem, p)
     return out
+
+
+def net_origin(run_dir: Path, name: str) -> str:
+    """Where a net in this run's games comes from, for the game viewer's player cards: the
+    run a checkpoint or anchor checkpoint belongs to (its folder under runs/), or what
+    the fixed anchor is."""
+    if name == "copenhagen11x11":
+        return "T2 gen0225 (best 11x11 net)"
+    path = anchor_nets(run_dir).get(name)
+    if path is None:
+        return run_dir.name
+    parts = path.parts
+    if "runs" in parts and parts.index("runs") + 1 < len(parts):
+        return parts[parts.index("runs") + 1]
+    return path.stem
 
 
 def rr_state(run_dir: Path) -> dict | None:
@@ -895,6 +910,11 @@ def make_handler(dash: Dashboard):
                         else:
                             w, _, first = gid.partition(":")
                             res = selfplay_game(run_dir, int(w), int(first))
+                        if "error" not in res:
+                            res["run"] = run_dir.name
+                            if res.get("source") == "match":
+                                res["ckpt_origin"] = net_origin(run_dir, res["ckpt"])
+                                res["anchor_origin"] = net_origin(run_dir, res["anchor"])
                 except (ValueError, OSError) as e:
                     res = {"error": f"{type(e).__name__}: {e}"}
                 self._json(res, 400 if "error" in res and "games" not in res else 200)

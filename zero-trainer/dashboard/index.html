@@ -102,6 +102,25 @@ label { display: block; font-size: 12px; color: var(--ink-2); margin: 8px 0 2px;
 .gv-list tr.game.sel td { background: var(--surface); font-weight: 600; }
 .gv-main { min-width: 0; }
 .gv-board { display: flex; justify-content: center; }
+/* player cards above the board: one per side */
+.gv-players { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.gv-card { position: relative; display: flex; align-items: center; gap: 12px; padding: 10px 14px 10px 18px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; transition: border-color .15s; }
+.gv-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: var(--side); }
+.gv-card.move { border-color: var(--side); box-shadow: 0 0 0 1px var(--side) inset; }
+.gv-card .who { flex: 1; min-width: 0; }
+.gv-card .side { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); display: flex; gap: 8px; align-items: center; }
+.gv-card .side .tomove { color: var(--side); font-weight: 600; letter-spacing: .04em; }
+.gv-card .net { font-size: 17px; font-weight: 600; color: var(--ink); margin: 2px 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gv-card .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.gv-card .chip { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-2); }
+.gv-card .chip.run { border-color: var(--side); color: var(--ink); font-weight: 600; }
+.gv-card .pct { text-align: right; font-variant-numeric: tabular-nums; }
+.gv-card .pct b { display: block; font-size: 22px; color: var(--ink); line-height: 1.1; }
+.gv-card .pct span { font-size: 11px; color: var(--ink-3); }
+.gv-card.won .pct span { color: var(--side); }
+@media (max-width: 600px) { .gv-players { grid-template-columns: 1fr; } }
+.modal .gv .chart canvas { cursor: crosshair; }
 .gv-nav { display: flex; align-items: center; gap: 8px; margin: 10px 0 4px; }
 .gv-nav input[type=range] { flex: 1; padding: 0; }
 .gv-nav .ply { font-variant-numeric: tabular-nums; min-width: 92px; text-align: right; }
@@ -229,6 +248,7 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; }
     <div class="gv">
       <div class="gv-list"><table><thead id="gvHead"></thead><tbody id="gvRows"></tbody></table></div>
       <div class="gv-main">
+        <div class="gv-players" id="gvPlayers"></div>
         <div class="gv-board" id="gvBoardWrap"><div id="gvBoard"></div></div>
         <div class="gv-nav"><button id="gvPrev" title="previous ply (←)">◀</button><input type="range" id="gvSlider" min="0" max="0" value="0"><button id="gvNext" title="next ply (→)">▶</button><span class="ply" id="gvPly"></span></div>
         <div class="gv-info" id="gvInfo">pick a game on the left</div>
@@ -876,12 +896,39 @@ const gvAtkView = (p) => p.root_q == null ? null : (p.stm === 0 ? p.root_q : -p.
 // (v + 1) / 2 is the side's chance to win counting a draw as half: shown as a win chance.
 const gvAtkChance = (p) => { const v = gvAtkView(p); return v == null ? null : 50 * (v + 1); };
 // Who plays each side: in a match the checkpoint and the anchor, in self-play one net twice.
-function gvPlayers(d) {
-  if (d.source !== 'match') return { 0: 'self-play net', 1: 'self-play net' };
-  const ck = `${d.ckpt} (checkpoint)`, an = `${d.anchor} (anchor)`;
+// origin is the run a net comes from (T7-10x128, ...) or what the fixed anchor is.
+function gvPlayerInfo(d) {
+  if (d.source !== 'match') {
+    const sp = { net: 'latest net', role: 'self-play', origin: d.run || selected };
+    return { 0: sp, 1: sp };
+  }
+  const ck = { net: d.ckpt, role: 'checkpoint', origin: d.ckpt_origin || d.run || selected };
+  const an = { net: d.anchor, role: 'anchor', origin: d.anchor_origin || (d.anchor === 'copenhagen11x11' ? 'T2 gen0225 (best 11x11 net)' : '') };
   return d.a_side === 'atk' ? { 0: ck, 1: an } : { 0: an, 1: ck };
 }
+function gvPlayers(d) {
+  const pi = gvPlayerInfo(d);
+  return { 0: `${pi[0].net} (${pi[0].role})`, 1: `${pi[1].net} (${pi[1].role})` };
+}
+// "T7-10x128" -> "T7"; other origins are shown as they are.
+const gvRunTag = (o) => (o.match(/^(T\d+(?:\.\d+)?)-/) || [])[1] || o;
+function gvRenderPlayers(d, p) {
+  const pi = gvPlayerInfo(d), C = GV_COLOR();
+  const ch = gvAtkChance(p);
+  const winner = { atk: 0, def: 1 }[d.result];
+  $('gvPlayers').innerHTML = [0, 1].map(side => {
+    const x = pi[side], mine = ch == null ? null : (side === 0 ? ch : 100 - ch);
+    const end = winner == null ? (d.result === 'draw' ? 'draw' : '') : (winner === side ? 'won' : 'lost');
+    return `<div class="gv-card${p.stm === side ? ' move' : ''}${winner === side ? ' won' : ''}" style="--side:${C[side]}">
+      <div class="who"><div class="side">${GV_SIDE[side]}${p.stm === side ? '<span class="tomove">● to move</span>' : ''}</div>
+        <div class="net" title="${x.net}">${x.net}</div>
+        <div class="chips">${x.origin ? `<span class="chip run" title="${x.origin}">${gvRunTag(x.origin)}</span>` : ''}<span class="chip">${x.role}</span></div></div>
+      <div class="pct"><b>${mine == null ? '–' : fmt(mine, 0) + '%'}</b><span>${end ? end : 'win chance'}</span></div></div>`;
+  }).join('');
+}
 const GV_SIDE = { 0: 'attackers', 1: 'defenders' };
+// Side colours in the game viewer: attackers brown, defenders blue.
+const GV_COLOR = () => ({ 0: '#b07a45', 1: css('--s1') });
 function gvRenderChart() {
   const d = gv.game, S = SERIES(), ink2 = css('--ink-2'), ink3 = css('--ink-3'), line = css('--line');
   const pl = gvPlayers(d);
@@ -889,10 +936,10 @@ function gvRenderChart() {
   $('gvChartTitle').textContent = 'Win chance per ply, one line per side';
   $('gvChartSub').textContent = 'each side\'s root value on its own moves, as that side\'s chance to win (a draw counts half)'
     + (d.source === 'selfplay' ? '; faded = cheap search' : `; the first ${d.opening} plies are the random opening`)
-    + '; dashed = the result in that side\'s colour. Hover to preview a ply, click to go there';
+    + '; dashed = the result in that side\'s colour. Hover to preview a ply, click or drag to go there';
   const sets = [];
   for (const side of [0, 1]) {
-    const col = S[side];
+    const col = GV_COLOR()[side];
     const pts = d.plies.map((p, i) => ({ x: i, y: p.root_q == null || p.stm !== side ? null : 50 * (p.root_q + 1), cheap: !!p.cheap }))
       .filter(pt => pt.y != null);
     sets.push({ label: `${GV_SIDE[side]} · ${pl[side]}`, side, data: pts, borderColor: col, backgroundColor: col, pointRadius: 0, borderWidth: 2,
@@ -900,7 +947,7 @@ function gvRenderChart() {
   }
   if (atkScore != null) for (const side of [0, 1]) {
     const y = side === 0 ? atkScore : 100 - atkScore;
-    sets.push({ label: '_result', side, data: [{ x: 0, y }, { x: d.plies.length - 1, y }], borderColor: S[side], borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5 });
+    sets.push({ label: '_result', side, data: [{ x: 0, y }, { x: d.plies.length - 1, y }], borderColor: GV_COLOR()[side], borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5 });
   }
   sets.push({ label: '_hover', data: [], borderColor: ink3, borderDash: [3, 3], borderWidth: 1, pointRadius: 0 });
   sets.push({ label: '_ply', data: [{ x: gv.ply, y: 0 }, { x: gv.ply, y: 100 }], borderColor: ink2, borderWidth: 1.5, pointRadius: 0 });
@@ -925,17 +972,24 @@ function gvRenderChart() {
         // bring the preview back after mouseleave has dropped it.
         if (ev.type === 'mouseout' || !gv.overChart) return;
         const x = plyAt(chart, ev.x);
-        if (x != null && x !== gv.preview) gvShow(x, true);
-      },
-      onClick: (ev, _els, chart) => {
-        const x = plyAt(chart, ev.x);
-        if (x != null) gvShow(x);
+        if (x == null) return;
+        // With the button held the game follows the pointer for real; without, only a preview.
+        if (gv.dragging) { if (x !== gv.ply || gv.preview != null) gvShow(x); }
+        else if (x !== gv.preview) gvShow(x, true);
       },
     },
   });
 }
 // Leaving the chart drops the preview and puts the board back on the chosen ply.
 $('gvChart').addEventListener('mouseenter', () => { gv.overChart = true; });
+$('gvChart').addEventListener('mousedown', (ev) => {
+  if (ev.button !== 0 || !gv.chart) return;
+  gv.dragging = true;
+  ev.preventDefault();
+  const x = Math.round(gv.chart.scales.x.getValueForPixel(ev.offsetX));
+  if (gv.game && x >= 0 && x < gv.game.plies.length) gvShow(x);
+});
+window.addEventListener('mouseup', () => { gv.dragging = false; });
 $('gvChart').addEventListener('mouseleave', () => { gv.overChart = false; if (gv.preview != null) gvShow(gv.ply); });
 // Shows ply i. A preview (hovering the chart) leaves the chosen ply, the slider and the
 // solid marker where they are; anything else moves them.
@@ -953,10 +1007,8 @@ function gvShow(i, preview = false) {
   const ch = gvAtkChance(p);
   const val = ch == null ? (p.opening ? 'opening (random move)' : 'no evaluation')
     : `win chance <b>attackers ${fmt(ch, 0)}%</b> · <b>defenders ${fmt(100 - ch, 0)}%</b> (${GV_SIDE[p.stm]}' search)`;
-  const players = d.source === 'match'
-    ? `<b>attackers:</b> ${pl[0]} · <b>defenders:</b> ${pl[1]}`
-    : '<b>self-play:</b> the same net plays both sides';
-  $('gvInfo').innerHTML = `${players}<br><b>${GV_SIDE[p.stm]}</b> (${pl[p.stm]}) to move · ${p.move ? 'last move ' + gvMove(p.move, n) + ' · ' : ''}${val}` +
+  gvRenderPlayers(d, p);
+  $('gvInfo').innerHTML = `<b>${GV_SIDE[p.stm]}</b> (${pl[p.stm]}) to move · ${p.move ? 'last move ' + gvMove(p.move, n) + ' · ' : ''}${val}` +
     (p.cheap ? ' · cheap search' : '') + `<br>${GV_RESULT[d.result] || d.result} · ${REASON[d.reason] || d.reason}` +
     (last && d.source === 'selfplay' ? ' · the final move is not stored (the terminal position is not a sample)' : '');
   $('gvTop').innerHTML = p.top && p.top.length
