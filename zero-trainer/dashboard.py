@@ -67,6 +67,49 @@ def pid_alive(pid: int) -> bool:
         return False
 
 
+def process_cmdline(pid: int) -> str:
+    """Command line of a live process ('' if unknown or gone)."""
+    try:
+        if os.name == "nt":
+            out = subprocess.run(
+                ["powershell", "-NoProfile", "-Command",
+                 f"(Get-CimInstance Win32_Process -Filter 'ProcessId={int(pid)}').CommandLine"],
+                capture_output=True, text=True, timeout=20, creationflags=subprocess.CREATE_NO_WINDOW)
+            return out.stdout.strip()
+        return Path(f"/proc/{int(pid)}/cmdline").read_bytes().replace(b"\0", b" ").decode(errors="replace")
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+SIDE_CARS = {"eval": "eval_anchor.py", "ladder": "eval_ladder.py"}
+
+
+def stop_stale_side_cars(run_dir: Path) -> list[int]:
+    """Stop the eval/ladder side-cars a previous start of this run left running.
+
+    A side-car exits on its own once the run's STOP file has stayed for its grace period,
+    but a resume deletes STOP first, so the old side-cars carried on next to the new ones:
+    every checkpoint was evaluated twice and the results appended twice. Only a live pid
+    whose command line is that side-car for this run directory is stopped (with its
+    match/engine children), so a reused pid is never touched."""
+    pids = read_json(run_dir / "dashboard.pids.json") or {}
+    stopped = []
+    for role, script in SIDE_CARS.items():
+        pid = int(pids.get(role) or 0)
+        if not pid or not pid_alive(pid):
+            continue
+        cmd = process_cmdline(pid)
+        if script not in cmd or str(run_dir) not in cmd:
+            continue
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True,
+                           creationflags=subprocess.CREATE_NO_WINDOW)
+        else:
+            os.kill(pid, 15)
+        stopped.append(pid)
+    return stopped
+
+
 def spawn_detached(cmd: list[str], log_path: Path, cwd: Path) -> int:
     log = open(log_path, "a", encoding="utf-8")
     kw: dict = {}
@@ -289,6 +332,7 @@ class Dashboard:
         if not engine.exists():
             return {"error": f"engine binary not found: {engine}"}
         run_dir.mkdir(parents=True, exist_ok=True)
+        stop_stale_side_cars(run_dir)
         (run_dir / "STOP").unlink(missing_ok=True)
 
         if resume:
