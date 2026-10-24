@@ -326,6 +326,10 @@ const END_PICKS = [
 let endPick = 'exit fort';
 try { endPick = localStorage.getItem('endPick') || endPick; } catch (e) {}
 let vsPick = '';
+// Display names of the anchors ('T6 step486399', 'copenhagen11x11 (T2 gen0225)'), from
+// /api/run; the files keep the bare names, so every lookup still uses those.
+let ANCHOR_LABELS = {};
+const alabel = (n) => ANCHOR_LABELS[n] || n;
 try { vsPick = localStorage.getItem('vsPick') || ''; } catch (e) {}
 try { smoothN = Math.max(1, parseInt(localStorage.getItem('smooth') || '1')); } catch (e) {}
 function smoothPts(pts) {
@@ -478,7 +482,7 @@ function renderLive(p, alive, eloRows = []) {
   // Latest finished match per anchor that recorded endings (older rows have none).
   const last = {};
   for (const e of eloRows) if (e.reasons) last[e.anchor] = e;
-  const finished = Object.values(last).map(e => `<div class="row"><span>${e.ckpt} vs <b>${e.anchor}</b> ${e.w}-${e.l}-${e.d}:</span><span>${reasonsText(e.reasons) || '–'}</span></div>`).join('');
+  const finished = Object.values(last).map(e => `<div class="row"><span>${e.ckpt} vs <b>${alabel(e.anchor)}</b> ${e.w}-${e.l}-${e.d}:</span><span>${reasonsText(e.reasons) || '–'}</span></div>`).join('');
   const age = Math.round((Date.now() / 1000 - (p.updated || 0)) / 60);
   const stale = age > 30 ? ` · no update for ${age} min` : '';
   const stem = f => (f || '').replace(/\.onnx$/, '');
@@ -489,7 +493,7 @@ function renderLive(p, alive, eloRows = []) {
   const elo = p.elo == null ? '–' : sgn(p.elo);
   const ci = p.ci ? `[${sgn(p.ci[0])}, ${sgn(p.ci[1])}]` : '';
   const mins = p.started ? Math.round((Date.now() / 1000 - p.started) / 60) : 0;
-  el.innerHTML = `<div class="row"><span>Live match: <b>${stem(p.a)}</b> vs <b>${stem(p.b)}</b> · ${p.nodes || ''} nodes</span><span class="spacer"></span><span>pair ${done}/${total} · ${mins} min</span></div>
+  el.innerHTML = `<div class="row"><span>Live match: <b>${stem(p.a)}</b> vs <b>${alabel(stem(p.b))}</b> · ${p.nodes || ''} nodes</span><span class="spacer"></span><span>pair ${done}/${total} · ${mins} min</span></div>
     <div class="bar"><div style="width:${total ? 100 * done / total : 0}%"></div></div>
     <div class="row"><span class="big">${elo}</span><span>${ci}</span><span>W${p.w || 0} L${p.l || 0} D${p.d || 0} · ${n} games · score ${n ? fmt(100 * (p.w + 0.5 * p.d) / n, 0) : '–'}%</span>
     <span class="spacer"></span><span class="recent">${(p.recent || []).join('  ')}</span></div>
@@ -517,6 +521,7 @@ function mergeWindows(rows, minGames) {
 }
 
 function renderDetail(d) {
+  ANCHOR_LABELS = d.anchor_labels || {};
   $('dName').textContent = d.name;
   $('dStatus').textContent = d.status + (d.eval_alive ? ' · eval on' : '');
   $('dStatus').className = 'pill ' + d.status;
@@ -554,7 +559,7 @@ function renderDetail(d) {
     ['Train speed', fmt(last.samples_per_s, 0), `samples/s${last.gpu_util !== '' && last.gpu_util != null ? ` · GPU ${fmt(last.gpu_util, 0)}%` : ''}`],
     ['Self-play', genRate.pos != null ? fmt(genRate.pos, 0) : '–', genRate.games != null ? `positions/s · ${fmt(genRate.games, 2)} games/s` : 'positions/s'],
     ['Window', fmtK(st.window), `buffer ${fmtK(st.buffer)}`],
-    ['Last Elo', lastElo ? (lastElo.elo > 0 ? '+' : '') + fmt(lastElo.elo, 0) : '–', lastElo ? `vs ${lastElo.anchor} @${lastElo.ckpt.replace('step', '')}` : 'no matches yet'],
+    ['Last Elo', lastElo ? (lastElo.elo > 0 ? '+' : '') + fmt(lastElo.elo, 0) : '–', lastElo ? `vs ${alabel(lastElo.anchor)} @${lastElo.ckpt.replace('step', '')}` : 'no matches yet'],
   ];
   renderLive(d.eval_progress, d.eval_alive, d.elo);
   renderRrPicker(d.nets);
@@ -568,7 +573,7 @@ function renderDetail(d) {
   anchors.forEach((a, i) => {
     const rows = d.elo.filter(e => e.anchor === a).sort((p, q) => p.step - q.step);
     const x = (e) => e.generated ?? e.step;
-    eloSets.push(ds(a, S[i % 8], rows.map(e => ({ x: x(e), y: e.elo }))));
+    eloSets.push(ds(alabel(a), S[i % 8], rows.map(e => ({ x: x(e), y: e.elo }))));
     eloSets.push(ds('_' + a + ' lo', S[i % 8], rows.map(e => ({ x: x(e), y: e.ci[0] })), { borderWidth: 0, pointRadius: 0, fill: '+1', backgroundColor: S[i % 8] + '22', _ci: true }));
     eloSets.push(ds('_' + a + ' hi', S[i % 8], rows.map(e => ({ x: x(e), y: e.ci[1] })), { borderWidth: 0, pointRadius: 0, _ci: true }));
   });
@@ -592,9 +597,17 @@ function renderDetail(d) {
       sets.push(ds('_hi', S[0], ck.map(p => ({ x: xOf(p), y: p.elo + 1.96 * p.se })), { borderWidth: 0, pointRadius: 0, _ci: true }));
     }
     const span = ck.length ? [xOf(ck[0]), xOf(ck[ck.length - 1])] : [0, 1];
-    lad.players.filter(p => p.anchor).forEach((p, i) => sets.push(ds(p.name, S[(i + 2) % 8], span.map(x => ({ x, y: p.elo })), { borderDash: [6, 4], pointRadius: 0 })));
+    // An anchor is drawn once the ladder has placed it: early on every checkpoint loses
+    // to it, its rating is unconstrained (0 +- several hundred) and a line at 0 would
+    // read as "level with the reference".
+    const PLACED_SE = 150;
+    const anc = lad.players.filter(p => p.anchor);
+    const placed = anc.filter(p => p.name === lad.reference || p.se < PLACED_SE);
+    const unplaced = anc.filter(p => !placed.includes(p));
+    placed.forEach((p, i) => sets.push(ds(alabel(p.name), S[(i + 2) % 8], span.map(x => ({ x, y: p.elo })), { borderDash: [6, 4], pointRadius: 0 })));
     const games = lad.players.reduce((a, p) => a + p.games, 0) / 2;
-    $('ladderSub').textContent = `${lad.nodes} nodes, ${ck.length} checkpoints, ${fmt(games)} games; ${lad.reference} = 0; ${smoothN > 1 ? 'dots = single checkpoints' : 'shaded = 95% CI'}; dashed = anchors`;
+    $('ladderSub').textContent = `${lad.nodes} nodes, ${ck.length} checkpoints, ${fmt(games)} games; ${alabel(lad.reference)} = 0; ${smoothN > 1 ? 'dots = single checkpoints' : 'shaded = 95% CI'}; dashed = anchors`
+      + (unplaced.length ? `; not placed yet (no checkpoint has scored against them): ${unplaced.map(p => alabel(p.name)).join(', ')}` : '');
     lineChart('cLadder', sets, { yLabel: 'Elo', digits: 0 });
   }
 
@@ -736,7 +749,7 @@ function renderVs(d) {
   if (!anchors.length) { $('vsRows').innerHTML = '<tr><td colspan="8">no matches with endings recorded yet</td></tr>'; return; }
   if (!anchors.includes(vsPick)) vsPick = anchors[anchors.length - 1];
   // One tab per anchor, the chosen one highlighted.
-  const html = anchors.map(a => `<button data-a="${a}" class="${a === vsPick ? 'on' : ''}">${a}</button>`).join('');
+  const html = anchors.map(a => `<button data-a="${a}" class="${a === vsPick ? 'on' : ''}">${alabel(a)}</button>`).join('');
   if ($('vsPick').innerHTML !== html) $('vsPick').innerHTML = html;
   const rows = d.elo.filter(e => e.anchor === vsPick && e.reasons).sort((p, q) => p.step - q.step);
   const x = (e) => e.generated ?? e.step, n = (e) => e.w + e.l + e.d || 1;
@@ -896,7 +909,7 @@ function gvRenderList() {
   const res = (r) => ({ atk: 'atk', def: 'def', draw: 'draw', unknown: '?' })[r] || r;
   $('gvRows').innerHTML = gv.games.map((g, i) => `<tr class="game${g.id === gv.gameId ? ' sel' : ''}" data-i="${i}">` + (sp
     ? `<td>#${fmt(g.start_sample)}</td><td>${res(g.result)}</td><td class="why">${REASON[g.reason] || g.reason}</td><td class="num">${g.plies}</td>`
-    : `<td>${g.ckpt}<div class="why">vs ${g.anchor} · ${(g.time || '').slice(5)}</div></td><td>${g.a_side === 'atk' ? 'attacker' : 'defender'}</td><td>${({ w: 'won', l: 'lost', d: 'drawn' })[g.score] || g.score}</td><td class="why">${REASON[g.reason] || g.reason}</td><td class="num">${g.plies}</td>`) + '</tr>').join('')
+    : `<td>${g.ckpt}<div class="why">vs ${alabel(g.anchor)} · ${(g.time || '').slice(5)}</div></td><td>${g.a_side === 'atk' ? 'attacker' : 'defender'}</td><td>${({ w: 'won', l: 'lost', d: 'drawn' })[g.score] || g.score}</td><td class="why">${REASON[g.reason] || g.reason}</td><td class="num">${g.plies}</td>`) + '</tr>').join('')
     || '<tr><td colspan="6" class="why">no games</td></tr>';
   $('gvRows').querySelectorAll('tr.game').forEach(tr => tr.onclick = () => gvPick(gv.games[+tr.dataset.i]));
 }

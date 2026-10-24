@@ -254,6 +254,7 @@ def run_detail(run_dir: Path) -> dict:
     d["rr"] = rr_state(run_dir)
     d["nets"] = {"ckpts": [p.stem for p in sorted((run_dir / "ckpt").glob("step*.onnx"), reverse=True)],
                  "anchors": list(anchor_nets(run_dir))}
+    d["anchor_labels"] = {name: anchor_label(run_dir, name) for name in anchor_nets(run_dir)}
     d["log"] = tail(run_dir / "log.txt")
     d["eval_log"] = tail(run_dir / "eval.log", 15)
     d["paused"] = (run_dir / "PAUSE").exists()
@@ -288,6 +289,19 @@ def net_origin(run_dir: Path, name: str) -> str:
     if "runs" in parts and parts.index("runs") + 1 < len(parts):
         return parts[parts.index("runs") + 1]
     return path.stem
+
+
+def anchor_label(run_dir: Path, name: str) -> str:
+    """How the dashboard names an anchor: its stem plus where it comes from, e.g.
+    'T6 step486399' for runs/T6-10x128/ckpt/step486399.onnx, 'copenhagen11x11 (T2 gen0225)'.
+    Display only: elo.jsonl and every file keep the bare stem."""
+    if name == "copenhagen11x11":
+        return "copenhagen11x11 (T2 gen0225)"
+    origin = net_origin(run_dir, name)
+    if origin in (run_dir.name, name):
+        return name
+    tag = origin.split("-", 1)[0]
+    return f"{tag} {name}"
 
 
 def rr_state(run_dir: Path) -> dict | None:
