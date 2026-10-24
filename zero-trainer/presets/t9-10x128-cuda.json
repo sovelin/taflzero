@@ -1,5 +1,5 @@
 {
-  "description": "T9: T8 (10x128, T7 planes, Gumbel 16, lr 0.02) plus every change of docs/plan-T9.md: value target = game result, short-term value heads 40/12/4 plies, win/draw/loss value head (ply-limit games train as draws), soft policy head, policy/value surprise sampling weights, soft resignation at 0.9 for 3 plies with reduced positions at weight 0.1. Needs an engine built from feat/t9 (--soft-resign, .feat bytes 78/79). Add T8's best checkpoint as a third anchor at start.",
+  "description": "T9: T8 (10x128, T7 planes, Gumbel 16, lr 0.02) plus every change of docs/plan-T9.md: value target = game result, short-term value heads 40/12/4 plies, win/draw/loss value head (ply-limit games train as draws), soft policy head, policy/value surprise sampling weights, soft resignation at 0.9 for 3 plies with reduced positions at weight 0.1. Needs an engine built from feat/t9 (--soft-resign, .feat bytes 78/79). Third anchor: T8 step056000 (14.3M positions, its best at the stop).",
   "trainer": {
     "planes": "base,last2,rep_dst,king12,ply,cap,mob",
     "cheap_value_weight": 1.0,
@@ -52,7 +52,8 @@
   "eval": {
     "anchors": [
       "copenhagen11x11.onnx",
-      "zero-trainer/runs/T6-10x128/ckpt/step486399.onnx"
+      "zero-trainer/runs/T6-10x128/ckpt/step486399.onnx",
+      "zero-trainer/runs/T8-10x128/ckpt/step056000.onnx"
     ],
     "pairs": 50,
     "nodes": 100,
