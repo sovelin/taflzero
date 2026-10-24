@@ -675,3 +675,55 @@ def test_dashboard_keeps_the_latest_timeline() -> None:
     from dashboard import latest_timeline
     rows = [{"step": s, "v": v} for s, v in [(100, "a"), (200, "a"), (300, "a"), (200, "b"), (300, "b"), (400, "b")]]
     assert [(r["step"], r["v"]) for r in latest_timeline(rows, "step")] == [(100, "a"), (200, "b"), (300, "b"), (400, "b")]
+
+
+def test_trim_torn_tail_cuts_back_to_the_last_complete_game(tmp_path: Path) -> None:
+    from ingest import trim_torn_tail
+    data = tmp_path / "data"
+    data.mkdir()
+    g1, g2, g3 = make_game(5), make_game(4, winner="def"), make_game(6)
+    whole = b"".join(g1) + b"".join(g2)
+    torn = b"".join(g3[:3]) + g3[3][:100]           # half a game, then half a sample
+    (data / "worker0.bin").write_bytes(whole + torn)
+    feat = np.zeros((5 + 4 + 3, 144), dtype=np.uint8)  # records ran ahead of the samples
+    (data / "worker0.feat").write_bytes(b"TZFEAT01" + bytes(8) + feat.tobytes())
+    (data / "worker0.gamelog").write_bytes(b"def_corner,5\natk_capture,4\nkin")
+    cut = trim_torn_tail(data / "worker0.bin", GEOM, 0, 0)
+    assert cut["cut_at"] == len(whole) and cut["samples"] == 9
+    assert (data / "worker0.bin").stat().st_size == len(whole)
+    assert (data / "worker0.feat").stat().st_size == 16 + 9 * 144
+    assert (data / "worker0.gamelog").read_bytes() == b"def_corner,5\natk_capture,4\n"
+    assert (data / "worker0.bin.torn-tail").read_bytes() == torn
+    assert trim_torn_tail(data / "worker0.bin", GEOM, 0, 0) is None    # already clean
+    # records behind the samples: the cut goes back to the last game they all cover
+    (data / "worker0.feat").write_bytes(b"TZFEAT01" + bytes(8) + np.zeros((7, 144), np.uint8).tobytes())
+    cut = trim_torn_tail(data / "worker0.bin", GEOM, 0, 0)
+    assert cut["cut_at"] == len(b"".join(g1)) and cut["samples"] == 5
+
+
+def test_resume_after_a_crash_uses_the_saved_step_weights_and_cuts_the_tail(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    data = run_dir / "data"
+    data.mkdir(parents=True)
+    games = [make_game(6, winner=["atk", "def"][i % 2], first_stm=i % 2) for i in range(12)]
+    write_games(data / "worker0.bin", games)
+    run = ContinuousRun(parse_config(_tiny_args(run_dir, **{"max-steps": 3, "checkpoint-every": 3})))
+    assert run.run() == 0
+    (run_dir / "STOP").unlink()
+    # the crash: newer weights in latest.qnxx than the state, a torn game at the end
+    from qnxx_io import load_qnxx, save_qnxx
+    m = load_qnxx(run_dir / "latest.qnxx")
+    with torch.no_grad():
+        for p in m.parameters():
+            p.add_(1.0)
+    save_qnxx(m, run_dir / "latest.qnxx")
+    size = (data / "worker0.bin").stat().st_size
+    with open(data / "worker0.bin", "ab") as f:
+        f.write(b"".join(make_game(5)[:2]) + b"\x01" * 50)
+    run2 = ContinuousRun(parse_config(["--resume", str(run_dir), "--max-steps", "3"]))
+    ck = load_qnxx(run_dir / "ckpt" / "step000003.qnxx")
+    for a, b in zip(run2.model.state_dict().values(), ck.state_dict().values()):
+        assert torch.equal(a.cpu(), b.cpu())
+    assert (data / "worker0.bin").stat().st_size == size
+    log = (run_dir / "log.txt").read_text(encoding="utf-8")
+    assert "torn tail cut" in log and "weights from step000003.qnxx" in log

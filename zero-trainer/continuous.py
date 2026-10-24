@@ -50,7 +50,7 @@ import torch
 from az_micro_net import TaflAlphaZeroNet
 from dataset import geometry, parse_planes
 from export_onnx import export_model_to_onnx, to_fp16
-from ingest import TERMINAL_COLUMNS, Ingester, SelfplayStats, chunk_outcome
+from ingest import TERMINAL_COLUMNS, Ingester, SelfplayStats, chunk_outcome, trim_torn_tail
 from qnxx_io import load_qnxx, save_qnxx
 from replay import ReplayBuffer, replay_window
 from train import compute_batch_loss
@@ -665,7 +665,15 @@ class ContinuousRun:
         if not self.state_path.exists() or not self.latest_qnxx.exists():
             raise SystemExit(f"--resume: {self.run_dir} has no state.json / latest.qnxx")
         state = json.loads(self.state_path.read_text(encoding="utf-8"))
-        self.model = load_qnxx(self.latest_qnxx).to(self.device)
+        # The weights that go with state.json: latest.qnxx is rewritten every sync_every
+        # steps, state and optimizer only at checkpoints, so after a crash latest.qnxx is
+        # ahead of both. The checkpoint of the saved step matches them exactly.
+        ckpt_of_state = self.ckpt_dir / f"step{int(state.get('step', 0)):06d}.qnxx"
+        if ckpt_of_state.exists():
+            self.model = load_qnxx(ckpt_of_state).to(self.device)
+            self.log(f"[resume] weights from {ckpt_of_state.name} (the saved state's step)")
+        else:
+            self.model = load_qnxx(self.latest_qnxx).to(self.device)
         self._check_model_planes()
         self._check_model_heads()
         self.optimizer = build_optimizer(self.model, args)
@@ -688,6 +696,16 @@ class ContinuousRun:
         self.ingester.gamelog_offsets = {k: int(v) for k, v in state.get("gamelog_offsets", {}).items()}
         self.ingester.sample_offsets = {k: int(v) for k, v in state.get("sample_offsets", {}).items()}
         start_samples = {k: int(v) for k, v in state.get("window_start_samples", {}).items()}
+
+        # After an unclean stop a worker file can end in a torn game: cut it back to the
+        # last complete one before the workers append again (the games played after the
+        # saved state but complete stay and are ingested again).
+        for path in self.ingester.bin_files():
+            off = offsets.get(path.name, 0)
+            first = self.ingester.sample_index_at(path, off)
+            cut = trim_torn_tail(path, self.geom, off, first)
+            if cut:
+                self.log(f"[resume] torn tail cut: {cut}")
 
         # Re-read the replay window: each file from the first game still in the
         # window up to the ingest offset (both are game boundaries).
@@ -712,8 +730,9 @@ class ContinuousRun:
         self._write_config()
         self.log(f"[resume] step={self.step} generated={self.stats.generated} games={self.stats.games} "
                  f"reloaded {reloaded} samples into the buffer")
-        if not self.worker_net.exists():
-            self.export_latest()
+        # The workers' net from the weights just loaded (after a crash the old file is the
+        # newer, unsaved weights).
+        self.export_latest()
 
     # ─── shared state ───────────────────────────────────────────────────────
 

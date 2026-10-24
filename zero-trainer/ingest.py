@@ -37,6 +37,7 @@ from dataset import (
     RawSample,
     feature_count,
     parse_samples,
+    TAIL_BYTES_V2,
 )
 from replay import Chunk
 
@@ -205,6 +206,61 @@ def samples_before(path: Path, geom: BoardGeometry, byte_offset: int, legacy: bo
     if pos != byte_offset:
         raise ValueError(f"{path}: byte {byte_offset} is not a sample boundary")
     return n
+
+
+def trim_torn_tail(path: Path, geom: BoardGeometry, start_offset: int, start_sample: int) -> dict | None:
+    """Cut a worker's files back to the last complete game after an unclean stop.
+
+    A power loss can leave `workerN.bin` ending in part of a game (the worker writes a
+    game in one write, but the OS need not flush all of it), and the `.feat` side file
+    with more or fewer records than that. A restarted worker appends after whatever is
+    there, so a torn tail would misalign every later sample. From `start_offset` (a game
+    boundary already ingested, sample `start_sample`) this finds the last game that is
+    whole in the `.bin` and has all its records in the `.feat`, and truncates `.bin`,
+    `.feat` and the `.gamelog`'s unfinished last line there. The cut-off bytes are kept
+    next to each file as `<name>.torn-tail`. Returns what was cut, or None if the files
+    already end cleanly."""
+    size = path.stat().st_size
+    feat = path.with_suffix(".feat")
+    have_feat = feat.exists()
+    feat_records = ((feat.stat().st_size - FEAT_HEADER_BYTES) // FEAT_RECORD_BYTES) if have_feat else None
+    pos, n = start_offset, start_sample
+    cut, cut_samples = start_offset, start_sample
+    with open(path, "rb") as f:
+        while True:
+            f.seek(pos + BIT_POSITION_BYTES + geom.legal_mask_bytes)
+            raw = f.read(2)
+            if len(raw) < 2:
+                break
+            end = pos + geom.fixed_header + struct.unpack("<H", raw)[0] * 4 + TAIL_BYTES_V2
+            if end > size:
+                break
+            f.seek(end - 2)
+            flags = f.read(1)[0]
+            pos, n = end, n + 1
+            if flags & FLAG_LAST_OF_GAME and (feat_records is None or n <= feat_records):
+                cut, cut_samples = pos, n
+    feat_cut = FEAT_HEADER_BYTES + cut_samples * FEAT_RECORD_BYTES
+    gamelog = path.with_suffix(".gamelog")
+    targets = [(path, cut)]
+    if have_feat:
+        targets.append((feat, feat_cut))
+    if gamelog.exists():
+        data = gamelog.read_bytes()
+        targets.append((gamelog, data.rfind(b"\n") + 1))
+    cuts = [(p, at, p.stat().st_size) for p, at in targets if p.stat().st_size > at]
+    if not cuts:
+        return None
+    for p, at, sz in cuts:
+        with open(p, "rb") as f:
+            f.seek(at)
+            tail = f.read()
+        with open(p.with_name(p.name + ".torn-tail"), "ab") as t:
+            t.write(tail)
+        with open(p, "r+b") as f:
+            f.truncate(at)
+    return {"file": path.name, "cut_at": cut, "samples": cut_samples,
+            "trimmed": {p.name: sz - at for p, at, sz in cuts}}
 
 
 def read_feature_records(path: Path, first: int, count: int) -> np.ndarray:
