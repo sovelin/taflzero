@@ -29,6 +29,36 @@ pub const FEAT_LAST_PLY: u8 = 1 << 2;
 /// The game ended by threefold repetition.
 pub const FEAT_THREEFOLD: u8 = 1 << 3;
 
+/// The sample was searched after the game was decided (soft resignation): cheap search,
+/// trained at a reduced weight.
+pub const FEAT2_REDUCED: u8 = 1 << 0;
+/// KL above this many nats is stored as the maximum.
+pub const SURPRISE_MAX: f32 = 4.0;
+/// Quantization of the surprise byte: 255 / SURPRISE_MAX.
+pub const SURPRISE_SCALE: f32 = 63.75;
+
+/// The surprise byte for a KL divergence in nats.
+pub fn surprise_byte(kl: f32) -> u8 {
+    if !kl.is_finite() || kl <= 0.0 {
+        return 0;
+    }
+    (kl.min(SURPRISE_MAX) * SURPRISE_SCALE).round() as u8
+}
+
+/// Fill the self-play-only bytes (surprise, FLAGS2) of `records`, one record per sample.
+pub fn set_training_bytes(records: &mut [u8], surprise: &[u8], flags2: &[u8]) {
+    let n = records.len() / FEAT_RECORD_BYTES;
+    assert!(
+        surprise.len() == n && flags2.len() == n,
+        "one value per record"
+    );
+    for i in 0..n {
+        let r = &mut records[i * FEAT_RECORD_BYTES..(i + 1) * FEAT_RECORD_BYTES];
+        r[offset::SURPRISE] = surprise[i];
+        r[offset::FLAGS2] = flags2[i];
+    }
+}
+
 /// Record offsets (see the table in docs/probe-input-planes.md).
 pub mod offset {
     pub const HIST: usize = 0;
@@ -40,6 +70,12 @@ pub mod offset {
     pub const PLIES_TO_END: usize = 74;
     pub const FLAGS: usize = 76;
     pub const TERMINAL: usize = 77;
+    /// Policy surprise of the sample's search, KL(target || net prior) in nats, capped
+    /// at `SURPRISE_MAX` and quantized as `round(kl * SURPRISE_SCALE)`; 0 for cheap
+    /// searches. Written by self-play only: the replay tool cannot know it and writes 0.
+    pub const SURPRISE: usize = 78;
+    /// FEAT2_* bits, self-play only like SURPRISE.
+    pub const FLAGS2: usize = 79;
     pub const CAP_NOW: usize = 80;
     pub const CAP_NEXT: usize = 96;
     pub const ATK_MOB: usize = 112;

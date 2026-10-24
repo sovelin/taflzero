@@ -59,6 +59,8 @@ METRICS_COLUMNS = [
     "time", "step", "generated", "games", "window", "buffer", "lr", "loss", "policy",
     "value", "aux_p", "corner", "moves_left", "grad_norm", "unknown_frac", "steps_per_s",
     "samples_per_s", "paused", "gpu_util", "gpu_mem_gb",
+    # T9 (docs/plan-T9.md); blank when the option is off
+    "td", "soft_p", "draw_pred", "draw_frac", "surprise", "reduced", "w_max",
 ]
 SELFPLAY_COLUMNS = [
     "time", "games", "generated", "atk_wins", "def_wins", "undecided", "atk_pct", "avg_len",
@@ -145,6 +147,22 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--moves-left-weight", type=float, default=0.1)
     p.add_argument("--cheap-value-weight", type=float, default=1.0,
                    help="value-loss weight of cheap-search samples (policy_valid=0); pacing is unchanged")
+    # T9 (docs/plan-T9.md): every default keeps the old behaviour
+    p.add_argument("--value-weight", type=float, default=1.0, help="weight of the value loss in the total")
+    p.add_argument("--value-wdl", action="store_true",
+                   help="win/draw/loss value head (cross-entropy; ply-limit games are draws); "
+                        "the exported value stays one scalar, p_win - p_loss")
+    p.add_argument("--td-horizons", type=str, default="",
+                   help="short-term value heads, comma-separated horizons in plies (e.g. '40,12,4'); empty = off")
+    p.add_argument("--td-weight", type=float, default=0.5, help="loss weight of each short-term value head")
+    p.add_argument("--soft-policy-weight", type=float, default=0.0,
+                   help="soft policy head (target pi^0.25 renormalized) loss weight; 0 = no head")
+    p.add_argument("--surprise-policy", type=float, default=0.0,
+                   help="share of the sampling weight given by policy surprise (.feat byte 78); 0 = off")
+    p.add_argument("--surprise-value", type=float, default=0.0,
+                   help="share of the sampling weight given by value surprise (z vs root_q); 0 = off")
+    p.add_argument("--reduced-weight", type=float, default=1.0,
+                   help="sampling weight of samples searched after soft resignation; 1 = as any other")
 
     # engine
     p.add_argument("--full-nodes", type=int, default=160)
@@ -162,6 +180,11 @@ def build_parser() -> argparse.ArgumentParser:
                    help="leaves per net call inside one search (engine --search-batch); 1 = plain MCTS, "
                         "the GPU batch is pooled across the threads instead")
     p.add_argument("--mlh-alpha", type=float, default=0.15)
+    p.add_argument("--soft-resign", type=float, default=0.0,
+                   help="soft resignation threshold on |root value| (engine --soft-resign): decided games "
+                        "go on with cheap searches, samples flagged for --reduced-weight; 0 = off")
+    p.add_argument("--soft-resign-plies", type=int, default=3,
+                   help="consecutive plies beyond the threshold that start soft resignation")
     return p
 
 
@@ -224,7 +247,38 @@ def parse_config(argv: list[str] | None = None) -> argparse.Namespace:
         parse_lr_schedule(args.lr_schedule)
     except ValueError as e:
         parser.error(f"--lr-schedule: {e}")
+    try:
+        parse_td_horizons(args.td_horizons)
+    except ValueError as e:
+        parser.error(f"--td-horizons: {e}")
+    if args.surprise_policy < 0 or args.surprise_value < 0 or args.surprise_policy + args.surprise_value > 1:
+        parser.error("--surprise-policy and --surprise-value must be >= 0 and sum to at most 1")
+    if args.reduced_weight <= 0:
+        parser.error("--reduced-weight must be > 0")
+    if not 0.0 <= args.soft_resign < 1.0:
+        parser.error("--soft-resign must be in [0, 1)")
+    if args.value_wdl and (args.value_lambda != 1.0 or args.value_gamma != 1.0):
+        parser.error("--value-wdl trains on the game result only: it needs value_lambda 1.0 and value_gamma 1.0")
     return args
+
+
+def parse_td_horizons(text: str | None) -> tuple[int, ...]:
+    """'40,12,4' -> (40, 12, 4); empty = no short-term value heads."""
+    if not text or not str(text).strip():
+        return ()
+    out = []
+    for part in str(text).split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            h = int(part)
+        except ValueError:
+            raise ValueError(f"expected an integer horizon, got {part!r}")
+        if h < 1:
+            raise ValueError(f"horizons are >= 1 ply, got {h}")
+        out.append(h)
+    return tuple(out)
 
 
 def config_to_json(args: argparse.Namespace) -> dict:
@@ -341,6 +395,8 @@ def build_model(args: argparse.Namespace) -> TaflAlphaZeroNet:
         board_size=args.board_size, trunk_channels=args.channels, num_blocks=args.blocks,
         value_channels=args.value_channels, use_se=args.se, gpool_channels=args.gpool_channels,
         aux_heads=args.aux_heads, moves_left=args.moves_left,
+        value_wdl=args.value_wdl, td_heads=len(parse_td_horizons(args.td_horizons)),
+        soft_policy=args.soft_policy_weight > 0,
     )
 
 
@@ -434,6 +490,8 @@ def worker_command(args: argparse.Namespace, run_dir: Path, worker_id: int, net_
         cmd += ["--search-batch", str(args.worker_search_batch)]
     if getattr(args, "worker_ramp_seconds", 0) > 0:
         cmd += ["--ramp-seconds", str(args.worker_ramp_seconds)]
+    if getattr(args, "soft_resign", 0.0) > 0:
+        cmd += ["--soft-resign", str(args.soft_resign), "--soft-resign-plies", str(args.soft_resign_plies)]
     return cmd
 
 
@@ -451,6 +509,7 @@ class StepStats:
     grad_norm: float
     unknown_frac: float
     lr: float
+    extra: dict | None = None   # T9 metrics (td, soft_p, draw_pred, draw_frac)
 
 
 class ContinuousRun:
@@ -484,6 +543,10 @@ class ContinuousRun:
             self.geom, z_lambda=args.value_lambda, augment=True, value_gamma=args.value_gamma,
             max_bytes=args.buffer_max_bytes, decode_threads=args.decode_threads,
             planes=args.planes,
+            td_horizons=parse_td_horizons(args.td_horizons), unknown_as_draw=args.value_wdl,
+            surprise_policy=args.surprise_policy, surprise_value=args.surprise_value,
+            reduced_weight=args.reduced_weight,
+            extended_batch=bool(parse_td_horizons(args.td_horizons)) or args.value_wdl,
         )
         self.stats = SelfplayStats()
         self.step = 0
@@ -519,6 +582,19 @@ class ContinuousRun:
         atomic_write_text(self.run_dir / "config.json",
                           json.dumps(config_to_json(self.args) | ident, indent=2))
 
+    def _check_model_heads(self) -> None:
+        """The heads the config asks for must be the ones the model has (T9)."""
+        a, m = self.args, self.model
+        if bool(getattr(m, "value_wdl", False)) != bool(a.value_wdl):
+            raise SystemExit(f"value_wdl is {a.value_wdl} in the config but the model's value head is "
+                             f"{'WDL' if getattr(m, 'value_wdl', False) else 'scalar'}")
+        want_td = len(parse_td_horizons(a.td_horizons))
+        have_td = int(m.model_kwargs.get("td_heads", 0))
+        if want_td and want_td != have_td:
+            raise SystemExit(f"td_horizons asks for {want_td} short-term value heads, the model has {have_td}")
+        if a.soft_policy_weight > 0 and "soft_policy_head" not in m._modules:
+            raise SystemExit("soft_policy_weight > 0 but the model has no soft policy head")
+
     def _check_model_planes(self) -> None:
         spec = parse_planes(self.args.planes)
         have = self.model.model_kwargs.get("in_channels", 11)
@@ -543,6 +619,7 @@ class ContinuousRun:
             self.model = build_model(args)
             self.log(f"[init] new model {self.model.model_kwargs}")
         self._check_model_planes()
+        self._check_model_heads()
         self.model.to(self.device)
         self.optimizer = build_optimizer(self.model, args)
         self._write_config()
@@ -556,6 +633,7 @@ class ContinuousRun:
         state = json.loads(self.state_path.read_text(encoding="utf-8"))
         self.model = load_qnxx(self.latest_qnxx).to(self.device)
         self._check_model_planes()
+        self._check_model_heads()
         self.optimizer = build_optimizer(self.model, args)
         if self.optimizer_path.exists():
             opt = torch.load(self.optimizer_path, map_location="cpu", weights_only=False)
@@ -720,10 +798,13 @@ class ContinuousRun:
         for g in self.optimizer.param_groups:
             g["lr"] = lr
         self.model.train()
+        extra: dict = {}
         total, p_loss, v_loss, ap_loss, c_loss, ml_loss = compute_batch_loss(
             self.model, batch, self.device, 1.0, a.aux_policy_weight, a.corner_weight,
             self.use_aux, decided_policy_k=a.decided_policy_k, moves_left_weight=a.moves_left_weight,
             amp_dtype=self.amp_dtype, cheap_value_weight=a.cheap_value_weight,
+            value_weight=a.value_weight, td_weight=a.td_weight,
+            soft_policy_weight=a.soft_policy_weight, extra=extra,
         )
         loss = float(total.item())
         if not math.isfinite(loss):
@@ -737,7 +818,7 @@ class ContinuousRun:
         self.optimizer.step()
         unknown_frac = 1.0 - float(batch[11].mean().item())
         return StepStats(loss, float(p_loss.item()), float(v_loss.item()), float(ap_loss.item()),
-                         float(c_loss.item()), float(ml_loss.item()), grad_norm, unknown_frac, lr)
+                         float(c_loss.item()), float(ml_loss.item()), grad_norm, unknown_frac, lr, extra)
 
     def sample_batch(self, window: int):
         with self.lock:
@@ -797,6 +878,7 @@ class ContinuousRun:
         with self.lock:
             generated, games, buf = self.stats.generated, self.stats.games, len(self.buffer)
             atk_pct, avg_len = self.stats.atk_pct, self.stats.avg_len
+            wstats = self.buffer.take_weight_stats()
         row = {
             "time": f"{time.time():.1f}", "step": self.step, "generated": generated, "games": games,
             "window": window, "buffer": buf, "lr": f"{acc[-1].lr:.6g}" if acc else "",
@@ -808,6 +890,21 @@ class ContinuousRun:
             "steps_per_s": f"{steps_per_s:.3f}", "samples_per_s": f"{steps_per_s * self.args.batch:.1f}",
             "paused": int(self.paused),
         }
+        a = self.args
+
+        def mean_extra(key: str) -> str:
+            vals = [s.extra[key] for s in acc if s.extra and key in s.extra]
+            return f"{sum(vals) / len(vals):.5f}" if vals else ""
+
+        for key in ("td", "soft_p", "draw_pred", "draw_frac"):
+            row[key] = mean_extra(key)
+        fmt = lambda v, d: "" if v is None else f"{v:.{d}f}"  # noqa: E731
+        if a.surprise_policy > 0 or a.surprise_value > 0 or a.reduced_weight != 1.0:
+            row["w_max"] = fmt(wstats["w_max"], 3)
+        if a.surprise_policy > 0:
+            row["surprise"] = fmt(wstats["surprise"], 4)
+        if a.soft_resign > 0:
+            row["reduced"] = fmt(wstats["reduced"], 4)
         if self.device.type == "cuda":
             row["gpu_util"], row["gpu_mem_gb"] = gpu_stats()
         self.metrics.row(row)

@@ -155,6 +155,16 @@ fn play_game(
         }
     }
 
+    // Per sample: the surprise byte and FLAGS2 of its side-file record.
+    let mut surprise: Vec<u8> = vec![];
+    let mut flags2: Vec<u8> = vec![];
+    // Soft resignation: the last root values in the attackers' view; while the last
+    // `soft_resign_plies` all lie beyond +-threshold the game is "reduced" (cheap
+    // searches only, samples flagged for a low training weight). Never ends a game.
+    let mut recent_atk_q: std::collections::VecDeque<f32> = std::collections::VecDeque::new();
+    // Some(true) = reduced with the attackers winning, Some(false) = the defenders.
+    let mut reduced_side: Option<bool> = None;
+
     let game_result;
     let terminal_str: Option<&'static str>;
     let mut move_number: usize = 0;
@@ -175,7 +185,9 @@ fn play_game(
         full_config.temperature = temperature;
         cheap_config.temperature = temperature;
 
-        let is_full = search_cfg.full_prob >= 1.0 || rng.random::<f64>() < search_cfg.full_prob;
+        let drawn_full = search_cfg.full_prob >= 1.0 || rng.random::<f64>() < search_cfg.full_prob;
+        let reduced = reduced_side.is_some();
+        let is_full = drawn_full && !reduced;
         let (config, nodes) = if is_full {
             (&full_config, search_cfg.full_nodes)
         } else {
@@ -208,6 +220,39 @@ fn play_game(
             let mut sample = mcts_tree.make_pending_sample(&board, prune_k, C_PUCT);
             sample.set_policy_valid(is_full);
             res.push(sample);
+            surprise.push(if is_full {
+                crate::search::features::surprise_byte(mcts_tree.policy_surprise())
+            } else {
+                0
+            });
+            flags2.push(if reduced {
+                crate::search::features::FEAT2_REDUCED
+            } else {
+                0
+            });
+            if let Some(threshold) = search_cfg.soft_resign {
+                let q = mcts_tree.root_q();
+                let atk_q = if board.side_to_move == Side::ATTACKERS {
+                    q
+                } else {
+                    -q
+                };
+                recent_atk_q.push_back(atk_q);
+                while recent_atk_q.len() > search_cfg.soft_resign_plies.max(1) {
+                    recent_atk_q.pop_front();
+                }
+                let next = soft_resign_step(
+                    reduced_side,
+                    &recent_atk_q,
+                    search_cfg.soft_resign_plies,
+                    threshold,
+                );
+                if reduced_side.is_some() && next.is_none() {
+                    // Leaving the state: entering again needs N fresh plies.
+                    recent_atk_q.clear();
+                }
+                reduced_side = next;
+            }
 
             let rep = board.rep_table.get(&board.zobrist).copied().unwrap_or(1);
             board_history.push(BitPosition::from_board(&board, rep));
@@ -314,9 +359,53 @@ fn play_game(
             terminal_str.map(terminal_code),
             &mut feat_records,
         );
+        crate::search::features::set_training_bytes(&mut feat_records, &surprise, &flags2);
     }
 
     (res, board_history, game_result, terminal_str, feat_records)
+}
+
+/// How far below the entry threshold the winning side's root value must fall to leave the
+/// soft-resignation state. Without it a 40-node cheap search, whose root value is pulled
+/// toward 0 by the first-round visits to poor moves, left the state 1.55 times a game on
+/// T8's data (13 % of positions reduced); with 0.1 it is 0.86 times (16 %).
+const SOFT_RESIGN_EXIT_MARGIN: f32 = 0.1;
+
+/// The soft-resignation state after the latest root value (`recent_atk_q`, attackers'
+/// view, newest last). Not reduced: enter when the last `plies` values all lie beyond
+/// +threshold (attackers winning) or all beyond -threshold. Reduced: stay while the
+/// latest value stays beyond threshold - SOFT_RESIGN_EXIT_MARGIN on the winning side.
+fn soft_resign_step(
+    side: Option<bool>,
+    recent_atk_q: &std::collections::VecDeque<f32>,
+    plies: usize,
+    threshold: f32,
+) -> Option<bool> {
+    let Some(&last) = recent_atk_q.back() else {
+        return side;
+    };
+    match side {
+        Some(atk_winning) => {
+            let stay = threshold - SOFT_RESIGN_EXIT_MARGIN;
+            let holds = if atk_winning {
+                last >= stay
+            } else {
+                last <= -stay
+            };
+            if holds { side } else { None }
+        }
+        None => {
+            if recent_atk_q.len() < plies.max(1) {
+                None
+            } else if recent_atk_q.iter().all(|&q| q >= threshold) {
+                Some(true)
+            } else if recent_atk_q.iter().all(|&q| q <= -threshold) {
+                Some(false)
+            } else {
+                None
+            }
+        }
+    }
 }
 
 // ─── Main datagen loop ────────────────────────────────────────────────────────
@@ -336,6 +425,10 @@ pub struct SearchConfig {
     /// Leaves selected per net call inside one search. 1 = plain MCTS, no virtual
     /// loss; the GPU batch then comes from many games (`--threads`) instead.
     pub search_batch: usize,
+    /// Soft resignation threshold on |root value| (KataGo's reduceVisits); `None` = off.
+    pub soft_resign: Option<f32>,
+    /// Consecutive plies beyond the threshold that start the reduced state.
+    pub soft_resign_plies: usize,
 }
 
 impl Default for SearchConfig {
@@ -346,6 +439,8 @@ impl Default for SearchConfig {
             full_prob: 1.0,
             gumbel: None,
             search_batch: MCTSConfig::default_train().batch_size,
+            soft_resign: None,
+            soft_resign_plies: 3,
         }
     }
 }
@@ -843,6 +938,126 @@ mod tests {
         (res, result, term)
     }
 
+    #[test]
+    fn soft_resign_enters_after_n_plies_and_leaves_below_the_margin() {
+        let q = |v: &[f32]| {
+            v.iter()
+                .copied()
+                .collect::<std::collections::VecDeque<f32>>()
+        };
+        // entering: N values beyond the threshold, all on one side
+        assert_eq!(soft_resign_step(None, &q(&[0.95, 0.95]), 3, 0.9), None);
+        assert_eq!(
+            soft_resign_step(None, &q(&[0.95, 0.91, 0.99]), 3, 0.9),
+            Some(true)
+        );
+        assert_eq!(
+            soft_resign_step(None, &q(&[-0.95, -0.91, -0.99]), 3, 0.9),
+            Some(false)
+        );
+        assert_eq!(soft_resign_step(None, &q(&[0.95, 0.5, 0.99]), 3, 0.9), None);
+        assert_eq!(
+            soft_resign_step(None, &q(&[0.95, -0.95, 0.99]), 3, 0.9),
+            None
+        );
+        // staying: only the latest value counts, against threshold - margin
+        assert_eq!(
+            soft_resign_step(Some(true), &q(&[0.95, 0.95, 0.85]), 3, 0.9),
+            Some(true)
+        );
+        assert_eq!(
+            soft_resign_step(Some(true), &q(&[0.95, 0.95, 0.75]), 3, 0.9),
+            None
+        );
+        assert_eq!(
+            soft_resign_step(Some(false), &q(&[-0.95, -0.82]), 3, 0.9),
+            Some(false)
+        );
+        assert_eq!(
+            soft_resign_step(Some(false), &q(&[-0.95, 0.95]), 3, 0.9),
+            None
+        );
+        assert_eq!(soft_resign_step(Some(true), &q(&[]), 3, 0.9), Some(true));
+    }
+
+    #[test]
+    fn surprise_byte_quantizes_and_caps() {
+        use crate::search::features::surprise_byte;
+        assert_eq!(surprise_byte(0.0), 0);
+        assert_eq!(surprise_byte(-1.0), 0);
+        assert_eq!(surprise_byte(f32::NAN), 0);
+        assert_eq!(surprise_byte(1.0), 64);
+        assert_eq!(surprise_byte(4.0), 255);
+        assert_eq!(surprise_byte(9.0), 255);
+    }
+
+    // With a threshold every position passes, the game turns reduced after the first
+    // `plies` searches: from then on every sample is a cheap search flagged REDUCED, the
+    // earlier ones are full searches with a surprise byte, and the game is still played
+    // to its end (here the ply limit).
+    #[test]
+    fn soft_resign_reduces_searches_and_never_ends_the_game() {
+        use crate::search::features::{FEAT_RECORD_BYTES, FEAT2_REDUCED, offset};
+        let mut nn = NeuralNet::new("copenhagen11x11.onnx", 11, 8).unwrap();
+        let mut search_data = SearchData::new();
+        let mut rng = StdRng::seed_from_u64(7);
+        let mut board = Board::new();
+        board.set_rules(RulesEnum::Copenhagen11x11);
+        board.setup_initial_position().unwrap();
+        let search = SearchConfig {
+            full_nodes: 8,
+            cheap_nodes: 2,
+            full_prob: 1.0,
+            gumbel: Some(4),
+            soft_resign: Some(1e-6),
+            soft_resign_plies: 2,
+            ..SearchConfig::default()
+        };
+        let limits = GameLimits {
+            max_plies: 12,
+            max_no_capture: 400,
+        };
+        let (res, _, _, term, feat) =
+            play_game(&mut nn, &mut search_data, board, &search, &limits, &mut rng);
+        assert_eq!(feat.len(), res.len() * FEAT_RECORD_BYTES);
+        let flags2: Vec<u8> = (0..res.len())
+            .map(|i| feat[i * FEAT_RECORD_BYTES + offset::FLAGS2])
+            .collect();
+        let surprise: Vec<u8> = (0..res.len())
+            .map(|i| feat[i * FEAT_RECORD_BYTES + offset::SURPRISE])
+            .collect();
+        // A root value of exactly 0 does not pass 1e-6; the opening rarely gives that,
+        // so expect the reduced state within the first few plies and to the end after.
+        let first = flags2
+            .iter()
+            .position(|&f| f & FEAT2_REDUCED != 0)
+            .expect("the game never entered the reduced state");
+        assert!(first >= 2, "reduced before {} searches: {flags2:?}", 2);
+        for (i, s) in res.iter().enumerate() {
+            let full = s.flags() & crate::mcts::export::FLAG_POLICY_VALID != 0;
+            if flags2[i] & FEAT2_REDUCED != 0 {
+                assert!(!full, "sample {i} reduced but a full search");
+                assert_eq!(
+                    surprise[i], 0,
+                    "sample {i}: cheap searches carry no surprise"
+                );
+            }
+            if i < first {
+                assert!(full, "sample {i} before the reduced state is a full search");
+            }
+        }
+        assert!(
+            surprise[..first].iter().any(|&b| b > 0),
+            "no surprise before {first}: {surprise:?}"
+        );
+        assert_eq!(
+            term,
+            Some("undecided_plies"),
+            "the game must run to the limit"
+        );
+        assert_eq!(res.len(), 12);
+    }
+
     // A game cut off by the ply limit is written as undecided: every sample carries
     // FLAG_RESULT_UNKNOWN with value 0, and the last one still closes the game.
     #[test]
@@ -1025,6 +1240,7 @@ mod tests {
                 gumbel: None,
                 // One leaf per net call: the batch is pooled across the threads.
                 search_batch: 1,
+                ..SearchConfig::default()
             },
             limits: GameLimits {
                 max_plies: 6,
@@ -1110,6 +1326,13 @@ mod tests {
             "one record per sample"
         );
         let want = std::fs::read(&replayed).unwrap();
+        // Surprise and FLAGS2 are self-play only; the replay writes 0 there.
+        let mut feat = feat;
+        for r in 0..stats.records {
+            let at = 16 + r * 144;
+            feat[at + crate::search::features::offset::SURPRISE] = 0;
+            feat[at + crate::search::features::offset::FLAGS2] = 0;
+        }
         if feat != want {
             let at = feat.iter().zip(&want).position(|(a, b)| a != b).unwrap();
             panic!(

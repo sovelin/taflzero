@@ -206,7 +206,9 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; }
         <div class="chart"><h3>How games end</h3><div class="sub">share of games by final position, per logging window; real attacking progress = king captured, not repetition</div><canvas id="cEnd"></canvas></div>
         <div class="chart"><h3>One ending in detail <select id="endPick" class="endpick"></select></h3><div class="sub">the chosen ending on its own scale: % of all games and % of that side's wins, per logging window</div><canvas id="cFortSp"></canvas></div>
         <div class="chart"><h3>Average game length</h3><div class="sub">plies</div><canvas id="cLen"></canvas></div>
-        <div class="chart"><h3>Losses</h3><div class="sub">policy and value, per 100 steps</div><canvas id="cLoss"></canvas></div>
+        <div class="chart"><h3>Losses</h3><div class="sub">policy and value, per 100 steps; short-term value and soft policy when the run trains them</div><canvas id="cLoss"></canvas></div>
+        <div class="chart" id="drawBox" style="display:none"><h3>Draws and soft resignation</h3><div class="sub">WDL head: predicted draw probability vs the share of draw targets in the batch; share of positions searched after soft resignation</div><canvas id="cDraw"></canvas></div>
+        <div class="chart" id="surpriseBox" style="display:none"><h3>Sampling weights</h3><div class="sub">mean policy surprise of full searches (nats) and the largest sampling weight of the games added</div><canvas id="cSurprise"></canvas></div>
         <div class="chart"><h3>Blind-spot metrics</h3><div class="sub">attacker winrate the bare net gives: lost positions should fall, won positions should rise</div><canvas id="cBlind"></canvas></div>
         <div class="chart" id="fortBox" style="display:none"><h3>Fort recognition</h3><div class="sub">attacker winrate the bare net gives k plies before g0213 completed a fort (truth: defenders win), lower = sees it; distance = mean gap to g0213's own values; dashed = anchors; read with won positions above</div><canvas id="cFort"></canvas></div>
         <div class="chart"><h3>Brier on his positions</h3><div class="sub">random 0.25, T2 g0213 0.096, his 0.087</div><canvas id="cBrier"></canvas></div>
@@ -661,7 +663,25 @@ function renderDetail(d) {
   lineChart('cFortSp', [ds('% of all games', S[2], allPts)].concat(side ? [ds(sideName, S[0], sidePts)] : []), { yLabel: '%', min: 0, digits: 2 });
 
   const mx = (r) => r.generated;
-  lineChart('cLoss', [ds('policy', S[0], smoothPts(m.map(r => ({ x: mx(r), y: r.policy })))), ds('value', S[1], smoothPts(m.map(r => ({ x: mx(r), y: r.value })))), ds('moves left', S[2], smoothPts(m.map(r => ({ x: mx(r), y: r.moves_left }))))], { digits: 3 });
+  // T9 columns are blank when the option is off: a series only when it has numbers.
+  const col = (k, f = (v) => v) => m.filter(r => typeof r[k] === 'number').map(r => ({ x: mx(r), y: f(r[k]) }));
+  // A WDL run logs the value loss as cross-entropy, not MSE: say so in the legend.
+  const valueLabel = (d.config && d.config.value_wdl) || col('draw_pred').length ? 'value (win/draw/loss CE)' : 'value';
+  const lossSets = [ds('policy', S[0], smoothPts(m.map(r => ({ x: mx(r), y: r.policy })))), ds(valueLabel, S[1], smoothPts(m.map(r => ({ x: mx(r), y: r.value })))), ds('moves left', S[2], smoothPts(m.map(r => ({ x: mx(r), y: r.moves_left }))))];
+  if (col('td').length) lossSets.push(ds('short-term value', S[3], smoothPts(col('td'))));
+  if (col('soft_p').length) lossSets.push(ds('soft policy', S[4], smoothPts(col('soft_p'))));
+  lineChart('cLoss', lossSets, { digits: 3 });
+  const pct = (v) => 100 * v;
+  const drawSets = [];
+  if (col('draw_pred').length) drawSets.push(ds('predicted draw %', S[1], smoothPts(col('draw_pred', pct))), ds('draw targets %', S[0], smoothPts(col('draw_frac', pct))));
+  if (col('reduced').length) drawSets.push(ds('soft-resigned positions %', S[2], smoothPts(col('reduced', pct))));
+  $('drawBox').style.display = drawSets.length ? '' : 'none';
+  if (drawSets.length) lineChart('cDraw', drawSets, { yLabel: '%', min: 0, digits: 1 });
+  const wSets = [];
+  if (col('surprise').length) wSets.push(ds('policy surprise (nats)', S[0], smoothPts(col('surprise'))));
+  if (col('w_max').length) wSets.push(ds('largest weight', S[3], smoothPts(col('w_max'))));
+  $('surpriseBox').style.display = wSets.length ? '' : 'none';
+  if (wSets.length) lineChart('cSurprise', wSets, { min: 0, digits: 2 });
   lineChart('cSpeed', [ds('samples/s', S[0], smoothPts(m.map(r => ({ x: mx(r), y: r.samples_per_s }))))], { digits: 0 });
   // Self-play speed from the cumulative counters in selfplay.csv.
   const gen = [];

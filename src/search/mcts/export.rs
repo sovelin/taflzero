@@ -206,7 +206,64 @@ impl PendingSample {
     }
 }
 
+/// KL(target || prior) in nats over (target weight, prior) pairs; both sides are
+/// normalized here, prior probabilities are floored at 1e-6. 0 for an empty or all-zero side.
+pub fn kl_divergence(pairs: &[(f32, f32)]) -> f32 {
+    let t_sum: f32 = pairs.iter().map(|(t, _)| *t).sum();
+    let p_sum: f32 = pairs.iter().map(|(_, p)| *p).sum();
+    if t_sum <= 0.0 || p_sum <= 0.0 {
+        return 0.0;
+    }
+    let mut kl = 0.0f32;
+    for &(t, p) in pairs {
+        let t = t / t_sum;
+        if t > 0.0 {
+            let p = (p / p_sum).max(1e-6);
+            kl += t * (t / p).ln();
+        }
+    }
+    kl.max(0.0)
+}
+
+#[cfg(test)]
+mod kl_tests {
+    use super::kl_divergence;
+
+    #[test]
+    fn kl_divergence_known_values() {
+        // identical distributions (any scale): 0
+        assert!(kl_divergence(&[(2.0, 0.2), (8.0, 0.8)]).abs() < 1e-6);
+        // all target mass on a move of prior 0.25: ln 4
+        let kl = kl_divergence(&[(1.0, 0.25), (0.0, 0.75)]);
+        assert!((kl - 4f32.ln()).abs() < 1e-5, "{kl}");
+        // 0.5/0.5 against 0.9/0.1
+        let want = 0.5 * (0.5f32 / 0.9).ln() + 0.5 * (0.5f32 / 0.1).ln();
+        assert!((kl_divergence(&[(0.5, 0.9), (0.5, 0.1)]) - want).abs() < 1e-5);
+        assert_eq!(kl_divergence(&[]), 0.0);
+        assert_eq!(kl_divergence(&[(0.0, 0.5), (0.0, 0.5)]), 0.0);
+    }
+}
+
 impl MCTSTree {
+    /// KL(search policy target || net prior) at the root, in nats: how much the search
+    /// disagreed with the raw net (KataGo's policy surprise). The target is the Gumbel
+    /// improved policy, else the visit distribution; priors are the root children's.
+    pub fn policy_surprise(&self) -> f32 {
+        let root = self.get_root();
+        let mut target: Vec<(f32, f32)> = Vec::with_capacity(root.children().len());
+        if let Some(improved) = self.gumbel_policy_target() {
+            for (&c, (_, p)) in root.children().iter().zip(improved.iter()) {
+                target.push((*p, self.get_node(c).prior()));
+            }
+        } else {
+            for &c in root.children() {
+                let n = self.get_node(c);
+                target.push((n.visits(), n.prior()));
+            }
+        }
+        kl_divergence(&target)
+    }
+
     fn build_legal_mask_from_board(&mut self, board: &Board) -> LegalMask {
         let mut legal_mask = LegalMask::new(board.board_size());
         self.move_gen.generate_moves(board);

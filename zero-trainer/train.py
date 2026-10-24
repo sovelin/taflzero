@@ -26,7 +26,7 @@ from az_micro_net import TaflAlphaZeroNet
 from dataset import SelfPlayDataset, parse_planes
 from export_onnx import export_model_to_onnx
 from qnxx_io import save_qnxx, load_qnxx
-from training_utils import alpha_zero_loss, policy_loss_masked, moves_left_loss
+from training_utils import alpha_zero_loss, policy_loss_masked, moves_left_loss, value_loss
 
 LOG_INTERVAL = 100  # print stats every N steps
 
@@ -53,8 +53,22 @@ def compute_batch_loss(
     moves_left_weight: float = 0.0,
     amp_dtype: torch.dtype | None = None,
     cheap_value_weight: float = 1.0,
+    value_weight: float = 1.0,
+    td_weight: float = 0.0,
+    soft_policy_weight: float = 0.0,
+    extra: dict | None = None,
 ):
     """Forward + all loss terms for one batch.
+
+    T9 options (docs/plan-T9.md), all off by default; with every one off this
+    function computes exactly what it always did:
+      value_weight        scales the value loss in the total.
+      td_weight           per short-term value head (model built with td_heads);
+                          needs the 14-element replay batch (z, td targets).
+      soft_policy_weight  soft policy CE (model built with soft_policy).
+      a WDL value head (model built with value_wdl) trains on win/draw/loss
+                          classes: games with an unknown result are draws.
+    `extra`, when given, receives the T9 metrics (td, soft_p, draw_pred, draw_frac).
 
     `amp_dtype` (e.g. torch.bfloat16) runs the forward pass under autocast; the
     network outputs are cast back to float32 before any loss is computed, so the
@@ -78,9 +92,18 @@ def compute_batch_loss(
 
     Returns (total, p_loss, v_loss, aux_p_loss, corner_loss) as tensors.
     """
+    if (getattr(model, "value_wdl", False) or value_weight != 1.0
+            or (td_weight > 0.0 and "td_head" in model._modules)
+            or (soft_policy_weight > 0.0 and "soft_policy_head" in model._modules)):
+        return _compute_batch_loss_t9(
+            model, batch, device, defender_weight, aux_policy_weight, corner_weight, use_aux,
+            decided_policy_k, moves_left_weight, amp_dtype, cheap_value_weight,
+            value_weight, td_weight, soft_policy_weight, extra,
+        )
+
     (planes, legal_mask, pi_target, value_target,
      policy_valid, aux_policy, aux_legal, aux_valid, corner, root_q,
-     moves_left_target, moves_left_valid) = batch
+     moves_left_target, moves_left_valid) = batch[:12]
 
     planes = planes.to(device)
     legal_mask = legal_mask.to(device)
@@ -194,6 +217,109 @@ def compute_val_loss(
     if n == 0:
         return 0.0, 0.0, 0.0
     return total_loss / n, total_p / n, total_v / n
+
+
+WDL_WIN, WDL_DRAW, WDL_LOSS = 0, 1, 2
+
+
+def wdl_classes(z: torch.Tensor, known: torch.Tensor) -> torch.Tensor:
+    """Win/draw/loss class per sample from the side to move: a known result by the
+    sign of z, an unknown one (ply / no-capture limit) a draw."""
+    cls = torch.full(z.shape, WDL_DRAW, dtype=torch.long, device=z.device)
+    k = known > 0.5
+    cls[k & (z > 0)] = WDL_WIN
+    cls[k & (z < 0)] = WDL_LOSS
+    return cls
+
+
+def soft_policy_target(pi_target: torch.Tensor, legal_mask: torch.Tensor, power: float = 0.25) -> torch.Tensor:
+    """KataGo's soft policy target: (pi + 1e-7) ** power over the legal moves, renormalized."""
+    legal = legal_mask.to(pi_target.dtype)
+    t = ((pi_target + 1e-7) * legal).pow(power) * legal
+    return t / t.sum(dim=1, keepdim=True).clamp_min(1e-12)
+
+
+def _compute_batch_loss_t9(
+    model, batch, device, defender_weight, aux_policy_weight, corner_weight, use_aux,
+    decided_policy_k, moves_left_weight, amp_dtype, cheap_value_weight,
+    value_weight, td_weight, soft_policy_weight, extra,
+):
+    """compute_batch_loss with the T9 heads; same return tuple."""
+    (planes, legal_mask, pi_target, value_target,
+     policy_valid, aux_policy, aux_legal, aux_valid, corner, root_q,
+     moves_left_target, moves_left_valid) = batch[:12]
+    has_t9 = len(batch) >= 14
+    planes = planes.to(device)
+    legal_mask = legal_mask.to(device)
+    pi_target = pi_target.to(device)
+    value_target = value_target.to(device)
+    policy_valid = policy_valid.to(device)
+    known = moves_left_valid.to(device)
+
+    with _autocast(device, amp_dtype):
+        raw = model.forward_train(planes)
+    outs = {k: (v.float() if isinstance(v, torch.Tensor) else v) for k, v in raw.items()}
+
+    weights = compute_sample_weights(planes, value_target, defender_weight)
+    cheap_scale = policy_valid + (1.0 - policy_valid) * cheap_value_weight
+
+    policy_weights = weights
+    if decided_policy_k > 0.0:
+        rq = root_q.to(device)
+        policy_weights = weights * (1.0 - rq.abs().clamp(0.0, 1.0) ** decided_policy_k)
+    p_loss = policy_loss_masked(outs["policy"], pi_target, legal_mask, policy_valid, policy_weights)
+
+    if model.value_wdl:
+        if not has_t9:
+            raise ValueError("a WDL value head needs the replay batch with z (14 elements)")
+        z = batch[12].to(device)
+        cls = wdl_classes(z, known)
+        vw = weights * cheap_scale
+        ce = F.cross_entropy(outs["value_logits"], cls, reduction="none")
+        v_loss = (ce * vw).sum() / vw.sum().clamp_min(1e-6)
+        if extra is not None:
+            extra["draw_pred"] = float(torch.softmax(outs["value_logits"].detach(), dim=1)[:, WDL_DRAW].mean())
+            extra["draw_frac"] = float((cls == WDL_DRAW).float().mean())
+    else:
+        v_loss = value_loss(outs["value"], value_target, weights * known * cheap_scale)
+
+    total = p_loss + value_weight * v_loss
+    zero = total.detach() * 0.0
+    aux_p_loss = corner_loss = ml_loss = zero
+
+    if use_aux and outs["aux_policy"] is not None:
+        aux_p_loss = policy_loss_masked(outs["aux_policy"], aux_policy.to(device), aux_legal.to(device),
+                                        aux_valid.to(device))
+        corner_loss = F.cross_entropy(outs["corner"], corner.to(device))
+        total = total + aux_policy_weight * aux_p_loss + corner_weight * corner_loss
+
+    if moves_left_weight > 0.0 and outs["moves_left"] is not None:
+        ml_loss = moves_left_loss(outs["moves_left"], moves_left_target.to(device), known)
+        total = total + moves_left_weight * ml_loss
+
+    if td_weight > 0.0 and outs["td"] is not None:
+        if not has_t9:
+            raise ValueError("short-term value heads need the replay batch with td targets (14 elements)")
+        td_t = batch[13].to(device)
+        if td_t.shape != outs["td"].shape:
+            raise ValueError(f"td targets {tuple(td_t.shape)} vs heads {tuple(outs['td'].shape)}")
+        # masked like the value loss: NaN targets out, sample and cheap-search weights in
+        valid = torch.isfinite(td_t).float() * (weights * cheap_scale).unsqueeze(1)
+        err = (outs["td"] - torch.nan_to_num(td_t)).pow(2) * valid
+        per_head = err.sum(dim=0) / valid.sum(dim=0).clamp_min(1e-6)
+        td_loss = per_head.sum()
+        total = total + td_weight * td_loss
+        if extra is not None:
+            extra["td"] = float(per_head.detach().mean())
+
+    if soft_policy_weight > 0.0 and outs["soft_policy"] is not None:
+        soft_t = soft_policy_target(pi_target, legal_mask)
+        soft_loss = policy_loss_masked(outs["soft_policy"], soft_t, legal_mask, policy_valid, weights)
+        total = total + soft_policy_weight * soft_loss
+        if extra is not None:
+            extra["soft_p"] = float(soft_loss.detach())
+
+    return total, p_loss, v_loss, aux_p_loss, corner_loss, ml_loss
 
 
 def compute_sample_weights(

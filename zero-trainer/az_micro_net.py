@@ -12,6 +12,11 @@ extensions are opt-in via constructor flags:
     and added as a per-channel bias, giving every square global context.
   - aux_heads: training-only heads (opponent reply policy + king escape corner).
     They are NOT part of forward(), so ONNX export is unaffected.
+  - value_wdl: the value MLP ends in 3 logits (win, draw, loss for the side to move)
+    instead of tanh; forward() still returns one scalar, p_win - p_loss, so the
+    exported graph keeps its outputs (docs/plan-T9.md §4).
+  - td_heads > 0: training-only short-term value heads (§3), tanh, one per horizon.
+  - soft_policy: a training-only second policy head for the soft policy target (§7).
 """
 
 from __future__ import annotations
@@ -99,6 +104,9 @@ class TaflAlphaZeroNet(nn.Module):
         aux_heads: bool = False,
         moves_left: bool = False,
         planes: str | None = None,
+        value_wdl: bool = False,
+        td_heads: int = 0,
+        soft_policy: bool = False,
     ) -> None:
         super().__init__()
 
@@ -131,6 +139,15 @@ class TaflAlphaZeroNet(nn.Module):
         }
         if planes is not None:
             self.model_kwargs["planes"] = planes
+        # Recorded only when on, so the checkpoints of older configurations stay
+        # byte-identical in their kwargs and loadable by older code.
+        if value_wdl:
+            self.model_kwargs["value_wdl"] = True
+        if td_heads:
+            self.model_kwargs["td_heads"] = int(td_heads)
+        if soft_policy:
+            self.model_kwargs["soft_policy"] = True
+        self.value_wdl = bool(value_wdl)
 
         self.stem = nn.Sequential(
             nn.Conv2d(in_channels, trunk_channels, kernel_size=3, padding=1, bias=False),
@@ -164,12 +181,19 @@ class TaflAlphaZeroNet(nn.Module):
             nn.BatchNorm2d(value_channels),
             nn.ReLU(inplace=True),
         )
-        self.value_mlp = nn.Sequential(
-            nn.Linear(value_channels * self.sqs, 64),
-            nn.ReLU(inplace=True),
-            nn.Linear(64, 1),
-            nn.Tanh(),
-        )
+        if value_wdl:
+            self.value_mlp = nn.Sequential(
+                nn.Linear(value_channels * self.sqs, 64),
+                nn.ReLU(inplace=True),
+                nn.Linear(64, 3),
+            )
+        else:
+            self.value_mlp = nn.Sequential(
+                nn.Linear(value_channels * self.sqs, 64),
+                nn.ReLU(inplace=True),
+                nn.Linear(64, 1),
+                nn.Tanh(),
+            )
 
         # Moves-left head: predicts plies remaining to game end (scaled by
         # MOVES_LEFT_SCALE).  UNLIKE the aux heads this IS part of forward(), so
@@ -208,6 +232,28 @@ class TaflAlphaZeroNet(nn.Module):
                 nn.Linear(32, 5),
             )
 
+        # Training-only short-term value heads: never referenced by forward().
+        if td_heads:
+            self.td_head = nn.Sequential(
+                nn.Conv2d(trunk_channels, value_channels, kernel_size=1, bias=False),
+                nn.BatchNorm2d(value_channels),
+                nn.ReLU(inplace=True),
+            )
+            self.td_mlp = nn.Sequential(
+                nn.Linear(value_channels * self.sqs, 64),
+                nn.ReLU(inplace=True),
+                nn.Linear(64, int(td_heads)),
+                nn.Tanh(),
+            )
+        # Training-only soft policy head (same shape as the policy head).
+        if soft_policy:
+            self.soft_policy_head = nn.Sequential(
+                nn.Conv2d(trunk_channels, trunk_channels, kernel_size=1, bias=False),
+                nn.BatchNorm2d(trunk_channels),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(trunk_channels, self.policy_channels, kernel_size=1, bias=True),
+            )
+
     def _trunk_out(self, x: Tensor) -> Tensor:
         return self.trunk(self.stem(x))
 
@@ -216,8 +262,19 @@ class TaflAlphaZeroNet(nn.Module):
         # matches Rust index: from_square * policy_channels + move_type
         return head(x).permute(0, 2, 3, 1).flatten(start_dim=1)
 
-    def _value_from(self, x: Tensor) -> Tensor:
+    def _value_raw(self, x: Tensor) -> Tensor:
+        """(B, 1) tanh value, or (B, 3) win/draw/loss logits for a WDL head."""
         return self.value_mlp(self.value_head(x).flatten(start_dim=1))
+
+    @staticmethod
+    def wdl_to_value(logits: Tensor) -> Tensor:
+        """Expected score p_win - p_loss, (B, 1), from (B, 3) win/draw/loss logits."""
+        p = torch.softmax(logits, dim=1)
+        return (p[:, 0] - p[:, 2]).unsqueeze(1)
+
+    def _value_from(self, x: Tensor) -> Tensor:
+        raw = self._value_raw(x)
+        return self.wdl_to_value(raw) if self.value_wdl else raw
 
     def _moves_left_from(self, x: Tensor) -> Tensor:
         return self.moves_left_mlp(self.moves_left_head(x).flatten(start_dim=1))
@@ -262,10 +319,24 @@ class TaflAlphaZeroNet(nn.Module):
         moves_left_or_None). moves_left is None when the head is absent."""
         if "aux_policy_head" not in self._modules:
             raise RuntimeError("model was built without aux_heads=True")
+        o = self.forward_train(x)
+        return o["policy"], o["value"], o["aux_policy"], o["corner"], o["moves_left"]
+
+    def forward_train(self, x: Tensor) -> dict:
+        """Every head the model has, for the trainer. Keys: policy, value (B, 1 scalar),
+        value_logits (B, 3, WDL head only), aux_policy, corner, moves_left, td (B, H),
+        soft_policy; heads the model lacks are None."""
         x = self._trunk_out(x)
-        policy = self._policy_from(self.policy_head, x)
-        value = self._value_from(x)
-        aux_policy = self._policy_from(self.aux_policy_head, x)
-        corner = self.aux_corner_mlp(self.aux_corner_head(x).flatten(start_dim=1))
-        moves_left = self._moves_left_from(x) if self.has_moves_left else None
-        return policy, value, aux_policy, corner, moves_left
+        raw = self._value_raw(x)
+        m = self._modules
+        return {
+            "policy": self._policy_from(self.policy_head, x),
+            "value": self.wdl_to_value(raw) if self.value_wdl else raw,
+            "value_logits": raw if self.value_wdl else None,
+            "aux_policy": self._policy_from(self.aux_policy_head, x) if "aux_policy_head" in m else None,
+            "corner": (self.aux_corner_mlp(self.aux_corner_head(x).flatten(start_dim=1))
+                       if "aux_corner_head" in m else None),
+            "moves_left": self._moves_left_from(x) if self.has_moves_left else None,
+            "td": self.td_mlp(self.td_head(x).flatten(start_dim=1)) if "td_head" in m else None,
+            "soft_policy": self._policy_from(self.soft_policy_head, x) if "soft_policy_head" in m else None,
+        }
