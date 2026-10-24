@@ -659,3 +659,19 @@ def test_eval_min_gap_spaces_checkpoints_and_finishes_started_ones() -> None:
     assert not e.spaced_out(ck(190000), done, 20000)  # only 6000 past 184000
     assert e.spaced_out(ck(204000), done, 20000)
     assert e.spaced_out(ck(2000), set(), 20000)  # nothing rated yet
+
+
+def test_resume_drops_log_rows_written_after_the_saved_state(tmp_path: Path) -> None:
+    from continuous import trim_csv_after
+    p = tmp_path / "metrics.csv"
+    p.write_text("time,step,loss\n1,100,5\n2,200,4\n3,300,3\n", encoding="utf-8")
+    assert trim_csv_after(p, "step", 200) == 1
+    assert p.read_text(encoding="utf-8").splitlines() == ["time,step,loss", "1,100,5", "2,200,4"]
+    assert trim_csv_after(p, "step", 200) == 0
+    assert trim_csv_after(tmp_path / "missing.csv", "step", 0) == 0
+
+
+def test_dashboard_keeps_the_latest_timeline() -> None:
+    from dashboard import latest_timeline
+    rows = [{"step": s, "v": v} for s, v in [(100, "a"), (200, "a"), (300, "a"), (200, "b"), (300, "b"), (400, "b")]]
+    assert [(r["step"], r["v"]) for r in latest_timeline(rows, "step")] == [(100, "a"), (200, "b"), (300, "b"), (400, "b")]

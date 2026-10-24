@@ -153,12 +153,31 @@ def _cached(fn):
     return wrapper
 
 
+def latest_timeline(rows: list[dict], key: str) -> list[dict]:
+    """Rows as one timeline in `key` (step, generated): where the key goes back (a resume
+    from an earlier checkpoint after a crash logs those steps again), the rows written
+    before the restart from that point on are dropped and the newer ones kept."""
+    out: list[dict] = []
+    for r in rows:
+        try:
+            k = float(r.get(key) or "nan")
+        except ValueError:
+            out.append(r)
+            continue
+        while out and float(out[-1].get(key) or "-inf") >= k:
+            out.pop()
+        out.append(r)
+    return out
+
+
 @_cached
-def read_csv(path: Path, max_rows: int = 2000) -> list[dict]:
+def read_csv(path: Path, max_rows: int = 2000, monotonic: str | None = None) -> list[dict]:
     if not path.exists():
         return []
     with open(path, encoding="utf-8", newline="") as f:
         rows = list(csv.DictReader(f))
+    if monotonic:
+        rows = latest_timeline(rows, monotonic)
     if len(rows) > max_rows:
         step = len(rows) / max_rows
         rows = [rows[int(i * step)] for i in range(max_rows)] + [rows[-1]]
@@ -243,8 +262,8 @@ def run_detail(run_dir: Path) -> dict:
     d = run_status(run_dir)
     d["config"] = read_json(run_dir / "config.json")
     d["state"] = {k: v for k, v in (read_json(run_dir / "state.json") or {}).items() if k != "rng"}
-    d["metrics"] = read_csv(run_dir / "metrics.csv")
-    d["selfplay"] = read_csv(run_dir / "selfplay.csv")
+    d["metrics"] = read_csv(run_dir / "metrics.csv", 2000, "step")
+    d["selfplay"] = read_csv(run_dir / "selfplay.csv", 2000, "generated")
     d["elo"] = read_jsonl(run_dir / "elo.jsonl")
     d["sides"] = match_sides(run_dir / "eval.games.jsonl")
     d["eval"] = read_jsonl(run_dir / "eval.jsonl")

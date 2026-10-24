@@ -345,6 +345,33 @@ def gpu_stats() -> tuple[str, str]:
         return "", ""
 
 
+def trim_csv_after(path: Path, key: str, limit: float) -> int:
+    """Drop the rows of a log CSV whose `key` is beyond `limit` (rows a crashed run wrote
+    after its last saved state, which the resume will write again). Returns how many."""
+    if not path.exists() or path.stat().st_size == 0:
+        return 0
+    with open(path, newline="", encoding="utf-8") as fh:
+        rows = list(csv.reader(fh))
+    if not rows or key not in rows[0]:
+        return 0
+    i = rows[0].index(key)
+
+    def beyond(r: list[str]) -> bool:
+        try:
+            return float(r[i]) > limit
+        except (IndexError, ValueError):
+            return False
+
+    keep = [rows[0]] + [r for r in rows[1:] if not beyond(r)]
+    dropped = len(rows) - len(keep)
+    if dropped:
+        tmp = path.with_name(path.name + ".tmp")
+        with open(tmp, "w", newline="", encoding="utf-8") as fh:
+            csv.writer(fh).writerows(keep)
+        os.replace(tmp, path)
+    return dropped
+
+
 class CsvLog:
     def __init__(self, path: Path, columns: list[str]) -> None:
         self.columns = columns
@@ -559,6 +586,13 @@ class ContinuousRun:
         self.rng = np.random.default_rng(args.seed)
         self.ingester = Ingester(self.data_dir, self.geom)
 
+        if args.resume is not None and self.state_path.exists():
+            # A crash after the last checkpoint leaves log rows the resume will write again.
+            st = json.loads(self.state_path.read_text(encoding="utf-8"))
+            n = trim_csv_after(self.run_dir / "metrics.csv", "step", float(st.get("step", 0)))
+            n += trim_csv_after(self.run_dir / "selfplay.csv", "generated", float(st.get("generated", 0)))
+            if n:
+                self.log(f"[resume] dropped {n} log rows written after the saved state")
         self.metrics = CsvLog(self.run_dir / "metrics.csv", METRICS_COLUMNS)
         self.selfplay_csv = CsvLog(self.run_dir / "selfplay.csv", SELFPLAY_COLUMNS)
         self._selfplay_row_stats = SelfplayStats()   # snapshot at the last selfplay.csv row
