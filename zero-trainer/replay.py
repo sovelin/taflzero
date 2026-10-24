@@ -47,6 +47,7 @@ FEAT_SURPRISE = 78
 FEAT_FLAGS2 = 79
 FEAT2_REDUCED = 1 << 0
 SURPRISE_SCALE = 63.75
+VALUE_SURPRISE_FLOOR = 0.01
 
 
 def td_targets(root_q: np.ndarray, z_last: float, known: bool, horizons, unknown_as_draw: bool) -> np.ndarray:
@@ -83,7 +84,8 @@ def sample_weights(surprise: np.ndarray, root_q: np.ndarray, z: np.ndarray, know
     w = (1 - a - b) + a * ps / mean(ps) + b * vs / mean(vs), times `reduced_weight` on
     reduced samples; a term whose game mean is 0 contributes its share uniformly.
     ps is the policy surprise in nats, vs = min(1, (z - q)^2 / 4) the value surprise
-    (z = 0 for an unknown result when `unknown_as_draw`, else no value term).
+    (z = 0 for an unknown result when `unknown_as_draw`, else no value term); when the
+    game's mean vs is below VALUE_SURPRISE_FLOOR the value share b shrinks in proportion.
 
     Only full searches have a policy surprise (`full`; all samples when None): its mean
     is over them and the other samples get the uniform share `a`, so the policy term
@@ -102,7 +104,13 @@ def sample_weights(surprise: np.ndarray, root_q: np.ndarray, z: np.ndarray, know
     if b > 0 and (known or unknown_as_draw):
         zz = np.asarray(z, dtype=np.float64) if known else np.zeros(n)
         vs = np.minimum(1.0, (zz - np.asarray(root_q, dtype=np.float64)) ** 2 / 4.0)
-        w += b * vs / vs.mean() if vs.mean() > 0 else b
+        # KataGo's guard (play.cpp, valueSurpriseDataWeight): a game with almost no value
+        # surprise (a draw where every root value sits near 0) would hand its whole value
+        # share to one barely different position; below a mean of VALUE_SURPRISE_FLOOR the
+        # share shrinks in proportion and the rest is spread uniformly.
+        m = vs.mean()
+        b_eff = b * min(1.0, m / VALUE_SURPRISE_FLOOR)
+        w += (b_eff * vs / m if m > 0 else 0.0) + (b - b_eff)
     else:
         w += b
     w = np.where(np.asarray(reduced, dtype=bool), w * reduced_weight, w)

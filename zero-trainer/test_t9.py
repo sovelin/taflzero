@@ -389,3 +389,20 @@ def test_fp16_onnx_value_is_p_win_minus_p_loss(tmp_path: Path) -> None:
     got = ReferenceEvaluator(str(tmp_path / "m16.onnx")).run(None, {"input": x.numpy()})
     p = torch.softmax(m.forward_train(x)["value_logits"], dim=1)
     assert np.allclose(got[1][:, 0].astype(np.float32), (p[:, 0] - p[:, 2]).detach().numpy(), atol=2e-2)
+
+
+def test_value_surprise_of_a_flat_draw_does_not_pile_onto_one_position() -> None:
+    # T9's first games: a 400-ply draw with root values ~0 and one at 0.65 gave that
+    # position weight ~41 before the floor.
+    n = 400
+    q = np.zeros(n)
+    q[200] = 0.65
+    w = sample_weights(np.zeros(n), q, np.zeros(n), False, np.zeros(n, bool), 0.0, 0.1, 1.0, True)
+    # the outlier keeps about b * vs / floor = 0.1 * 0.106 / 0.01 on top of ~1, not ~41
+    assert np.isclose(w.mean(), 1.0) and w.max() == pytest.approx(1.0 + 0.1 * 0.65 ** 2 / 4 / 0.01, abs=0.01)
+    # a game with real value surprise keeps the full share
+    q = np.linspace(-0.9, 0.9, n)
+    z = np.ones(n)
+    w = sample_weights(np.zeros(n), q, z, True, np.zeros(n, bool), 0.0, 0.1, 1.0, False)
+    vs = np.minimum(1, (z - q) ** 2 / 4)
+    assert np.allclose(w, 0.9 + 0.1 * vs / vs.mean())
