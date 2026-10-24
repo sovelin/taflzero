@@ -158,12 +158,11 @@ fn play_game(
     // Per sample: the surprise byte and FLAGS2 of its side-file record.
     let mut surprise: Vec<u8> = vec![];
     let mut flags2: Vec<u8> = vec![];
-    // Soft resignation: the last root values in the attackers' view; while the last
-    // `soft_resign_plies` all lie beyond +-threshold the game is "reduced" (cheap
-    // searches only, samples flagged for a low training weight). Never ends a game.
+    // Soft resignation (KataGo's reduceVisits): the last root values in the attackers'
+    // view; once the last `soft_resign_plies` all lie beyond the threshold on one side,
+    // full searches shrink toward the cheap size and the samples' training weight falls,
+    // in proportion to how far past the threshold the game is. Never ends a game.
     let mut recent_atk_q: std::collections::VecDeque<f32> = std::collections::VecDeque::new();
-    // Some(true) = reduced with the attackers winning, Some(false) = the defenders.
-    let mut reduced_side: Option<bool> = None;
 
     let game_result;
     let terminal_str: Option<&'static str>;
@@ -185,11 +184,20 @@ fn play_game(
         full_config.temperature = temperature;
         cheap_config.temperature = temperature;
 
-        let drawn_full = search_cfg.full_prob >= 1.0 || rng.random::<f64>() < search_cfg.full_prob;
-        let reduced = reduced_side.is_some();
-        let is_full = drawn_full && !reduced;
+        let is_full = search_cfg.full_prob >= 1.0 || rng.random::<f64>() < search_cfg.full_prob;
+        let reduction = match search_cfg.soft_resign {
+            Some(threshold) => {
+                soft_resign_reduction(&recent_atk_q, search_cfg.soft_resign_plies, threshold)
+            }
+            None => 0.0,
+        };
         let (config, nodes) = if is_full {
-            (&full_config, search_cfg.full_nodes)
+            // A reduced full search is still a full search (policy target written), just
+            // smaller: from full_nodes at no reduction to cheap_nodes at a full one.
+            let full = search_cfg.full_nodes as f32;
+            let cheap = search_cfg.cheap_nodes as f32;
+            let n = (full + reduction * (cheap - full)).round() as u64;
+            (&full_config, n.max(search_cfg.cheap_nodes).max(1))
         } else {
             (&cheap_config, search_cfg.cheap_nodes)
         };
@@ -225,12 +233,8 @@ fn play_game(
             } else {
                 0
             });
-            flags2.push(if reduced {
-                crate::search::features::FEAT2_REDUCED
-            } else {
-                0
-            });
-            if let Some(threshold) = search_cfg.soft_resign {
+            flags2.push(crate::search::features::reduction_byte(reduction));
+            if search_cfg.soft_resign.is_some() {
                 let q = mcts_tree.root_q();
                 let atk_q = if board.side_to_move == Side::ATTACKERS {
                     q
@@ -241,17 +245,6 @@ fn play_game(
                 while recent_atk_q.len() > search_cfg.soft_resign_plies.max(1) {
                     recent_atk_q.pop_front();
                 }
-                let next = soft_resign_step(
-                    reduced_side,
-                    &recent_atk_q,
-                    search_cfg.soft_resign_plies,
-                    threshold,
-                );
-                if reduced_side.is_some() && next.is_none() {
-                    // Leaving the state: entering again needs N fresh plies.
-                    recent_atk_q.clear();
-                }
-                reduced_side = next;
             }
 
             let rep = board.rep_table.get(&board.zobrist).copied().unwrap_or(1);
@@ -365,47 +358,31 @@ fn play_game(
     (res, board_history, game_result, terminal_str, feat_records)
 }
 
-/// How far below the entry threshold the winning side's root value must fall to leave the
-/// soft-resignation state. Without it a 40-node cheap search, whose root value is pulled
-/// toward 0 by the first-round visits to poor moves, left the state 1.55 times a game on
-/// T8's data (13 % of positions reduced); with 0.1 it is 0.86 times (16 %).
-const SOFT_RESIGN_EXIT_MARGIN: f32 = 0.1;
-
-/// The soft-resignation state after the latest root value (`recent_atk_q`, attackers'
-/// view, newest last). Not reduced: enter when the last `plies` values all lie beyond
-/// +threshold (attackers winning) or all beyond -threshold. Reduced: stay while the
-/// latest value stays beyond threshold - SOFT_RESIGN_EXIT_MARGIN on the winning side.
-fn soft_resign_step(
-    side: Option<bool>,
+/// KataGo's soft-resignation reduction (play.cpp, reduceVisits) for the next search: over
+/// the last `plies` root values (attackers' view, newest last) take the least extreme one
+/// on a common side; if it lies past `threshold`, the reduction is
+/// ((value - threshold) / (1 - threshold))^2, else 0. So 0 at the threshold, 0.25 halfway
+/// to 1, and 1 only for a game that is all but over: a gradual cut, no state to leave.
+fn soft_resign_reduction(
     recent_atk_q: &std::collections::VecDeque<f32>,
     plies: usize,
     threshold: f32,
-) -> Option<bool> {
-    let Some(&last) = recent_atk_q.back() else {
-        return side;
-    };
-    match side {
-        Some(atk_winning) => {
-            let stay = threshold - SOFT_RESIGN_EXIT_MARGIN;
-            let holds = if atk_winning {
-                last >= stay
-            } else {
-                last <= -stay
-            };
-            if holds { side } else { None }
-        }
-        None => {
-            if recent_atk_q.len() < plies.max(1) {
-                None
-            } else if recent_atk_q.iter().all(|&q| q >= threshold) {
-                Some(true)
-            } else if recent_atk_q.iter().all(|&q| q <= -threshold) {
-                Some(false)
-            } else {
-                None
-            }
-        }
+) -> f32 {
+    let plies = plies.max(1);
+    if recent_atk_q.len() < plies || threshold >= 1.0 {
+        return 0.0;
     }
+    let last = recent_atk_q.iter().rev().take(plies);
+    let (lo, hi) = last.fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), &q| {
+        (lo.min(q), hi.max(q))
+    });
+    let most_extreme = lo.max(-hi).min(1.0);
+    let through = most_extreme - threshold;
+    if through <= 0.0 {
+        return 0.0;
+    }
+    let prop = (through / (1.0 - threshold)).clamp(0.0, 1.0);
+    prop * prop
 }
 
 // ─── Main datagen loop ────────────────────────────────────────────────────────
@@ -939,45 +916,27 @@ mod tests {
     }
 
     #[test]
-    fn soft_resign_enters_after_n_plies_and_leaves_below_the_margin() {
+    fn soft_resign_reduction_follows_katago() {
         let q = |v: &[f32]| {
             v.iter()
                 .copied()
                 .collect::<std::collections::VecDeque<f32>>()
         };
-        // entering: N values beyond the threshold, all on one side
-        assert_eq!(soft_resign_step(None, &q(&[0.95, 0.95]), 3, 0.9), None);
-        assert_eq!(
-            soft_resign_step(None, &q(&[0.95, 0.91, 0.99]), 3, 0.9),
-            Some(true)
-        );
-        assert_eq!(
-            soft_resign_step(None, &q(&[-0.95, -0.91, -0.99]), 3, 0.9),
-            Some(false)
-        );
-        assert_eq!(soft_resign_step(None, &q(&[0.95, 0.5, 0.99]), 3, 0.9), None);
-        assert_eq!(
-            soft_resign_step(None, &q(&[0.95, -0.95, 0.99]), 3, 0.9),
-            None
-        );
-        // staying: only the latest value counts, against threshold - margin
-        assert_eq!(
-            soft_resign_step(Some(true), &q(&[0.95, 0.95, 0.85]), 3, 0.9),
-            Some(true)
-        );
-        assert_eq!(
-            soft_resign_step(Some(true), &q(&[0.95, 0.95, 0.75]), 3, 0.9),
-            None
-        );
-        assert_eq!(
-            soft_resign_step(Some(false), &q(&[-0.95, -0.82]), 3, 0.9),
-            Some(false)
-        );
-        assert_eq!(
-            soft_resign_step(Some(false), &q(&[-0.95, 0.95]), 3, 0.9),
-            None
-        );
-        assert_eq!(soft_resign_step(Some(true), &q(&[]), 3, 0.9), Some(true));
+        let r = |v: &[f32]| soft_resign_reduction(&q(v), 3, 0.9);
+        assert_eq!(r(&[0.95, 0.95]), 0.0); // fewer than N values
+        assert_eq!(r(&[0.9, 0.95, 0.99]), 0.0); // the least extreme is at the threshold
+        assert!((r(&[0.95, 0.97, 0.99]) - 0.25).abs() < 1e-5);
+        assert!((r(&[-0.98, -0.99, -1.0]) - 0.64).abs() < 1e-5);
+        assert!((r(&[1.0, 1.0, 1.0]) - 1.0).abs() < 1e-6);
+        assert_eq!(r(&[0.95, -0.95, 0.99]), 0.0); // sides disagree
+        assert_eq!(r(&[0.95, 0.5, 0.99]), 0.0);
+        // only the last N count
+        assert!((soft_resign_reduction(&q(&[0.0, 0.95, 0.95, 0.95]), 3, 0.9) - 0.25).abs() < 1e-5);
+        use crate::search::features::{FEAT2_REDUCTION, reduction_byte};
+        assert_eq!(reduction_byte(0.0), 0);
+        assert_eq!(reduction_byte(1.0), FEAT2_REDUCTION | 127);
+        assert_eq!(reduction_byte(0.25), FEAT2_REDUCTION | 32);
+        assert_eq!(reduction_byte(1e-6), FEAT2_REDUCTION | 1);
     }
 
     #[test]
@@ -991,13 +950,13 @@ mod tests {
         assert_eq!(surprise_byte(9.0), 255);
     }
 
-    // With a threshold every position passes, the game turns reduced after the first
-    // `plies` searches: from then on every sample is a cheap search flagged REDUCED, the
-    // earlier ones are full searches with a surprise byte, and the game is still played
-    // to its end (here the ply limit).
+    // With a threshold every position passes, the reduction starts after the first
+    // `plies` searches: from then on the samples carry a reduction byte, every search is
+    // still a full one (full_prob 1, a reduced full search keeps its policy target and
+    // surprise), and the game is played to its end (here the ply limit).
     #[test]
     fn soft_resign_reduces_searches_and_never_ends_the_game() {
-        use crate::search::features::{FEAT_RECORD_BYTES, FEAT2_REDUCED, offset};
+        use crate::search::features::{FEAT_RECORD_BYTES, FEAT2_REDUCTION, offset};
         let mut nn = NeuralNet::new("copenhagen11x11.onnx", 11, 8).unwrap();
         let mut search_data = SearchData::new();
         let mut rng = StdRng::seed_from_u64(7);
@@ -1027,29 +986,17 @@ mod tests {
             .map(|i| feat[i * FEAT_RECORD_BYTES + offset::SURPRISE])
             .collect();
         // A root value of exactly 0 does not pass 1e-6; the opening rarely gives that,
-        // so expect the reduced state within the first few plies and to the end after.
+        // so expect a reduction within the first few plies.
         let first = flags2
             .iter()
-            .position(|&f| f & FEAT2_REDUCED != 0)
-            .expect("the game never entered the reduced state");
-        assert!(first >= 2, "reduced before {} searches: {flags2:?}", 2);
+            .position(|&f| f & FEAT2_REDUCTION != 0)
+            .expect("the game was never reduced");
+        assert!(first >= 2, "reduced before 2 searches: {flags2:?}");
         for (i, s) in res.iter().enumerate() {
             let full = s.flags() & crate::mcts::export::FLAG_POLICY_VALID != 0;
-            if flags2[i] & FEAT2_REDUCED != 0 {
-                assert!(!full, "sample {i} reduced but a full search");
-                assert_eq!(
-                    surprise[i], 0,
-                    "sample {i}: cheap searches carry no surprise"
-                );
-            }
-            if i < first {
-                assert!(full, "sample {i} before the reduced state is a full search");
-            }
+            assert!(full, "sample {i}: every search is a full one here");
         }
-        assert!(
-            surprise[..first].iter().any(|&b| b > 0),
-            "no surprise before {first}: {surprise:?}"
-        );
+        assert!(surprise.iter().any(|&b| b > 0), "no surprise: {surprise:?}");
         assert_eq!(
             term,
             Some("undecided_plies"),
@@ -1335,10 +1282,17 @@ mod tests {
         }
         if feat != want {
             let at = feat.iter().zip(&want).position(|(a, b)| a != b).unwrap();
+            let r = (at - 16) / 144;
+            let rec = |b: &[u8]| b[16 + r * 144..16 + (r + 1) * 144].to_vec();
             panic!(
-                "side files differ at byte {at} (record {}, offset {})",
-                (at - 16) / 144,
-                (at - 16) % 144
+                "side files differ at byte {at} (record {r}, offset {}): datagen {} replay {}
+ datagen record {:?}
+ replay  record {:?}",
+                (at - 16) % 144,
+                feat[at],
+                want[at],
+                &rec(&feat)[72..80],
+                &rec(&want)[72..80]
             );
         }
 

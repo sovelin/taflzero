@@ -406,3 +406,14 @@ def test_value_surprise_of_a_flat_draw_does_not_pile_onto_one_position() -> None
     w = sample_weights(np.zeros(n), q, z, True, np.zeros(n, bool), 0.0, 0.1, 1.0, False)
     vs = np.minimum(1, (z - q) ** 2 / 4)
     assert np.allclose(w, 0.9 + 0.1 * vs / vs.mean())
+
+
+def test_graded_reduction_byte_and_its_weight() -> None:
+    from replay import reduction_of
+    f = np.array([0, 0x01, 0x80 | 127, 0x80 | 32, 0x80 | 1], dtype=np.uint8)
+    assert np.allclose(reduction_of(f), [0.0, 1.0, 1.0, 32 / 127, 1 / 127])
+    n = 4
+    red = np.array([0.0, 0.25, 1.0, 0.0])
+    w = sample_weights(np.zeros(n), np.zeros(n), np.zeros(n), True, red, 0.0, 0.0, 0.1, False)
+    raw = np.array([1.0, 1 + 0.25 * (0.1 - 1), 0.1, 1.0])
+    assert np.allclose(w, raw * n / raw.sum())

@@ -109,6 +109,15 @@ Ours is one tanh output with MSE, and the 13.7 % ply-limit games are masked out.
 
 ## 5. D. Soft resignation (engine)
 
+**Revised 2026-10-24 (gradual, as KataGo).** The first version below cut all at once at
+the threshold (cheap search, weight 0.1, with an exit margin). KataGo cuts in proportion:
+reduction = ((v - 0.9) / 0.1)^2 over the last 3 values, so 0.95 gives 0.25 and only a dead
+game gets the full cut. With the step version T9's attack trailed T8's (self-play 19.9 % vs
+26.2 % at 4.0-4.5M positions) and lost the direct match at 4.1M 38-58-4, all of it on the
+attacking side. Now: full searches shrink from full_nodes toward cheap_nodes, the weight
+from 1 toward reduced_weight, both by the reduction; no state, no exit margin. The text
+below is the original version.
+
 KataGo never resigns in self-play; when the winrate passes 0.9 for 3 turns it lowers
 the visits and the row weight (`reduceVisits`, `reducedVisitsWeight 0.1`,
 cpp/configs/training/selfplay8b.cfg). Same here, with our two search sizes.

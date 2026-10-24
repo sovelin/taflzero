@@ -45,7 +45,15 @@ def replay_window(total: int, base: int = 250_000, alpha: float = 0.75,
 # surprise of the sample's search and the FLAGS2 bits. Old files have 0 there.
 FEAT_SURPRISE = 78
 FEAT_FLAGS2 = 79
-FEAT2_REDUCED = 1 << 0
+FEAT2_REDUCED = 1 << 0        # legacy all-or-nothing flag (engine 708cd5d): full reduction
+FEAT2_REDUCTION = 1 << 7      # bits 0-6 = round(reduction * 127), KataGo-style graded
+
+
+def reduction_of(flags2: np.ndarray) -> np.ndarray:
+    """Soft-resignation reduction in [0, 1] per sample from the FLAGS2 byte."""
+    f = np.asarray(flags2, dtype=np.uint8)
+    graded = (f & 0x7F).astype(np.float64) / 127.0
+    return np.where(f & FEAT2_REDUCTION, graded, np.where(f & FEAT2_REDUCED, 1.0, 0.0))
 SURPRISE_SCALE = 63.75
 VALUE_SURPRISE_FLOOR = 0.01
 
@@ -81,8 +89,10 @@ def sample_weights(surprise: np.ndarray, root_q: np.ndarray, z: np.ndarray, know
                    unknown_as_draw: bool, full: np.ndarray | None = None) -> np.ndarray:
     """Sampling weight per sample of one game (docs/plan-T9.md §6), mean 1 over the game.
 
-    w = (1 - a - b) + a * ps / mean(ps) + b * vs / mean(vs), times `reduced_weight` on
-    reduced samples; a term whose game mean is 0 contributes its share uniformly.
+    w = (1 - a - b) + a * ps / mean(ps) + b * vs / mean(vs), times
+    1 + reduction * (reduced_weight - 1) (KataGo's weight interpolation; `reduced` is the
+    per-sample reduction in [0, 1], a bool array meaning 0 or 1); a term whose game mean
+    is 0 contributes its share uniformly.
     ps is the policy surprise in nats, vs = min(1, (z - q)^2 / 4) the value surprise
     (z = 0 for an unknown result when `unknown_as_draw`, else no value term); when the
     game's mean vs is below VALUE_SURPRISE_FLOOR the value share b shrinks in proportion.
@@ -113,7 +123,7 @@ def sample_weights(surprise: np.ndarray, root_q: np.ndarray, z: np.ndarray, know
         w += (b_eff * vs / m if m > 0 else 0.0) + (b - b_eff)
     else:
         w += b
-    w = np.where(np.asarray(reduced, dtype=bool), w * reduced_weight, w)
+    w = w * (1.0 + np.asarray(reduced, dtype=np.float64) * (reduced_weight - 1.0))
     total = w.sum()
     return (w * n / total) if total > 0 else np.ones(n)
 
@@ -235,10 +245,10 @@ class ReplayBuffer:
         n = len(chunk)
         if chunk.feat is not None:
             surprise = chunk.feat[:, FEAT_SURPRISE].astype(np.float64) / SURPRISE_SCALE
-            reduced = (chunk.feat[:, FEAT_FLAGS2] & FEAT2_REDUCED) != 0
+            reduced = reduction_of(chunk.feat[:, FEAT_FLAGS2])
         else:
             surprise = np.zeros(n)
-            reduced = np.zeros(n, dtype=bool)
+            reduced = np.zeros(n)
         q = (chunk.root_q.astype(np.float64) / 127.0) if chunk.root_q is not None else np.zeros(n)
         known = bool(chunk.result_known[0]) if n else True
         if self._td_horizons:
@@ -256,7 +266,7 @@ class ReplayBuffer:
         st["n"] += n
         st["full"] += int(full.sum())
         st["ps"] += float(surprise[full].sum())
-        st["reduced"] += int(reduced.sum())
+        st["reduced"] += float(reduced.sum())
         if w is not None and n:
             st["w_max"] = max(st["w_max"], float(w.max()))
 

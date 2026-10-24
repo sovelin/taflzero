@@ -29,9 +29,20 @@ pub const FEAT_LAST_PLY: u8 = 1 << 2;
 /// The game ended by threefold repetition.
 pub const FEAT_THREEFOLD: u8 = 1 << 3;
 
-/// The sample was searched after the game was decided (soft resignation): cheap search,
-/// trained at a reduced weight.
+/// Legacy (engine 708cd5d): the sample was searched in the all-or-nothing soft
+/// resignation state, read as a full reduction.
 pub const FEAT2_REDUCED: u8 = 1 << 0;
+/// Set with the soft-resignation reduction of the sample's search (KataGo's
+/// visitReductionProp, 0..1) in bits 0-6 as round(prop * 127).
+pub const FEAT2_REDUCTION: u8 = 1 << 7;
+
+/// FLAGS2 byte for a reduction proportion in [0, 1]: 0 when there is none.
+pub fn reduction_byte(prop: f32) -> u8 {
+    if !(prop > 0.0) {
+        return 0;
+    }
+    FEAT2_REDUCTION | ((prop.min(1.0) * 127.0).round() as u8).max(1)
+}
 /// KL above this many nats is stored as the maximum.
 pub const SURPRISE_MAX: f32 = 4.0;
 /// Quantization of the surprise byte: 255 / SURPRISE_MAX.
