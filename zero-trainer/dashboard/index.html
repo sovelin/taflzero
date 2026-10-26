@@ -641,6 +641,17 @@ function renderDetail(d) {
     const rows = d.elo.filter(e => e.anchor === a).sort((p, q) => p.step - q.step);
     const x = (e) => e.generated ?? e.step;
     const raw = rows.map(e => ({ x: x(e), y: e.elo }));
+    // An anchor played only now and then (an external one every few million positions) has
+    // too few points for a mean or even a visible line: drawn as marked points, unsmoothed.
+    const sparse = rows.length < Math.max(8, 2 * eloSmoothN);
+    if (sparse) {
+      eloSets.push(ds(alabel(a), S[i % 8], raw, { pointRadius: 4, pointHoverRadius: 6 }));
+      if (eloSmoothN <= 1) {
+        eloSets.push(ds('_' + a + ' lo', S[i % 8], rows.map(e => ({ x: x(e), y: e.ci[0] })), { borderWidth: 0, pointRadius: 0, fill: '+1', backgroundColor: S[i % 8] + '22', _ci: true }));
+        eloSets.push(ds('_' + a + ' hi', S[i % 8], rows.map(e => ({ x: x(e), y: e.ci[1] })), { borderWidth: 0, pointRadius: 0, _ci: true }));
+      }
+      return;
+    }
     if (eloSmoothN > 1) {
       // Smoothed line plus the single checkpoints as faint dots; no CI band (it belongs to
       // one checkpoint, not to the mean).
