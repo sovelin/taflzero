@@ -258,6 +258,38 @@ def match_sides(path: Path) -> dict:
     return out
 
 
+def ladder_detail(run_dir: Path) -> dict:
+    """The checkpoint ladder as Ordo prints it: every rated player (checkpoints, anchors,
+    external anchors) with points and games, and the head-to-head score of every pairing
+    played at the fit's node count, both orders of a pairing folded into one."""
+    lad = read_json(run_dir / "ladder.ratings.json") or {}
+    nodes = lad.get("nodes")
+    pairs: dict[tuple[str, str], list[int]] = {}
+    for m in read_jsonl(run_dir / "ladder.jsonl"):
+        if m.get("nodes") != nodes:
+            continue
+        a, b, w, l, d = m["a"], m["b"], int(m["w"]), int(m["l"]), int(m["d"])
+        if a > b:
+            a, b, w, l = b, a, l, w
+        s = pairs.setdefault((a, b), [0, 0, 0])
+        s[0] += w
+        s[1] += l
+        s[2] += d
+    points: dict[str, list[float]] = {}
+    for (a, b), (w, l, d) in pairs.items():
+        pa, pb = points.setdefault(a, [0.0, 0]), points.setdefault(b, [0.0, 0])
+        pa[0] += w + 0.5 * d
+        pb[0] += l + 0.5 * d
+        pa[1] += w + l + d
+        pb[1] += w + l + d
+    players = []
+    for p in lad.get("players", []):
+        pts, games = points.get(p["name"], [0.0, 0])
+        players.append(dict(p, points=pts, played=games))
+    return {"nodes": nodes, "reference": lad.get("reference"), "updated": lad.get("updated"), "players": players,
+            "pairs": [[a, b, w, l, d] for (a, b), (w, l, d) in pairs.items()]}
+
+
 def run_detail(run_dir: Path) -> dict:
     d = run_status(run_dir)
     d["config"] = read_json(run_dir / "config.json")
@@ -274,6 +306,7 @@ def run_detail(run_dir: Path) -> dict:
     d["nets"] = {"ckpts": [p.stem for p in sorted((run_dir / "ckpt").glob("step*.onnx"), reverse=True)],
                  "anchors": list(anchor_nets(run_dir))}
     d["anchor_labels"] = {name: anchor_label(run_dir, name) for name in anchor_nets(run_dir)}
+    d["retired_anchors"] = (read_json(run_dir / "dashboard.eval.json") or {}).get("retired_anchors", [])
     d["log"] = tail(run_dir / "log.txt")
     d["eval_log"] = tail(run_dir / "eval.log", 15)
     d["paused"] = (run_dir / "PAUSE").exists()
@@ -391,9 +424,12 @@ class Dashboard:
         pids = {"trainer": spawn_detached(cmd, run_dir / "dashboard-trainer.log", REPO), "started": time.time()}
         anchors = [str((REPO / a).resolve()) for a in eval_cfg.get("anchors", [])]
         anchors = [a for a in anchors if Path(a).exists()]
-        if anchors:
+        # "retired_anchors": stems the anchor eval no longer plays (the ladder still does).
+        retired = set(eval_cfg.get("retired_anchors", []))
+        eval_anchors = [a for a in anchors if Path(a).stem not in retired]
+        if eval_anchors:
             ecmd = [sys.executable, str(HERE / "eval_anchor.py"), "--run-dir", str(run_dir), "--engine-bin", str(engine),
-                    "--anchors", ",".join(anchors), "--pairs", str(eval_cfg.get("pairs", 30)),
+                    "--anchors", ",".join(eval_anchors), "--pairs", str(eval_cfg.get("pairs", 30)),
                     "--nodes", str(eval_cfg.get("nodes", 400)), "--workers", str(eval_cfg.get("workers", 2)),
                     "--playout-every", str(eval_cfg.get("playout_every", 5)),
                     "--max-plies", str(eval_cfg.get("max_plies", 400)),
@@ -899,6 +935,415 @@ def match_game(run_dir: Path, engine: Path, gid: str) -> dict:
             "opening": opening}
 
 
+# ─── encirclements (atk_surrounded endings) ─────────────────────────────────
+# What the attackers had locked in when a game ended by encirclement, from its final
+# position: every defender and the king are inside (that is the rule), so the count of
+# encircled pieces is what was left of the defence; around them a ring of attackers,
+# sometimes with attackers inside it too.
+
+ENCIRCLE_CACHE: dict[str, dict] = {}  # "<run>:<game id>" -> encircle_info + game fields
+ENCIRCLE_SCAN_PER_WORKER = 20000      # newest games of one worker looked at for one request
+
+
+def encircle_info(planes: bytes, n: int) -> dict:
+    """Shape of an encirclement in a final position (BitPosition planes): `defenders`
+    (king included) inside, the `region` they can move in (squares reachable from them
+    without crossing an attacker, their own squares included), the `ring` (attackers
+    next to that region) and the attackers `inside` (cut off from every edge square by
+    the region: reached from the edge only through it)."""
+    bit = lambda p, sq: planes[16 * p + sq // 8] >> (sq % 8) & 1  # noqa: E731
+    atk = {sq for sq in range(n * n) if bit(0, sq)}
+    dfn = [sq for sq in range(n * n) if bit(1, sq) or bit(2, sq)]
+    king = any(bit(2, sq) for sq in range(n * n))
+
+    def nbrs(sq):
+        r, c = divmod(sq, n)
+        if r > 0: yield sq - n
+        if r < n - 1: yield sq + n
+        if c > 0: yield sq - 1
+        if c < n - 1: yield sq + 1
+
+    region, stack = set(dfn), list(dfn)
+    while stack:
+        for t in nbrs(stack.pop()):
+            if t not in region and t not in atk:
+                region.add(t)
+                stack.append(t)
+    edge = [sq for sq in range(n * n) if sq // n in (0, n - 1) or sq % n in (0, n - 1)]
+    outside = {sq for sq in edge if sq not in region}
+    stack = list(outside)
+    while stack:
+        for t in nbrs(stack.pop()):
+            if t not in outside and t not in region:
+                outside.add(t)
+                stack.append(t)
+    ring = {a for a in atk if any(t in region for t in nbrs(a))}
+    return {"defenders": len(dfn), "king": king, "attackers": len(atk), "region": len(region),
+            "ring": len(ring), "inside": len(atk - outside),
+            "region_closed": not any(sq in region for sq in edge)}
+
+
+def feat_terminals(feat_path: Path, samples: list[int]) -> list[str]:
+    """feat_terminal for many samples with one open."""
+    out = []
+    try:
+        with open(feat_path, "rb") as f:
+            head = f.read(FEAT_HEADER_BYTES)
+            if len(head) < FEAT_HEADER_BYTES or head[:8] != FEAT_MAGIC:
+                return ["unknown"] * len(samples)
+            rec = int.from_bytes(head[8:12], "little")
+            for s in samples:
+                f.seek(FEAT_HEADER_BYTES + s * rec + FEAT_TERMINAL_OFFSET)
+                b = f.read(1)
+                out.append(FEAT_TERMINAL_CODES.get(b[0], "unknown") if b else "unknown")
+    except OSError:
+        return ["unknown"] * len(samples)
+    return out
+
+
+def last_sample(f, offset: int, nbytes: int, n: int) -> bytes | None:
+    """The raw final sample of a game, read from its tail only (`f` an open .bin): a
+    sample is header + u16 policy_len + 4 bytes per target + tail, so the last one
+    starts where the u16 read at that distance from the end equals its own target count."""
+    hdr = VIEWER_BIT_POSITION_BYTES + legal_mask_bytes(n)
+    take = min(nbytes, hdr + 2 + VIEWER_TAIL_BYTES + 4 * 1024)
+    f.seek(offset + nbytes - take)
+    buf = f.read(take)
+    moves = n * n * 4 * (n - 1)
+    for p in range(0, 1025):
+        size = hdr + 2 + 4 * p + VIEWER_TAIL_BYTES
+        pos = len(buf) - size
+        if pos < 0:
+            break
+        if int.from_bytes(buf[pos + hdr:pos + hdr + 2], "little") != p or buf[pos + 48] not in (0, 1):
+            continue
+        # A u16 inside the targets can equal its distance by chance: the planes must be a
+        # position (no square twice, nothing past the last square, at most one king) and
+        # every target a move of the sample's own legal mask.
+        planes = [int.from_bytes(buf[pos + 16 * i:pos + 16 * i + 16], "little") for i in range(3)]
+        if (any(pl >> (n * n) for pl in planes) or planes[0] & planes[1] or planes[0] & planes[2]
+                or planes[1] & planes[2] or planes[2].bit_count() > 1):
+            continue
+        mask = int.from_bytes(buf[pos + VIEWER_BIT_POSITION_BYTES:pos + hdr], "little")
+        mine = planes[0] if buf[pos + 48] == 0 else planes[1] | planes[2]
+        froms = 0
+        m = mask
+        while m:
+            low = m & -m
+            froms |= 1 << ((low.bit_length() - 1) // (4 * (n - 1)))
+            m ^= low
+        if not mask or mask >> moves or froms & ~mine:
+            continue
+        ok = True
+        for i in range(p):
+            mi = int.from_bytes(buf[pos + hdr + 2 + 4 * i:pos + hdr + 4 + 4 * i], "little")
+            if mi >= moves or not buf[pos + VIEWER_BIT_POSITION_BYTES + mi // 8] >> (mi % 8) & 1:
+                ok = False
+                break
+        if ok:
+            return buf[pos:]
+    return None
+
+
+def encircling_move(raw: bytes, n: int) -> bytes | None:
+    """The position after the attackers' last move of a game won by encirclement.
+
+    A self-play file stores the position before each move, so its last sample is one
+    attacker move short of the ring. That move is not stored (it was drawn from the
+    search's visits), so this tries the searched moves, most visited first, then every
+    other attacker move, and takes the first that leaves no defender a path to the edge.
+    Captures of defenders next to the landing square are applied (custodial, against an
+    attacker, a corner or the empty throne; shield walls are not), since they change the
+    count of pieces encircled but never the region."""
+    planes = bytearray(raw[:48])
+    if raw[48] != 0:
+        return None
+    bit = lambda p, sq: planes[16 * p + sq // 8] >> (sq % 8) & 1  # noqa: E731
+    occupied = lambda sq: bit(0, sq) or bit(1, sq) or bit(2, sq)  # noqa: E731
+    corners = {0, n - 1, n * (n - 1), n * n - 1}
+    throne = n * n // 2
+    seen, order = set(), []
+    for mi, _v in sorted(sample_fields(raw, n)["policy"], key=lambda e: -e[1]):
+        m = policy_move(mi, n)
+        order.append((m["from"], m["to"]))
+    for frm in range(n * n):
+        if not bit(0, frm):
+            continue
+        r, c = divmod(frm, n)
+        for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            rr, cc = r + dr, c + dc
+            while 0 <= rr < n and 0 <= cc < n and not occupied(rr * n + cc):
+                to = rr * n + cc
+                if to not in corners and to != throne:
+                    order.append((frm, to))
+                rr, cc = rr + dr, cc + dc
+
+    def put(bp, p, sq, on):
+        if on:
+            bp[16 * p + sq // 8] |= 1 << (sq % 8)
+        else:
+            bp[16 * p + sq // 8] &= ~(1 << (sq % 8)) & 0xFF
+
+    for frm, to in order:
+        if (frm, to) in seen or not bit(0, frm) or occupied(to):
+            continue
+        seen.add((frm, to))
+        bp = bytearray(planes)
+        put(bp, 0, frm, False)
+        put(bp, 0, to, True)
+        r, c = divmod(to, n)
+        for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            r1, c1, r2, c2 = r + dr, c + dc, r + 2 * dr, c + 2 * dc
+            if not (0 <= r2 < n and 0 <= c2 < n):
+                continue
+            mid, far = r1 * n + c1, r2 * n + c2
+            hostile = (bp[far // 8] >> (far % 8) & 1) or far in corners or (
+                far == throne and not (bp[32 + far // 8] >> (far % 8) & 1))
+            if bp[16 + mid // 8] >> (mid % 8) & 1 and hostile:
+                put(bp, 1, mid, False)
+        info = encircle_info(bytes(bp), n)
+        if info["region_closed"]:
+            return bytes(bp)
+    return None
+
+
+def encircle_selfplay(run_dir: Path, count: int) -> list[dict]:
+    """The newest `count` self-play games that ended by encirclement, over all workers."""
+    n = run_geometry(run_dir)[0]
+    data = run_dir / "data"
+    workers = sorted(int(p.stem[6:]) for p in data.glob("worker*.bin") if p.stem[6:].isdigit())
+    per = max(1, -(-count // max(1, len(workers))))
+    out = []
+    for w in workers:
+        idx = game_index(run_dir, w)
+        idx.refresh()
+        with idx.lock:
+            games = idx.games[-ENCIRCLE_SCAN_PER_WORKER:]
+        atk = [g for g in reversed(games) if g[4] == "atk"]
+        bin_path = data / f"worker{w}.bin"
+        feat = bin_path.with_suffix(".feat")
+        found = 0
+        with open(bin_path, "rb") as f:
+            for i in range(0, len(atk), 500):
+                chunk = atk[i:i + 500]
+                for g, reason in zip(chunk, feat_terminals(feat, [g[2] + g[1] - 1 for g in chunk])):
+                    if reason != "atk_surrounded":
+                        continue
+                    offset, samples, first, nbytes, _ = g
+                    key = f"{run_dir.name}:{w}:{first}"
+                    info = ENCIRCLE_CACHE.get(key)
+                    if info is None:
+                        raw = last_sample(f, offset, nbytes, n)
+                        planes = encircling_move(raw, n) if raw else None
+                        if planes is None:
+                            continue
+                        info = dict(encircle_info(planes, n), id=f"{w}:{first}", plies=samples,
+                                    pieces=board_pieces(planes, n), sample=first)
+                        ENCIRCLE_CACHE[key] = info
+                    out.append(info)
+                    found += 1
+                    if found >= per:
+                        break
+                if found >= per:
+                    break
+    return sorted(out, key=lambda e: -e["sample"])
+
+
+# The whole run: every encirclement of a worker file, found by a background scan of its
+# game index and kept in data/encircle<w>.json (one row per encirclement, the final
+# position as hex), extended from where it stopped like the game index itself.
+ENCIRCLE_SCAN_VERSION = 1
+ENCIRCLE_BUCKET = 500_000  # positions per point of the whole-run chart
+ENCIRCLE_COLS = ["sample", "plies", "defenders", "king", "region", "ring", "inside", "attackers", "planes"]
+
+
+class EncircleScan:
+    def __init__(self, run_dir: Path, worker: int):
+        self.run_dir, self.worker = run_dir, worker
+        self.n = run_geometry(run_dir)[0]
+        self.path = run_dir / "data" / f"encircle{worker}.json"
+        self.lock = threading.Lock()
+        self.thread: threading.Thread | None = None
+        self.progress: float | None = None
+        self.error: str | None = None
+        self.backlog = 0
+        self.done, self.rows = 0, []
+        st = read_json(self.path)
+        if st and st.get("version") == ENCIRCLE_SCAN_VERSION:
+            self.done, self.rows = int(st["games_done"]), st["rows"]
+
+    def _save(self) -> None:
+        with self.lock:
+            state = {"version": ENCIRCLE_SCAN_VERSION, "columns": ENCIRCLE_COLS, "games_done": self.done,
+                     "rows": list(self.rows)}
+        tmp = self.path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(state, separators=(",", ":")), encoding="utf-8")
+        os.replace(tmp, self.path)
+
+    def _run(self, upto: int) -> None:
+        try:
+            idx = game_index(self.run_dir, self.worker)
+            bin_path = self.run_dir / "data" / f"worker{self.worker}.bin"
+            feat = bin_path.with_suffix(".feat")
+            start, last_save = self.done, time.time()
+            with open(bin_path, "rb") as f:
+                while self.done < upto:
+                    with idx.lock:
+                        chunk = idx.games[self.done:min(upto, self.done + 5000)]
+                    atk = [g for g in chunk if g[4] == "atk"]
+                    rows = []
+                    for g, reason in zip(atk, feat_terminals(feat, [g[2] + g[1] - 1 for g in atk])):
+                        if reason != "atk_surrounded":
+                            continue
+                        raw = last_sample(f, g[0], g[3], self.n)
+                        planes = encircling_move(raw, self.n) if raw else None
+                        if planes is None:
+                            continue
+                        e = encircle_info(planes, self.n)
+                        rows.append([g[2], g[1], e["defenders"], int(e["king"]), e["region"], e["ring"],
+                                     e["inside"], e["attackers"], planes.hex()])
+                    with self.lock:
+                        self.rows.extend(rows)
+                        self.done += len(chunk)
+                        self.progress = (self.done - start) / max(1, upto - start)
+                    if time.time() - last_save > GAME_INDEX_SAVE_SECONDS:
+                        self._save()
+                        last_save = time.time()
+            self._save()
+        except Exception as e:  # reported with the result; the next request retries
+            self.error = f"{type(e).__name__}: {e}"
+        finally:
+            with self.lock:
+                self.progress, self.thread = None, None
+
+    def refresh(self) -> float | None:
+        """Starts a scan of the games indexed since the last one; returns the fraction
+        done while a scan runs, None when the rows are current."""
+        with self.lock:
+            if self.thread is not None:
+                return self.progress if self.backlog > 2000 else None
+        idx = game_index(self.run_dir, self.worker)
+        if idx.refresh() is not None:
+            return 0.0  # the game index itself is still being built
+        with idx.lock:
+            total = len(idx.games)
+        backlog = total - self.done
+        if backlog < 1:
+            return None
+        with self.lock:
+            self.error, self.progress, self.backlog = None, 0.0, backlog
+            self.thread = threading.Thread(target=self._run, args=(total,), daemon=True)
+            self.thread.start()
+        # The games of the last few minutes are caught up in a second or two: only a real
+        # backlog is reported (and polled for) as a scan in progress.
+        return 0.0 if backlog > 2000 else None
+
+
+ENCIRCLE_SCANS: dict[Path, EncircleScan] = {}
+
+
+def encircle_whole_run(run_dir: Path, k: str) -> dict:
+    """Every encirclement of the run: per-bucket counts by pieces encircled (and all games
+    per bucket, for shares), per-count averages, and up to 60 example boards: the largest
+    encirclements, or with `k` set those of that many pieces spread over the run."""
+    data = run_dir / "data"
+    workers = sorted(int(p.stem[6:]) for p in data.glob("worker*.bin") if p.stem[6:].isdigit())
+    rows, games_x, progress, errors, done, total = [], [], [], [], 0, 0
+    for w in workers:
+        with GAME_INDEXES_LOCK:
+            scan = ENCIRCLE_SCANS.get(data / f"worker{w}.bin")
+            if scan is None:
+                scan = ENCIRCLE_SCANS[data / f"worker{w}.bin"] = EncircleScan(run_dir, w)
+        p = scan.refresh()
+        if p is not None:
+            progress.append(p)
+        if scan.error:
+            errors.append(scan.error)
+        idx = game_index(run_dir, w)
+        with scan.lock:
+            rows += [(w, r) for r in scan.rows]
+            d = scan.done
+        with idx.lock:
+            games_x += [g[2] for g in idx.games[:d]]
+            total += len(idx.games)
+        done += d
+    nb = (max(games_x) // ENCIRCLE_BUCKET + 1) if games_x else 0
+    games = [0] * nb
+    for x in games_x:
+        games[x // ENCIRCLE_BUCKET] += 1
+    by_k: dict[int, list[int]] = {}
+    stats: dict[int, dict] = {}
+    for _w, r in rows:
+        kk = r[2]
+        by_k.setdefault(kk, [0] * nb)[r[0] // ENCIRCLE_BUCKET] += 1
+        s = stats.setdefault(kk, {"games": 0, "region": 0, "ring": 0, "inside": 0, "attackers": 0, "plies": 0})
+        s["games"] += 1
+        for c in ("region", "ring", "inside", "attackers", "plies"):
+            s[c] += r[ENCIRCLE_COLS.index(c)]
+    for s in stats.values():
+        for c in ("region", "ring", "inside", "attackers", "plies"):
+            s[c] = round(s[c] / s["games"], 2)
+    if k:
+        pick = sorted((x for x in rows if x[1][2] == int(k)), key=lambda x: x[1][0])
+        if len(pick) > 60:
+            step = (len(pick) - 1) / 59
+            pick = [pick[round(i * step)] for i in range(60)]
+    else:
+        pick = sorted(rows, key=lambda x: (-x[1][2], -x[1][0]))[:60]
+    examples = []
+    for w, r in pick:
+        e = dict(zip(ENCIRCLE_COLS, r))
+        planes = bytes.fromhex(e.pop("planes"))
+        e.update(id=f"{w}:{e['sample']}", king=bool(e["king"]), pieces=board_pieces(planes, run_geometry(run_dir)[0]))
+        examples.append(e)
+    res = {"source": "selfplay", "scope": "all", "bucket": ENCIRCLE_BUCKET, "games_per_bucket": games,
+           "by_k": {str(kk): v for kk, v in sorted(by_k.items())}, "stats": {str(kk): v for kk, v in sorted(stats.items())},
+           "max_defenders": max(by_k) if by_k else None, "encirclements": len(rows), "games_done": done,
+           "games_total": total, "examples": examples, "k": k or None}
+    if progress:
+        res["scanning"] = round(min(progress), 4)
+    if errors:
+        res["scan_error"] = errors[0]
+    return res
+
+
+def encircle_matches(run_dir: Path, engine: Path, count: int) -> list[dict]:
+    """The newest `count` anchor-match games that ended by encirclement, either side
+    encircling (`by`: "ckpt" when the checkpoint attacked, "anchor" otherwise)."""
+    n, variant = run_geometry(run_dir)
+    found = []
+    for line, m in enumerate(read_jsonl(run_dir / "eval.games.jsonl")):
+        for i, g in enumerate(m.get("games", [])):
+            if g.get("reason") == "atk_surrounded" and g.get("moves"):
+                found.append((line, i, m, g))
+    out = []
+    for line, i, m, g in reversed(found[-count:]):
+        gid = f"m:{line}:{i}"
+        key = f"{run_dir.name}:{gid}"
+        info = ENCIRCLE_CACHE.get(key)
+        if info is None:
+            try:
+                positions = replay_moves(engine, variant, g["moves"])
+            except (OSError, ValueError, subprocess.TimeoutExpired):
+                continue
+            if not positions:
+                continue
+            ck, _, anchor = str(m.get("key", "")).partition("|")
+            info = dict(encircle_info(positions[-1][:48], n), id=gid, plies=g.get("plies"),
+                        pieces=board_pieces(positions[-1][:48], n), ckpt=ck, anchor=anchor,
+                        by="ckpt" if g.get("a_side") == "atk" else "anchor", time=m.get("time"))
+            ENCIRCLE_CACHE[key] = info
+        out.append(info)
+    return out
+
+
+def encirclements(run_dir: Path, engine: Path, source: str, count: int) -> dict:
+    games = encircle_matches(run_dir, engine, count) if source == "match" else encircle_selfplay(run_dir, count)
+    if len(ENCIRCLE_CACHE) > 20000:
+        ENCIRCLE_CACHE.clear()
+    return {"source": source, "games": games}
+
+
 def algebraic_move(mv: str, n: int) -> dict | None:
     """'d1d3' -> {from, to} squares (file letter + rank number, rank 1 = row 0)."""
     m = re.fullmatch(r"([a-z])(\d+)([a-z])(\d+)", mv)
@@ -964,6 +1409,28 @@ def make_handler(dash: Dashboard):
                     return
                 with LOCK:
                     self._json(run_detail(run_dir))
+            elif url.path == "/api/ladder":
+                run_dir = dash.runs_dir / q.get("name", [""])[0]
+                if not q.get("name", [""])[0] or not run_dir.is_dir():
+                    self._json({"error": "no such run"}, 404)
+                    return
+                self._json(ladder_detail(run_dir))
+            elif url.path == "/api/encircle":
+                # Not under LOCK, like the game viewer: it reads worker files and replays games.
+                name = q.get("name", [""])[0]
+                run_dir = dash.runs_dir / name
+                if not name or not run_dir.is_dir():
+                    self._json({"error": "no such run"}, 404)
+                    return
+                try:
+                    if q.get("scope", [""])[0] == "all":
+                        res = encircle_whole_run(run_dir, q.get("k", [""])[0])
+                    else:
+                        n = max(1, min(2000, int(q.get("n", ["300"])[0])))
+                        res = encirclements(run_dir, dash.engine_bin, q.get("source", ["selfplay"])[0], n)
+                except (ValueError, OSError) as e:
+                    res = {"error": f"{type(e).__name__}: {e}"}
+                self._json(res)
             elif url.path in ("/api/games", "/api/game"):
                 # Game viewer. Not under LOCK: the first index of a big file runs in its
                 # own thread and these requests must not hold up the page's refresh.

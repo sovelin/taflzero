@@ -147,6 +147,15 @@ def main() -> int:
         log.write(line + "\n")
         log.flush()
 
+    def external() -> set[str]:
+        """Opponents another tool plays against this run's checkpoints and appends to
+        ladder.jsonl (an engine this side-car cannot run): rated as anchors, never
+        scheduled here. Listed in ladder.external.json as {"anchors": [name, ...]}."""
+        try:
+            return set(json.loads((run_dir / "ladder.external.json").read_text(encoding="utf-8")).get("anchors", []))
+        except (OSError, ValueError):
+            return set()
+
     def write_ratings(matches: list[dict]) -> None:
         mine = [m for m in matches if m.get("nodes") == args.nodes]
         if not mine:
@@ -155,9 +164,10 @@ def main() -> int:
         reference = next((a for a in anchors if a in names), None) or min(names, key=lambda n: step_of(Path(n)))
         fit = fit_ratings(mine, reference)
         games = {n: sum(m["w"] + m["l"] + m["d"] for m in mine if n in (m["a"], m["b"])) for n in fit}
+        ext = external()
         players = []
         for n, (elo, se) in fit.items():
-            is_anchor = n in anchors
+            is_anchor = n in anchors or n in ext
             step = None if is_anchor else step_of(Path(n))
             players.append({"name": n, "anchor": is_anchor, "step": step,
                             "generated": None if is_anchor else generated_at(run_dir, step),
@@ -174,7 +184,10 @@ def main() -> int:
         if (run_dir / "LADDER_STOP").exists() or stopped_for_good(run_dir):
             say("stopping")
             break
-        matches = [m for m in read_matches(matches_path) if m.get("nodes") == args.nodes]
+        # Matches against external opponents neither count as played nor make anyone rated here.
+        ext = external()
+        matches = [m for m in read_matches(matches_path) if m.get("nodes") == args.nodes
+                   and m["a"] not in ext and m["b"] not in ext]
         ckpts = [c.stem for c in sorted(ckpt_dir.glob("step*.onnx"), key=step_of)] if ckpt_dir.exists() else []
         rated = {m["a"] for m in matches} | {m["b"] for m in matches} | set(anchors)
         if not rated:
