@@ -106,6 +106,11 @@ impl Engine {
         Ok(())
     }
 
+    /// Input planes per square of the loaded net (11 for nets without `planes` metadata).
+    pub fn nn_num_planes(&self) -> usize {
+        self.nn.planes().len()
+    }
+
     pub fn set_multi_pv(&mut self, multi_pv: usize) {
         self.multi_pv = multi_pv;
     }

@@ -724,6 +724,13 @@ impl WasmClient {
             .map_err(|e| JsValue::from_str(&e))
     }
 
+    /// Input planes per square of the net given to `set_nn`, read from its `planes`
+    /// metadata: 11 for older nets. The NN worker shapes its input tensor
+    /// [batch, num_planes, side, side] and the input buffer with it.
+    pub fn num_planes(&self) -> usize {
+        self.controller.engine().nn_num_planes()
+    }
+
     /// Register a SharedArrayBuffer-backed Int32Array as the stop signal.
     /// The main thread can stop an ongoing `go infinite` by calling:
     ///   `Atomics.store(buffer, 0, 1)`
@@ -736,7 +743,7 @@ impl WasmClient {
     /// by the onnxruntime-web worker.  Call once after construction, before any
     /// search.  See `nn_wasm::set_nn_buffers` for the buffer layout.
     ///   control: Int32Array [REQ, RESP, BATCH]
-    ///   input:   Float32Array  max_batch * 1331   (SAMPLE_SIZE)
+    ///   input:   Float32Array  max_batch * num_planes() * side * side
     ///   output:  Float32Array  max_batch * 4841   (POLICY_SIZE then value)
     pub fn set_nn_buffers(
         &mut self,

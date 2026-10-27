@@ -491,6 +491,210 @@ fn fill_base_planes(input: &mut [f32], pos: &BitPosition, geom: &Precomputed) {
     }
 }
 
+// ─── ONNX bytes without a runtime ───────────────────────────────────────────
+//
+// The browser build runs the net in onnxruntime-web, outside Rust, so the plane set
+// comes from the model bytes themselves: a few fields of the ONNX protobuf, read here.
+
+/// Protobuf fields of one message: (field number, wire type, payload). A varint or
+/// fixed payload is returned as its raw bytes. `None` on malformed input.
+fn proto_fields(mut buf: &[u8]) -> Option<Vec<(u64, u8, &[u8])>> {
+    fn varint(buf: &mut &[u8]) -> Option<u64> {
+        let mut v = 0u64;
+        for shift in (0..64).step_by(7) {
+            let (&b, rest) = buf.split_first()?;
+            *buf = rest;
+            v |= u64::from(b & 0x7f) << shift;
+            if b & 0x80 == 0 {
+                return Some(v);
+            }
+        }
+        None
+    }
+    let mut out = Vec::new();
+    while !buf.is_empty() {
+        let key = varint(&mut buf)?;
+        let (field, wire) = (key >> 3, (key & 7) as u8);
+        let len = match wire {
+            0 => {
+                let before = buf;
+                varint(&mut buf)?;
+                out.push((field, wire, &before[..before.len() - buf.len()]));
+                continue;
+            }
+            1 => 8,
+            2 => usize::try_from(varint(&mut buf)?).ok()?,
+            5 => 4,
+            _ => return None,
+        };
+        if len > buf.len() {
+            return None;
+        }
+        let (payload, rest) = buf.split_at(len);
+        out.push((field, wire, payload));
+        buf = rest;
+    }
+    Some(out)
+}
+
+fn proto_varint(payload: &[u8]) -> u64 {
+    payload
+        .iter()
+        .enumerate()
+        .fold(0, |v, (i, b)| v | u64::from(b & 0x7f) << (7 * i))
+}
+
+/// Submessages with this field number.
+fn proto_messages<'a>(fields: &[(u64, u8, &'a [u8])], number: u64) -> Vec<&'a [u8]> {
+    fields
+        .iter()
+        .filter(|(f, w, _)| *f == number && *w == 2)
+        .map(|(_, _, p)| *p)
+        .collect()
+}
+
+/// `metadata_props[key]` of an ONNX ModelProto (field 14: key 1, value 2).
+pub fn onnx_metadata(model: &[u8], key: &str) -> Result<Option<String>, String> {
+    let fields = proto_fields(model).ok_or("not an ONNX model")?;
+    for entry in proto_messages(&fields, 14) {
+        let kv = proto_fields(entry).ok_or("bad ONNX metadata entry")?;
+        let text = |n| {
+            proto_messages(&kv, n)
+                .first()
+                .map(|b| String::from_utf8_lossy(b).into_owned())
+        };
+        if text(1).as_deref() == Some(key) {
+            return Ok(Some(text(2).unwrap_or_default()));
+        }
+    }
+    Ok(None)
+}
+
+/// Channel count of the first graph input (graph 7 → input 11 → type 2 → tensor_type 1
+/// → shape 2 → second dim 1 → dim_value 1), when the model fixes it.
+pub fn onnx_input_channels(model: &[u8]) -> Option<usize> {
+    let model = proto_fields(model)?;
+    let graph = proto_fields(proto_messages(&model, 7).first()?)?;
+    let input = proto_fields(proto_messages(&graph, 11).first()?)?;
+    let ty = proto_fields(proto_messages(&input, 2).first()?)?;
+    let tensor = proto_fields(proto_messages(&ty, 1).first()?)?;
+    let shape = proto_fields(proto_messages(&tensor, 2).first()?)?;
+    let dim = proto_fields(proto_messages(&shape, 1).get(1)?)?;
+    let (_, _, v) = dim.iter().find(|(f, w, _)| *f == 1 && *w == 0)?;
+    usize::try_from(proto_varint(v)).ok().filter(|&c| c >= 1)
+}
+
+/// The plane set of a model given as bytes, by the rules the native loader applies to
+/// a session: the `planes` metadata, else `base` for an 11-channel (or unknown) input.
+pub fn onnx_planes(model: &[u8], what: &str) -> Result<PlaneSet, String> {
+    let channels = onnx_input_channels(model);
+    let planes = match onnx_metadata(model, "planes").map_err(|e| format!("{what}: {e}"))? {
+        Some(spec) => PlaneSet::parse(&spec)
+            .map_err(|e| format!("{what}: bad `planes` metadata {spec:?}: {e}"))?,
+        None => match channels {
+            Some(11) | None => PlaneSet::base(),
+            Some(c) => {
+                return Err(format!(
+                    "{what}: the net reads {c} input planes but has no `planes` metadata; \
+                     only 11-plane nets may omit it"
+                ));
+            }
+        },
+    };
+    if let Some(c) = channels
+        && c != planes.len()
+    {
+        return Err(format!(
+            "{what}: `planes` {planes} is {} channels but the net's input has {c}",
+            planes.len()
+        ));
+    }
+    Ok(planes)
+}
+
+#[cfg(test)]
+mod onnx_bytes_tests {
+    use super::*;
+
+    fn field(number: u64, payload: &[u8]) -> Vec<u8> {
+        let mut out = vec![(number << 3 | 2) as u8, payload.len() as u8];
+        out.extend_from_slice(payload);
+        out
+    }
+
+    fn varint_field(number: u64, v: u8) -> Vec<u8> {
+        vec![(number << 3) as u8, v]
+    }
+
+    /// A ModelProto with an ir_version, one graph input [N, channels, 11, 11] and,
+    /// optionally, `planes` metadata.
+    fn model(channels: u8, planes: Option<&str>) -> Vec<u8> {
+        let dims: Vec<u8> = [
+            field(2, b"batch"),
+            varint_field(1, channels),
+            varint_field(1, 11),
+            varint_field(1, 11),
+        ]
+        .iter()
+        .flat_map(|d| field(1, d))
+        .collect();
+        let tensor = [varint_field(1, 1), field(2, &dims)].concat();
+        let input = [field(1, b"input"), field(2, &field(1, &tensor))].concat();
+        let graph = [field(1, b"main"), field(11, &input)].concat();
+        let mut m = [varint_field(1, 8), field(7, &graph)].concat();
+        m.extend(field(14, &[field(1, b"other"), field(2, b"x")].concat()));
+        if let Some(p) = planes {
+            m.extend(field(
+                14,
+                &[field(1, b"planes"), field(2, p.as_bytes())].concat(),
+            ));
+        }
+        m
+    }
+
+    #[test]
+    fn reads_planes_and_channels() {
+        let spec = "base,last2,rep_dst,king12,ply,cap,mob";
+        let m = model(24, Some(spec));
+        assert_eq!(onnx_metadata(&m, "planes").unwrap().as_deref(), Some(spec));
+        assert_eq!(onnx_input_channels(&m), Some(24));
+        let ps = onnx_planes(&m, "test").unwrap();
+        assert_eq!(ps, PlaneSet::parse(spec).unwrap());
+        assert_eq!(ps.len(), 24);
+    }
+
+    #[test]
+    fn eleven_channels_without_metadata_is_base() {
+        let m = model(11, None);
+        assert_eq!(onnx_metadata(&m, "planes").unwrap(), None);
+        assert_eq!(onnx_planes(&m, "test").unwrap(), PlaneSet::base());
+    }
+
+    #[test]
+    fn mismatches_are_errors() {
+        assert!(onnx_planes(&model(24, None), "test").is_err());
+        assert!(onnx_planes(&model(11, Some("base,last2")), "test").is_err());
+        assert!(onnx_planes(b"\x0a\xff", "test").is_err());
+    }
+
+    /// The released nets in the repo: no metadata, 11 channels.
+    #[test]
+    fn repo_nets_read_as_base() {
+        for path in ["copenhagen11x11.onnx", "tablut9x9.onnx"] {
+            let bytes = std::fs::read(path).unwrap();
+            if bytes.starts_with(b"version https://git-lfs") {
+                continue; // LFS pointer: `git lfs pull` not run
+            }
+            assert_eq!(onnx_input_channels(&bytes), Some(11), "{path}");
+            assert_eq!(
+                onnx_planes(&bytes, path).unwrap(),
+                PlaneSet::base(),
+                "{path}"
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

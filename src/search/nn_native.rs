@@ -487,4 +487,24 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    /// The byte reader of the browser build gives the plane set the session gives, on the
+    /// repo's nets and on any extra nets listed in TAFL_ONNX_CHECK (`;`-separated paths).
+    #[test]
+    fn onnx_bytes_planes_match_the_session() {
+        let mut paths: Vec<String> = vec!["copenhagen11x11.onnx".into(), "tablut9x9.onnx".into()];
+        if let Ok(extra) = std::env::var("TAFL_ONNX_CHECK") {
+            paths.extend(extra.split(';').filter(|p| !p.is_empty()).map(String::from));
+        }
+        for path in paths {
+            let bytes = std::fs::read(&path).unwrap();
+            if bytes.starts_with(b"version https://git-lfs") {
+                continue;
+            }
+            let nn = NeuralNet::from_bytes(&bytes, 11, 1).unwrap();
+            let from_bytes = crate::search::nn::onnx_planes(&bytes, &path).unwrap();
+            assert_eq!(&from_bytes, nn.planes(), "{path}");
+            println!("{path}: {} ({} planes)", from_bytes, from_bytes.len());
+        }
+    }
 }

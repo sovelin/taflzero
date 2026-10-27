@@ -13,7 +13,7 @@
 //! bumps REQ + notifies, then `Atomics.wait`s (this runs in a Web Worker, so
 //! blocking is allowed) until the NN worker sets RESP and notifies back.
 
-use super::nn_common::{NnInput, NnOutput, PlaneSet, build_input_data};
+use super::nn_common::{NnInput, NnOutput, PlaneSet, build_input_data, onnx_planes};
 use crate::board::Precomputed;
 use crate::get_policy_size;
 use js_sys::{Atomics, Float32Array, Int32Array};
@@ -43,9 +43,8 @@ pub fn set_nn_buffers(control: Int32Array, input: Float32Array, output: Float32A
 
 pub struct NeuralNet {
     board_size: usize,
-    /// No model is loaded in Rust here (the JS worker owns it), so there is no
-    /// metadata to read: the net is taken to read the 11 base planes unless the page
-    /// says otherwise with `set_planes`.
+    /// No model runs in Rust here (the JS worker owns it): the plane set is read from
+    /// the model bytes given to `from_bytes`, the 11 base planes until then.
     planes: PlaneSet,
 }
 
@@ -59,8 +58,14 @@ impl NeuralNet {
         })
     }
 
-    pub fn from_bytes(_data: &[u8], board_size: usize, _batch_size: usize) -> Result<Self, String> {
-        Self::new("", board_size, 0)
+    /// The plane set comes from the model's `planes` metadata (as the native loader
+    /// reads it), so the input the engine builds matches the net the JS worker runs.
+    pub fn from_bytes(data: &[u8], board_size: usize, _batch_size: usize) -> Result<Self, String> {
+        let mut nn = Self::new("", board_size, 0)?;
+        if !data.is_empty() {
+            nn.planes = onnx_planes(data, "neural net from bytes")?;
+        }
+        Ok(nn)
     }
 
     /// The plane set of the net the JS worker runs (its ONNX `planes` metadata).
