@@ -66,6 +66,7 @@ export const timer_elapsed_ms: (a: number) => bigint;
 export const timer_new: () => number;
 export const timer_start: (a: number) => void;
 export const wasmclient_new: (a: number, b: number) => number;
+export const wasmclient_num_planes: (a: number) => number;
 export const wasmclient_print_board: (a: number) => void;
 export const wasmclient_run: (a: number, b: number, c: number) => void;
 export const wasmclient_set_nn: (a: number, b: number, c: number, d: number) => void;
