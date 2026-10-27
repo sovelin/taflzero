@@ -106,7 +106,9 @@ label { display: block; font-size: 12px; color: var(--ink-2); margin: 8px 0 2px;
 .lad tr.pl:hover td, .lad tr.pl.sel td { background: var(--surface); }
 .lad tr.pl.sel td { font-weight: 600; }
 .lad td.anc { color: var(--s4); }
-.lad .h2hhead { padding: 10px 12px; font-family: ui-monospace, Consolas, monospace; font-size: 13px; border-bottom: 1px solid var(--line); }
+.ladday { border: 1px solid var(--line); border-radius: 8px; margin-bottom: 12px; overflow-x: auto; }
+.ladday tr.partial td { color: var(--ink-3); }
+.lad .h2hhead, .ladday .h2hhead { padding: 10px 12px; font-family: ui-monospace, Consolas, monospace; font-size: 13px; border-bottom: 1px solid var(--line); }
 .enc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 12px; }
 .enc-card { border: 1px solid var(--line); border-radius: 8px; padding: 6px; cursor: pointer; background: var(--surface); }
 .enc-card:hover { border-color: var(--ink-3); }
@@ -262,6 +264,13 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; }
       <select id="ladSort"><option value="rating">by rating</option><option value="step">by step</option></select>
       <span class="sub" id="ladSub"></span><span class="spacer"></span><button id="ladClose">Close</button></div>
     <div class="sub" style="margin-bottom:8px">As Ordo prints a rating list: every checkpoint and anchor on the ladder's one scale (the reference pinned at 0), error = 95% interval, points and games from the ladder's own matches. Click a player for its head-to-head: games (+ won, = drawn, − lost), score, Diff = rating difference, SD = its standard error (from the two players' errors, covariance ignored), CFS = confidence that the player is the stronger one.</div>
+    <div class="ladday">
+      <div class="h2hhead" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-family:inherit">Gain per day
+        <select id="ladDayWin" style="width:auto"><option value="10">mean of 10</option><option value="20">mean of 20</option><option value="40" selected>mean of 40</option><option value="80">mean of 80</option></select>
+        <select id="ladDayW" style="width:auto"><option value="mean">plain mean</option><option value="ivw">weighted by 1/se²</option></select>
+        <span class="sub" id="ladDaySub"></span></div>
+      <table><thead><tr><th>day</th><th>until</th><th class="num">ckpts</th><th class="num">positions</th><th class="num">games</th><th class="num">rating</th><th class="num">±</th><th class="num">gain</th><th class="num">per 10M pos</th><th class="num">per 100k games</th></tr></thead><tbody id="ladDays"></tbody></table>
+    </div>
     <div class="lad">
       <div class="pane"><table><thead><tr><th class="num">#</th><th>player</th><th class="num">positions</th><th class="num">rating</th><th class="num">error</th><th class="num">points</th><th class="num">played</th><th class="num">%</th></tr></thead><tbody id="ladRows"></tbody></table></div>
       <div class="pane"><div class="h2hhead" id="ladHead">pick a player on the left</div><table><thead><tr><th>vs.</th><th class="num">games</th><th class="num">+</th><th class="num">=</th><th class="num">−</th><th class="num">%</th><th class="num">Diff</th><th class="num">SD</th><th class="num">CFS</th></tr></thead><tbody id="ladH2h"></tbody></table></div>
@@ -1583,6 +1592,7 @@ async function ladLoad() {
   const r = await api(`/api/ladder?name=${encodeURIComponent(selected)}`);
   if (r.error) { $('ladSub').textContent = r.error; return; }
   lad.data = r;
+  ladDays();
   if (!lad.pick || !r.players.some(p => p.name === lad.pick)) {
     const ck = r.players.filter(p => !p.anchor);
     lad.pick = ck.length ? ck.reduce((a, b) => (b.step > a.step ? b : a)).name : null;
@@ -1637,6 +1647,47 @@ $('ladOpen').onclick = () => { ladShow(); routeWrite(); };
 $('ladClose').onclick = ladHide;
 $('ladFind').oninput = ladRender;
 $('ladSort').onchange = ladRender;
+// Rating of the run at the end of each day since its first checkpoint: the mean of the
+// checkpoints around the last one made by then (centred window, cut short at the ends).
+function ladDays() {
+  const r = lad.data;
+  if (!r) return;
+  const W = +$('ladDayWin').value, ivw = $('ladDayW').value === 'ivw';
+  const ck = r.players.filter(p => !p.anchor && p.time != null).sort((a, b) => a.step - b.step);
+  if (ck.length < 2) { $('ladDays').innerHTML = '<tr><td colspan="10" class="why">no checkpoints with times</td></tr>'; return; }
+  const at = (i) => {
+    const lo = Math.max(0, i - W / 2 + 1), hi = Math.min(ck.length, i + W / 2 + 1), win = ck.slice(lo, hi);
+    let e, se;
+    if (ivw) {
+      const w = win.map(p => 1 / Math.max(p.se, 1) ** 2), sw = w.reduce((a, b) => a + b, 0);
+      e = win.reduce((a, p, j) => a + w[j] * p.elo, 0) / sw; se = 1 / Math.sqrt(sw);
+    } else {
+      e = win.reduce((a, p) => a + p.elo, 0) / win.length;
+      se = Math.sqrt(win.reduce((a, p) => a + p.se ** 2, 0)) / win.length;
+    }
+    return { e, se, partial: win.length < W, p: ck[i] };
+  };
+  const t0 = ck[0].time, tEnd = ck[ck.length - 1].time, rows = [];
+  let prev = at(0), k = 1;
+  for (let T = t0 + 86400; ; T += 86400, k++) {
+    const last = T >= tEnd;
+    let i = ck.length - 1;
+    if (!last) { while (i > 0 && ck[i].time > T) i--; }
+    const cur = at(i), made = ck.filter(p => p.time > T - 86400 && p.time <= Math.min(T, tEnd)).length;
+    const dg = cur.p.generated - prev.p.generated, dn = (cur.p.games ?? 0) - (prev.p.games ?? 0), gain = cur.e - prev.e;
+    const until = new Date(1000 * (last ? tEnd : T));
+    rows.push(`<tr class="${cur.partial ? 'partial' : ''}"><td>${k}${last ? ' (so far)' : ''}</td><td>${until.toLocaleString('en-GB', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>`
+      + `<td class="num">${made}</td><td class="num">${fmtK(cur.p.generated)}</td><td class="num">${fmtK(cur.p.games)}</td><td class="num">${fmt(cur.e, 1)}</td><td class="num">${fmt(1.96 * cur.se, 1)}</td>`
+      + `<td class="num">${(gain >= 0 ? '+' : '') + fmt(gain, 1)}</td><td class="num">${dg > 0 ? fmt(1e7 * gain / dg, 1) : '–'}</td><td class="num">${dn > 0 ? fmt(1e5 * gain / dn, 1) : '–'}</td></tr>`);
+    prev = cur;
+    if (last) break;
+  }
+  const first = at(0), now = at(ck.length - 1), days = (tEnd - t0) / 86400;
+  $('ladDays').innerHTML = rows.join('');
+  $('ladDaySub').textContent = `${fmt(days, 1)} days, ${fmt(first.e, 0)} → ${fmt(now.e, 0)} (+${fmt(now.e - first.e, 0)}, ${fmt((now.e - first.e) / days, 0)} a day on average). Grey rows: the window is cut short at the run's ends, so the value lags. Wall-clock days, downtime included; ± ignores the fit's covariances.`;
+}
+$('ladDayWin').onchange = ladDays;
+$('ladDayW').onchange = ladDays;
 document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') ladHide(); });
 
 // ─── routes: #/<run>, #/<run>/details, #/<run>/games[/<game id>] ───

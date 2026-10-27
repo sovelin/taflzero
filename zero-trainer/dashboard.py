@@ -285,7 +285,8 @@ def ladder_detail(run_dir: Path) -> dict:
     players = []
     for p in lad.get("players", []):
         pts, games = points.get(p["name"], [0.0, 0])
-        players.append(dict(p, points=pts, played=games))
+        meta = {} if p.get("anchor") else read_json(run_dir / "ckpt" / f"{p['name']}.json") or {}
+        players.append(dict(p, points=pts, played=games, time=meta.get("time"), games=meta.get("games")))
     return {"nodes": nodes, "reference": lad.get("reference"), "updated": lad.get("updated"), "players": players,
             "pairs": [[a, b, w, l, d] for (a, b), (w, l, d) in pairs.items()]}
 
