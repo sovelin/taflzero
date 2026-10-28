@@ -8,7 +8,7 @@ use taflzero::gen_train_data::{
     DaemonConfig, DatagenConfig, DatagenSink, GameLimits, SearchConfig, WorkerOverrides,
     gen_train_data, gen_train_data_into,
 };
-use taflzero::match_play::{MatchConfig, play_match, replay_positions};
+use taflzero::match_play::{MatchConfig, SideSearch, play_match, replay_positions};
 use taflzero::mcts::MCTSConfig;
 use taflzero::movegen::MoveGen;
 use taflzero::mv::move_to_algebraic;
@@ -50,6 +50,9 @@ struct CliArgs {
     nodes: u64,
     opening_moves: usize,
     seed: Option<u64>,
+    /// `--a-cpuct`, `--b-fpu`, `--a-search-batch`, ...: per-side search settings of a match.
+    match_a_search: SideSearch,
+    match_b_search: SideSearch,
     /// `--replay "<moves>"`: print the positions of a recorded game (see run_replay).
     replay: Option<String>,
     /// `--features <samples.bin> --out <samples.feat>`: feature side file for the
@@ -87,6 +90,8 @@ fn parse_args() -> CliArgs {
     let mut match_mode = false;
     let mut match_a = String::new();
     let mut match_b = String::new();
+    let mut match_a_search = SideSearch::default();
+    let mut match_b_search = SideSearch::default();
     let mut pairs = 50usize;
     let mut nodes = 400u64;
     let mut opening_moves = 16usize;
@@ -105,6 +110,19 @@ fn parse_args() -> CliArgs {
         };
         match raw.parse::<usize>() {
             Ok(v) if v >= min => v,
+            _ => {
+                eprintln!("Invalid value for {flag}: {raw}");
+                std::process::exit(2);
+            }
+        }
+    }
+    fn f32_arg(args: &mut impl Iterator<Item = String>, flag: &str) -> f32 {
+        let Some(raw) = args.next() else {
+            eprintln!("Missing value for {flag}");
+            std::process::exit(2);
+        };
+        match raw.parse::<f32>() {
+            Ok(v) if v.is_finite() && v >= 0.0 => v,
             _ => {
                 eprintln!("Invalid value for {flag}: {raw}");
                 std::process::exit(2);
@@ -295,6 +313,20 @@ fn parse_args() -> CliArgs {
             "--match" => match_mode = true,
             "--a" => match_a = path_arg(&mut args, "--a"),
             "--b" => match_b = path_arg(&mut args, "--b"),
+            "--a-cpuct" => match_a_search.c_puct = f32_arg(&mut args, "--a-cpuct"),
+            "--b-cpuct" => match_b_search.c_puct = f32_arg(&mut args, "--b-cpuct"),
+            "--a-fpu" => match_a_search.fpu_reduction = f32_arg(&mut args, "--a-fpu"),
+            "--b-fpu" => match_b_search.fpu_reduction = f32_arg(&mut args, "--b-fpu"),
+            "--a-proven-q" => match_a_search.proven_q = true,
+            "--b-proven-q" => match_b_search.proven_q = true,
+            "--a-nodes" => match_a_search.nodes = Some(usize_arg(&mut args, "--a-nodes", 1) as u64),
+            "--b-nodes" => match_b_search.nodes = Some(usize_arg(&mut args, "--b-nodes", 1) as u64),
+            "--a-search-batch" => {
+                match_a_search.search_batch = Some(usize_arg(&mut args, "--a-search-batch", 1))
+            }
+            "--b-search-batch" => {
+                match_b_search.search_batch = Some(usize_arg(&mut args, "--b-search-batch", 1))
+            }
             "--pairs" => pairs = usize_arg(&mut args, "--pairs", 1),
             "--nodes" => nodes = usize_arg(&mut args, "--nodes", 1) as u64,
             "--opening-moves" => opening_moves = usize_arg(&mut args, "--opening-moves", 0),
@@ -345,6 +377,8 @@ fn parse_args() -> CliArgs {
         match_mode,
         match_a,
         match_b,
+        match_a_search,
+        match_b_search,
         pairs,
         nodes,
         opening_moves,
@@ -394,12 +428,12 @@ fn run_match(cli: &CliArgs) {
     let games = cli.pairs * 2;
     let threads = cli.threads.clamp(1, games);
     let search_batch = cli.search_batch.max(1);
-    let server = |path: &str| {
+    let server = |path: &str, side: &SideSearch| {
         // The batch is the games on this net's move, `search_batch` leaves each.
         match BatchServer::start(
             path,
             board_size,
-            threads * search_batch,
+            threads * side.search_batch.unwrap_or(search_batch).max(1),
             std::time::Duration::from_millis(1),
             false,
         ) {
@@ -417,8 +451,8 @@ fn run_match(cli: &CliArgs) {
             }
         }
     };
-    let a = server(&cli.match_a);
-    let b = server(&cli.match_b);
+    let a = server(&cli.match_a, &cli.match_a_search);
+    let b = server(&cli.match_b, &cli.match_b_search);
     let cfg = MatchConfig {
         pairs: cli.pairs,
         nodes: cli.nodes,
@@ -428,6 +462,8 @@ fn run_match(cli: &CliArgs) {
         search_batch,
         variant: cli.variant,
         seed: cli.seed,
+        a_search: cli.match_a_search,
+        b_search: cli.match_b_search,
     };
     let out = std::sync::Mutex::new(std::io::stdout());
     play_match(&a, &b, &cfg, &|g| {

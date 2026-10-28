@@ -27,6 +27,33 @@ use std::hash::{BuildHasher, Hasher};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+/// Search settings of one side of a match (`--a-cpuct`, `--b-fpu`, `--a-search-batch`,
+/// ...), so they can be compared with the same net on both sides.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SideSearch {
+    pub c_puct: f32,
+    pub fpu_reduction: f32,
+    /// Leaves per net call inside one search; `None` = the match's `search_batch`.
+    pub search_batch: Option<usize>,
+    /// Nodes per move; `None` = the match's `nodes`.
+    pub nodes: Option<u64>,
+    pub proven_q: bool,
+}
+
+impl Default for SideSearch {
+    /// What UCI play uses.
+    fn default() -> Self {
+        let play = MCTSConfig::default_play();
+        SideSearch {
+            c_puct: play.c_puct,
+            fpu_reduction: play.fpu_reduction,
+            search_batch: None,
+            nodes: None,
+            proven_q: play.proven_q,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct MatchConfig {
     pub pairs: usize,
@@ -43,6 +70,8 @@ pub struct MatchConfig {
     pub variant: RulesEnum,
     /// Seeds the openings; random when `None`.
     pub seed: Option<u64>,
+    pub a_search: SideSearch,
+    pub b_search: SideSearch,
 }
 
 /// One finished game. `winner` is `attackers` / `defenders` / `draw`, `reason` is the
@@ -162,10 +191,10 @@ fn side_name(side: Side) -> &'static str {
     }
 }
 
-/// One game: `nn_atk` moves for the attackers, `nn_def` for the defenders.
+/// One game: `nn_atk` moves for the attackers with `s_atk`, `nn_def` for the defenders.
 fn play_game(
-    nn_atk: &mut NeuralNet,
-    nn_def: &mut NeuralNet,
+    (nn_atk, s_atk): (&mut NeuralNet, SideSearch),
+    (nn_def, s_def): (&mut NeuralNet, SideSearch),
     opening: &[Move],
     cfg: &MatchConfig,
 ) -> PlayedGame {
@@ -185,24 +214,27 @@ fn play_game(
     let mut trees = (MCTSTree::new(), MCTSTree::new());
     let mut sd = SearchData::new();
     let mut config = MCTSConfig::default_play();
-    config.batch_size = cfg.search_batch.max(1);
     for _ in 0..cfg.max_plies {
         if let Some((who, reason)) = result_reason(&mut board, &mut mg) {
             return done(who, reason, moves, evals);
         }
         let attackers = board.side_to_move == Side::ATTACKERS;
-        let (nn, tree) = if attackers {
-            (&mut *nn_atk, &mut trees.0)
+        let (nn, tree, side) = if attackers {
+            (&mut *nn_atk, &mut trees.0, s_atk)
         } else {
-            (&mut *nn_def, &mut trees.1)
+            (&mut *nn_def, &mut trees.1, s_def)
         };
+        config.c_puct = side.c_puct;
+        config.fpu_reduction = side.fpu_reduction;
+        config.proven_q = side.proven_q;
+        config.batch_size = side.search_batch.unwrap_or(cfg.search_batch).max(1);
         let Some(mv) = mcts_search(
             &mut board,
             tree,
             nn,
             &mut sd,
             None,
-            Some(cfg.nodes),
+            Some(side.nodes.unwrap_or(cfg.nodes)),
             &config,
             None,
         ) else {
@@ -245,10 +277,11 @@ pub fn play_match(
                     }
                     let (pair, a_attacks) = (g / 2, g % 2 == 0);
                     let opening = make_opening(cfg.variant, cfg.opening_moves, seed, pair);
+                    let (a_side, b_side) = ((&mut nn_a, cfg.a_search), (&mut nn_b, cfg.b_search));
                     let game = if a_attacks {
-                        play_game(&mut nn_a, &mut nn_b, &opening, cfg)
+                        play_game(a_side, b_side, &opening, cfg)
                     } else {
-                        play_game(&mut nn_b, &mut nn_a, &opening, cfg)
+                        play_game(b_side, a_side, &opening, cfg)
                     };
                     on_game(GameOutcome {
                         pair,
@@ -344,6 +377,8 @@ mod tests {
             search_batch: 1,
             variant: RulesEnum::Copenhagen11x11,
             seed: Some(1),
+            a_search: SideSearch::default(),
+            b_search: SideSearch::default(),
         };
         let a = server(8);
         let b = server(8);
