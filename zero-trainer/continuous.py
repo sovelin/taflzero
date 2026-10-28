@@ -91,6 +91,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--engine-bin", type=Path, default=None, help="taflzero executable (required if --workers > 0)")
     p.add_argument("--resume", type=Path, default=None, help="Continue a run from this run_dir")
     p.add_argument("--start-checkpoint", type=Path, default=None, help="Initial weights (.qnxx); steps start at 0")
+    p.add_argument("--seed-run", type=Path, default=None,
+                   help="run dir whose newest --seed-samples positions open the replay window (a run that "
+                        "continues another, e.g. a bigger net distilled from it); only read")
+    p.add_argument("--seed-samples", type=int, default=0,
+                   help="positions taken from --seed-run; the window counts them as generated")
     p.add_argument("--smoke", action="store_true", help="Small preset for the integration test (plan §3.10)")
     p.add_argument("--device", type=str, default="cpu")
     p.add_argument("--amp", choices=["none", "bf16"], default="none",
@@ -660,8 +665,54 @@ class ContinuousRun:
         self.model.to(self.device)
         self.optimizer = build_optimizer(self.model, args)
         self._write_config()
+        self._load_seed()
         self.export_latest()
         self.save_state()
+
+    def _load_seed(self) -> None:
+        """--seed-run: the newest --seed-samples positions of that run go into the buffer
+        ahead of this run's own games (fresh start and every resume alike), and the window
+        counts them as generated, so the run starts on that run's window and its own games
+        push it out as they come. Seed games keep a `seed:` source so the window-start
+        bookkeeping of this run's own files never sees them."""
+        a = self.args
+        if a.seed_run is None or a.seed_samples <= 0:
+            return
+        window = self.current_window()
+        if self.stats.generated >= window:
+            return
+        seed_dir = Path(a.seed_run)
+        state = json.loads((seed_dir / "state.json").read_text(encoding="utf-8"))
+        src = Ingester(seed_dir / "data", self.geom)
+        files = [f for f in src.bin_files() if state.get("offsets", {}).get(f.name)]
+        total = sum(int(state["sample_offsets"][f.name]) for f in files)
+        t0, loaded = time.time(), 0
+        for f in files:
+            end_bytes = int(state["offsets"][f.name])
+            end_sample = int(state["sample_offsets"][f.name])
+            want_first = end_sample - a.seed_samples * end_sample // max(1, total)
+            # Start at the last indexed game at or before `want_first` (the dashboard's
+            # game index), else at the file's start; earlier games are read and dropped.
+            pos, first = 0, 0
+            idx_path = f.with_name(f"games{f.stem.removeprefix('worker')}.idx.json")
+            if idx_path.exists():
+                for off, _n, g_first, _nb, _res in json.loads(idx_path.read_text())["games"]:
+                    if g_first > want_first:
+                        break
+                    pos, first = off, g_first
+            while pos < end_bytes:
+                chunks, new = src.read_range(f, pos, min(end_bytes, pos + (1 << 30)), first_sample=first)
+                for c in chunks:
+                    if first >= want_first:
+                        c.source = "seed:" + c.source
+                        self.buffer.add(c, window)
+                        loaded += len(c)
+                    first += len(c)
+                if new <= pos:
+                    break
+                pos = new
+        self.log(f"[seed] {loaded} positions of {seed_dir.name} in the buffer ({len(self.buffer)} held, "
+                 f"window {window}) in {time.time() - t0:.0f} s")
 
     def _init_resume(self) -> None:
         args = self.args
@@ -710,6 +761,7 @@ class ContinuousRun:
             if cut:
                 self.log(f"[resume] torn tail cut: {cut}")
 
+        self._load_seed()
         # Re-read the replay window: each file from the first game still in the
         # window up to the ingest offset (both are game boundaries).
         window_start = state.get("window_start", {})
@@ -741,7 +793,8 @@ class ContinuousRun:
 
     def current_window(self) -> int:
         a = self.args
-        return replay_window(self.stats.generated, a.window_base, a.window_alpha, a.window_beta, a.window_cap)
+        seeded = a.seed_samples if a.seed_run is not None else 0
+        return replay_window(self.stats.generated + seeded, a.window_base, a.window_alpha, a.window_beta, a.window_cap)
 
     def stop_requested(self) -> bool:
         return self._stop_event.is_set() or self.stop_file.exists()

@@ -615,6 +615,37 @@ def test_trainer_loop_runs_checkpoints_and_resumes(tmp_path: Path) -> None:
     assert [int(r["step"]) for r in rows] == [2, 4, 6, 8]
 
 
+def test_seed_run_opens_the_window_with_its_newest_games(tmp_path: Path) -> None:
+    seed_dir = tmp_path / "seed"
+    (seed_dir / "data").mkdir(parents=True)
+    lengths = [5, 7, 4, 6, 8, 5, 6, 7]
+    games = [make_game(n, winner="atk" if i % 2 else "def", first_stm=i % 2) for i, n in enumerate(lengths)]
+    write_games(seed_dir / "data" / "worker0.bin", games)
+    size = (seed_dir / "data" / "worker0.bin").stat().st_size
+    (seed_dir / "state.json").write_text(json.dumps(
+        {"offsets": {"worker0.bin": size}, "sample_offsets": {"worker0.bin": sum(lengths)}}))
+    # The newest 15 positions start inside game 6 (6 + 7 = 13 < 15 <= 18): the games
+    # from the first one starting at or after that point, 6 and 7, are taken.
+    run_dir = tmp_path / "run"
+    args = parse_config(_tiny_args(run_dir, **{"seed-run": str(seed_dir), "seed-samples": 15, "min-samples": 10}))
+    run = ContinuousRun(args)
+    assert len(run.buffer) == 6 + 7
+    assert run.current_window() == replay_window(15, 1000, args.window_alpha, args.window_beta, args.window_cap)
+    assert all(c.source == "seed:worker0.bin" for c in run.buffer._chunks)
+
+    # Own games come after the seed ones; the window bookkeeping of the run's own file
+    # is untouched by them, and a resume loads the seed again ahead of the own games.
+    own = [make_game(5, winner="atk"), make_game(6, winner="def")]
+    write_games(run_dir / "data" / "worker0.bin", own)
+    assert run.run() == 0
+    state = json.loads((run_dir / "state.json").read_text())
+    assert state["window_start"]["worker0.bin"] == 0
+    (run_dir / "STOP").unlink()
+    run2 = ContinuousRun(parse_config(["--resume", str(run_dir), "--max-steps", "7"]))
+    assert len(run2.buffer) == 6 + 7 + 5 + 6
+    assert [c.source for c in run2.buffer._chunks][-2:] == ["worker0.bin", "worker0.bin"]
+
+
 def test_fresh_run_refuses_existing_run_dir(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
     run_dir.mkdir()
