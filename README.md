@@ -147,3 +147,15 @@ node .\orchestrate-zero.mjs --iterations 1000 --games-per-gen 1000000 --window 5
 - `src/` — Rust engine (MCTS, self-play, game logic)
 - `zero-trainer/` — Python training scripts
 - `orchestrator/` — Node.js training loop orchestration
+
+## Acknowledgements
+
+TaflZero builds on a lot of public work:
+
+- [AlphaZero](https://arxiv.org/abs/1712.01815) (Silver et al.): self-play with MCTS and a residual network.
+- [Leela Chess Zero](https://lczero.org): an open, continuously trained AlphaZero, and many details of its search.
+- [KataGo](https://github.com/lightvector/KataGo) (David Wu): the growing replay window, auxiliary heads and short-term value targets.
+- [Gumbel AlphaZero](https://openreview.net/forum?id=bERaNdoegnO) (Danihelka et al.): the root search used in self-play.
+- [ONNX Runtime](https://onnxruntime.ai), [tract](https://github.com/sonos/tract) and [PyTorch](https://pytorch.org).
+- [Learning Hnefatafl](https://github.com/devinokeefe/hnefatafl) by Devin O'Keefe, another AlphaZero-style Copenhagen engine.
+- The hnefatafl community, and the players who tested earlier nets and found their weaknesses.
