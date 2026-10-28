@@ -179,6 +179,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--worker-search-batch", type=int, default=8,
                    help="leaves per net call inside one search (engine --search-batch); 1 = plain MCTS, "
                         "the GPU batch is pooled across the threads instead")
+    p.add_argument("--worker-trt", action="store_true",
+                   help="workers run the net with TensorRT (engine built with --features tensorrt, "
+                        "nvinfer DLLs next to it); its timing cache is <run>/trt-cache")
     p.add_argument("--mlh-alpha", type=float, default=0.15)
     p.add_argument("--soft-resign", type=float, default=0.0,
                    help="soft resignation threshold on |root value| (engine --soft-resign): decided games "
@@ -1036,6 +1039,8 @@ class ContinuousRun:
         logs: dict[int, object] = {}
         crashes: deque[float] = deque()
         env = dict(os.environ, TAFLZERO_ORT_THREADS="1", TAFLZERO_MLH_ALPHA=str(a.mlh_alpha))
+        if getattr(a, "worker_trt", False):
+            env.update(TAFLZERO_TRT="1", TAFLZERO_TRT_CACHE=str(self.run_dir / "trt-cache"))
         creationflags = subprocess.CREATE_NEW_PROCESS_GROUP | NO_WINDOW if os.name == "nt" else 0
 
         def spawn(i: int) -> None:
