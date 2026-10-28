@@ -6,6 +6,7 @@ node_modules
 zero-trainer/weights
 *.onnx
 !/copenhagen11x11.onnx
+!/copenhagen-T9-10x128-step620381.onnx
 !/tablut9x9.onnx
 *.onxx
 

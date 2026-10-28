@@ -94,7 +94,8 @@ TaflZero speaks a UCI-based protocol. Run the binary and communicate via stdin/s
 
 | Variant | File |
 |---|---|
-| Copenhagen / Historical 11×11 (default) | [copenhagen11x11.onnx](https://github.com/sovelin/taflzero/raw/v0.2.0/copenhagen11x11.onnx) |
+| Copenhagen / Historical 11×11 (default) | [copenhagen-T9-10x128-step620381.onnx](https://github.com/sovelin/taflzero/raw/main/copenhagen-T9-10x128-step620381.onnx) (T9, 10×128, 24 input planes, fp16) |
+| Copenhagen / Historical 11×11 (previous net) | [copenhagen11x11.onnx](https://github.com/sovelin/taflzero/raw/v0.2.0/copenhagen11x11.onnx) |
 | Tablut 9×9 | [tablut9x9.onnx](https://github.com/sovelin/taflzero/raw/v0.2.0/tablut9x9.onnx) |
 
 **Command-line arguments:**
@@ -103,7 +104,7 @@ TaflZero speaks a UCI-based protocol. Run the binary and communicate via stdin/s
 taflzero.exe [--net <model.onnx>] [--datagen <output.bin>] [--datagen-count <N>] [--gamelog <path>]
 ```
 
-- `--net <path>` — ONNX network to load (default: `./copenhagen11x11.onnx`, the 11×11 Copenhagen net; for Tablut 9×9 load `./tablut9x9.onnx`)
+- `--net <path>` — ONNX network to load (default: `./copenhagen-T9-10x128-step620381.onnx`, the 11×11 Copenhagen net; for Tablut 9×9 load `./tablut9x9.onnx`)
 - `--datagen <path>` — run self-play data generation, write to binary file
 - `--datagen-count <N>` — number of games for data generation
 - `--gamelog <path>` — game log output path (used with `--datagen`)

@@ -190,7 +190,10 @@ impl<O: UciOutput> UciController<O> {
                     "id name {}\nid author Oleg Smirnov\nuciok",
                     crate::engine_version()
                 ));
-                self.send("option name NNFile type string default ./copenhagen11x11.onnx");
+                self.send(&format!(
+                    "option name NNFile type string default {}",
+                    crate::DEFAULT_NET_PATH
+                ));
                 self.send("option name MultiPV type spin default 1 min 1 max 1000");
                 self.send("option name Variant type combo default copenhagen11x11 var copenhagen11x11 var historical11x11 var tablut9x9");
                 self.send("option name MemoryLimit type string default None");

@@ -492,7 +492,11 @@ mod tests {
     /// repo's nets and on any extra nets listed in TAFL_ONNX_CHECK (`;`-separated paths).
     #[test]
     fn onnx_bytes_planes_match_the_session() {
-        let mut paths: Vec<String> = vec!["copenhagen11x11.onnx".into(), "tablut9x9.onnx".into()];
+        let mut paths: Vec<String> = vec![
+            "copenhagen11x11.onnx".into(),
+            "tablut9x9.onnx".into(),
+            crate::DEFAULT_NET_PATH.into(),
+        ];
         if let Ok(extra) = std::env::var("TAFL_ONNX_CHECK") {
             paths.extend(extra.split(';').filter(|p| !p.is_empty()).map(String::from));
         }

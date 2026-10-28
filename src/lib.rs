@@ -18,6 +18,11 @@ pub use moves::*;
 pub use search::*;
 pub use uci::*;
 
+/// The net the native engine loads when none is given (`--net`, UCI `NNFile`): T9's
+/// final 10x128 checkpoint, fp16, for Copenhagen and Historical 11x11. Tablut needs
+/// `./tablut9x9.onnx`.
+pub const DEFAULT_NET_PATH: &str = "./copenhagen-T9-10x128-step620381.onnx";
+
 /// `taflzero <cargo version> <git revision>`: what `--version` prints and UCI `id name`
 /// carries, so a run can record which engine produced its data.
 pub fn engine_version() -> String {
