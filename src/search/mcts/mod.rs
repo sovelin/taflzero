@@ -26,6 +26,10 @@ type NodeId = usize;
 /// PUCT exploration constant, shared by selection and policy target pruning.
 pub const C_PUCT: f32 = 1.4;
 
+/// FPU of play (UCI, WASM, matches). With 8-leaf batches it measured +42 Elo
+/// [-7, +90] at 100 nodes together with `proven_q`; at 1 leaf it is neutral.
+pub const PLAY_FPU_REDUCTION: f32 = 0.25;
+
 pub struct MCTSConfig {
     /// Dirichlet noise alpha (0.0 = no noise). Typical: 0.03 for large boards, 0.3 for small.
     pub dirichlet_alpha: f32,
@@ -74,8 +78,8 @@ impl MCTSConfig {
             forced_playouts_k: 0.0,
             gumbel: None,
             c_puct: play_env("TAFLZERO_CPUCT", C_PUCT),
-            fpu_reduction: play_env("TAFLZERO_FPU", 0.0f32),
-            proven_q: play_env("TAFLZERO_PROVEN_Q", 0u8) != 0,
+            fpu_reduction: play_env("TAFLZERO_FPU", PLAY_FPU_REDUCTION),
+            proven_q: play_env("TAFLZERO_PROVEN_Q", 1u8) != 0,
         }
     }
 
@@ -1297,15 +1301,16 @@ mod puct_tests {
     }
 
     #[test]
-    fn play_defaults_are_the_old_search() {
+    fn play_and_train_defaults() {
         if std::env::var("TAFLZERO_FPU").is_ok() || std::env::var("TAFLZERO_PROVEN_Q").is_ok() {
             return;
         }
         let c = MCTSConfig::default_play();
         assert_eq!(
             (c.c_puct, c.fpu_reduction, c.proven_q),
-            (C_PUCT, 0.0, false)
+            (C_PUCT, PLAY_FPU_REDUCTION, true)
         );
+        // Self-play keeps the old PUCT settings (T9 and later search with Gumbel anyway).
         let t = MCTSConfig::default_train();
         assert_eq!(
             (t.c_puct, t.fpu_reduction, t.proven_q),
