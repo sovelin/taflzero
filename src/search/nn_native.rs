@@ -63,6 +63,41 @@ fn graph_requested() -> bool {
     std::env::var("TAFLZERO_CUDA_GRAPH").is_ok_and(|v| v == "1")
 }
 
+/// Whether `build_session` puts TensorRT in front of CUDA: `TAFLZERO_TRT=1`.
+#[cfg(feature = "tensorrt")]
+fn trt_requested() -> bool {
+    std::env::var("TAFLZERO_TRT").is_ok_and(|v| v == "1")
+}
+
+/// The TensorRT provider for the net at `path`, called with up to `batch` samples:
+/// fp16, one optimisation profile from 1 to `batch` samples, tuned for `batch`. The
+/// engine is built in memory at every load (seconds, most of it kernel timing, which
+/// the timing cache in `TAFLZERO_TRT_CACHE`, default `trt-cache`, keeps across loads);
+/// it is not cached on disk, since every net a training run exports is a new engine.
+#[cfg(feature = "tensorrt")]
+fn trt_provider(path: &str, board_size: usize, batch: usize) -> Result<ort::ep::TensorRT, String> {
+    let probe = Session::builder(ort_env()?)
+        .map_err(|e| format!("session builder: {e}"))?
+        .commit_from_file(path)
+        .map_err(|err| format!("cannot load neural net '{path}': {err}"))?;
+    let input = probe.inputs()[0].name().to_string();
+    let size = model_board_size(&probe).unwrap_or(board_size);
+    let channels = match model_channels(&probe) {
+        Some(c) => c,
+        None => model_planes(&probe, path)?.len(),
+    };
+    let shape = |b: usize| format!("{input}:{b}x{channels}x{size}x{size}");
+    let cache = std::env::var("TAFLZERO_TRT_CACHE").unwrap_or_else(|_| "trt-cache".into());
+    std::fs::create_dir_all(&cache).map_err(|e| format!("{cache}: {e}"))?;
+    Ok(ort::ep::TensorRT::default()
+        .with_fp16(true)
+        .with_timing_cache(true)
+        .with_timing_cache_path(&cache)
+        .with_profile_min_shapes(shape(1))
+        .with_profile_opt_shapes(shape(batch.max(1)))
+        .with_profile_max_shapes(shape(batch.max(1))))
+}
+
 #[cfg(feature = "cuda")]
 fn ort_err<E: std::fmt::Display>(what: &str) -> impl Fn(E) -> String + '_ {
     move |err| format!("{what}: {err}")
@@ -533,6 +568,20 @@ impl NeuralNet {
         board_size: usize,
         batch_size: usize,
     ) -> Result<(Session, usize, PlaneSet), String> {
+        #[cfg(feature = "tensorrt")]
+        let trt = trt_requested();
+        #[cfg(not(feature = "tensorrt"))]
+        let trt = false;
+        Self::build_session_on(path, board_size, batch_size, trt)
+    }
+
+    /// `build_session`, with TensorRT in front of CUDA when `trt` (tensorrt builds).
+    fn build_session_on(
+        path: &str,
+        board_size: usize,
+        batch_size: usize,
+        trt: bool,
+    ) -> Result<(Session, usize, PlaneSet), String> {
         #[cfg(all(feature = "cuda", not(feature = "directml")))]
         println!("[NN] Backend: CUDA");
         #[cfg(all(feature = "directml", not(feature = "cuda")))]
@@ -553,8 +602,21 @@ impl NeuralNet {
             .unwrap_or(1);
         builder = builder.with_intra_threads(intra_threads).unwrap();
 
+        #[cfg(feature = "tensorrt")]
+        if trt {
+            println!("[NN] Backend: TensorRT fp16 (CUDA for what it does not take)");
+            builder = builder
+                .with_execution_providers([
+                    trt_provider(path, board_size, batch_size)?
+                        .build()
+                        .error_on_failure(),
+                    cuda_provider().build(),
+                ])
+                .map_err(|e| format!("TensorRT provider: {e}"))?;
+        }
+
         #[cfg(all(feature = "cuda", feature = "directml"))]
-        {
+        if !trt {
             // ORT refuses CUDA and DirectML in one session ("DML EP can only be used
             // with CPU EPs"), and a CUDA provider that fails to load is skipped
             // silently, so registering both always ended on DirectML. Try CUDA alone
@@ -576,19 +638,19 @@ impl NeuralNet {
             }
         }
         #[cfg(all(feature = "cuda", not(feature = "directml")))]
-        {
+        if !trt {
             builder = builder
                 .with_execution_providers([cuda_provider().build()])
                 .unwrap();
         }
         #[cfg(all(feature = "directml", not(feature = "cuda")))]
-        {
+        if !trt {
             builder = builder
                 .with_execution_providers([DirectML::default().build()])
                 .unwrap();
         }
         #[cfg(feature = "openvino")]
-        {
+        if !trt {
             builder = builder
                 .with_execution_providers([OpenVINO::default().build()])
                 .unwrap();
@@ -1123,6 +1185,91 @@ mod tests {
         );
         // fp16 nets differ by kernel choice; fp32 ones should agree to ~1e-4.
         assert!(worst.0 < 5e-2 && worst.1 < 1e-2, "{worst:?}");
+    }
+
+    /// The TensorRT session (fp16) answers like the plain one on real positions, for
+    /// a full batch, one sample and a batch in between. GPU only, tensorrt builds
+    /// (`cargo test --release --features tensorrt -- --ignored`, nvinfer on PATH); the
+    /// net is copenhagen11x11.onnx, or `TAFL_GRAPH_NET`.
+    #[cfg(feature = "tensorrt")]
+    #[test]
+    #[ignore]
+    fn trt_session_matches_the_plain_session() {
+        use crate::board::Board;
+        use crate::board::rules::RulesEnum;
+        use crate::mcts::get_left_moves;
+        use crate::movegen::MoveGen;
+        let path =
+            std::env::var("TAFL_GRAPH_NET").unwrap_or_else(|_| "copenhagen11x11.onnx".into());
+        let batch = 64;
+        let (plain, size, planes) = NeuralNet::build_session_on(&path, 11, batch, false).unwrap();
+        let (trt, _, _) = NeuralNet::build_session_on(&path, 11, batch, true).unwrap();
+        let wrap = |session| NeuralNet {
+            backend: Backend::Local(session),
+            path: path.clone(),
+            loaded_mtime: None,
+            board_size: size,
+            planes: planes.clone(),
+            batch_size: batch,
+        };
+        let (mut plain, mut trt) = (wrap(plain), wrap(trt));
+        let mut board = Board::new();
+        board.set_rules(RulesEnum::Copenhagen11x11);
+        board.setup_initial_position().unwrap();
+        let mut mg = MoveGen::new();
+        let mut inputs = Vec::new();
+        let mut state = 12345u64;
+        while inputs.len() < 100 {
+            inputs.push(NnInput::from_board(&mut board, &mut mg, &planes));
+            let moves = get_left_moves(&board, &mut mg);
+            if moves.is_empty() || crate::terminal::check_terminal(&mut board).is_some() {
+                board.setup_initial_position().unwrap();
+                continue;
+            }
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            board
+                .make_move_simple(moves[(state >> 33) as usize % moves.len()])
+                .unwrap();
+        }
+        let geom = board.precomputed().clone();
+        let (mut worst_value, mut worst_prob, mut top_agree, mut total) = (0.0f32, 0.0f32, 0, 0);
+        let softmax = |l: &[f32]| {
+            let m = l.iter().copied().fold(f32::MIN, f32::max);
+            let e: Vec<f32> = l.iter().map(|x| (x - m).exp()).collect();
+            let z: f32 = e.iter().sum();
+            e.into_iter().map(|x| x / z).collect::<Vec<f32>>()
+        };
+        for chunk in [&inputs[..64], &inputs[64..65], &inputs[65..100]] {
+            let refs: Vec<&NnInput> = chunk.iter().collect();
+            let a = plain.evaluate_batch(&refs, &geom);
+            let b = trt.evaluate_batch(&refs, &geom);
+            assert_eq!(a.len(), b.len());
+            for (x, y) in a.iter().zip(&b) {
+                // Compare legal-move probabilities (illegal logits are huge negatives
+                // in neither, but their exact values do not matter to the search).
+                let (p, q) = (softmax(&x.policy), softmax(&y.policy));
+                let dp = p
+                    .iter()
+                    .zip(&q)
+                    .map(|(a, b)| (a - b).abs())
+                    .fold(0.0, f32::max);
+                worst_prob = worst_prob.max(dp);
+                worst_value = worst_value.max((x.value - y.value).abs());
+                let arg = |v: &[f32]| (0..v.len()).max_by(|&i, &j| v[i].total_cmp(&v[j])).unwrap();
+                top_agree += (arg(&p) == arg(&q)) as usize;
+                total += 1;
+            }
+        }
+        println!(
+            "{path}: max |prob diff| {worst_prob:.2e}, max |value diff| {worst_value:.2e}, top move agrees {top_agree}/{total}"
+        );
+        assert!(
+            worst_prob < 2e-2 && worst_value < 2e-2,
+            "{worst_prob} {worst_value}"
+        );
+        assert!(top_agree * 100 >= total * 95, "{top_agree}/{total}");
     }
 
     /// The byte reader of the browser build gives the plane set the session gives, on the
