@@ -74,7 +74,7 @@ fn ort_err<E: std::fmt::Display>(what: &str) -> impl Fn(E) -> String + '_ {
 /// a pinned host buffer, replays, and copies the outputs out. Small batches gain the
 /// most: one call is a single graph launch instead of one launch per kernel.
 #[cfg(feature = "cuda")]
-pub(super) struct GraphSession {
+struct GraphInner {
     session: Session,
     binding: ort::session::IoBinding,
     host_in: ort::value::Tensor<f32>,
@@ -114,14 +114,10 @@ fn bind_input_in_place(
 }
 
 #[cfg(feature = "cuda")]
-impl GraphSession {
+impl GraphInner {
     /// Builds the session for `batch` samples per call and runs it a few times (the
     /// first run captures the graph); returns it with the board size and plane set.
-    pub(super) fn new(
-        path: &str,
-        board_size: usize,
-        batch: usize,
-    ) -> Result<(Self, usize, PlaneSet), String> {
+    fn new(path: &str, board_size: usize, batch: usize) -> Result<(Self, usize, PlaneSet), String> {
         use ort::memory::{AllocationDevice, Allocator, AllocatorType, MemoryInfo, MemoryType};
         use ort::value::Tensor;
         let e = ort_err::<ort::Error>;
@@ -188,7 +184,7 @@ impl GraphSession {
                 Tensor::<f32>::new(&Allocator::default(), out_shape).map_err(e("host output"))?,
             );
         }
-        let mut gs = GraphSession {
+        let mut gs = GraphInner {
             session,
             binding,
             host_in,
@@ -211,7 +207,7 @@ impl GraphSession {
     }
 
     /// Runs the first `n` (<= batch) samples of `input`; returns their outputs, flat.
-    pub(super) fn run(&mut self, input: &[f32], n: usize) -> Result<FlatOutputs, String> {
+    fn run(&mut self, input: &[f32], n: usize) -> Result<FlatOutputs, String> {
         let e = ort_err::<ort::Error>;
         assert!(n <= self.batch && input.len() >= n * self.sample_size);
         {
@@ -245,6 +241,86 @@ impl GraphSession {
             policy_size: ps,
         })
     }
+}
+
+/// A request to the graph thread: `n` samples of input and where to send the answer.
+#[cfg(feature = "cuda")]
+type GraphJob = (
+    Vec<f32>,
+    usize,
+    std::sync::mpsc::SyncSender<Result<FlatOutputs, String>>,
+);
+
+/// A [`GraphInner`] confined to a thread of its own. ORT's CUDA provider keeps
+/// per-thread state, and with a CUDA graph that state holds a captured graph and its
+/// memory: UCI runs every search on a fresh thread, and each one leaked about 12 MB per
+/// move. Here the session is created, run and dropped on one long-lived thread, and
+/// callers on any thread hand it their inputs over a channel.
+#[cfg(feature = "cuda")]
+pub(super) struct GraphSession {
+    jobs: Option<std::sync::mpsc::SyncSender<GraphJob>>,
+    thread: Option<std::thread::JoinHandle<()>>,
+    pub(super) batch: usize,
+    pub(super) sample_size: usize,
+}
+
+#[cfg(feature = "cuda")]
+impl GraphSession {
+    /// Starts the thread and builds the session on it; returns it with the board size
+    /// and plane set of the net.
+    pub(super) fn new(
+        path: &str,
+        board_size: usize,
+        batch: usize,
+    ) -> Result<(Self, usize, PlaneSet), String> {
+        let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(1);
+        let (jobs_tx, jobs_rx) = std::sync::mpsc::sync_channel::<GraphJob>(1);
+        let path = path.to_string();
+        let thread = std::thread::Builder::new()
+            .name("nn-graph".into())
+            .spawn(move || {
+                let mut inner = match GraphInner::new(&path, board_size, batch) {
+                    Ok((inner, b, planes)) => {
+                        let _ = ready_tx.send(Ok((b, planes, inner.sample_size)));
+                        inner
+                    }
+                    Err(err) => {
+                        let _ = ready_tx.send(Err(err));
+                        return;
+                    }
+                };
+                for (input, n, reply) in jobs_rx {
+                    let _ = reply.send(inner.run(&input, n));
+                }
+            })
+            .map_err(|e| format!("cannot start the CUDA graph thread: {e}"))?;
+        let (board_size, planes, sample_size) = ready_rx
+            .recv()
+            .map_err(|_| "the CUDA graph thread died while loading".to_string())??;
+        Ok((
+            GraphSession {
+                jobs: Some(jobs_tx),
+                thread: Some(thread),
+                batch,
+                sample_size,
+            },
+            board_size,
+            planes,
+        ))
+    }
+
+    /// Runs the first `n` (<= batch) samples of `input` on the graph thread.
+    pub(super) fn run(&mut self, input: &[f32], n: usize) -> Result<FlatOutputs, String> {
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        let job = input[..n * self.sample_size].to_vec();
+        self.jobs
+            .as_ref()
+            .expect("graph thread stopped")
+            .send((job, n, tx))
+            .map_err(|_| "the CUDA graph thread is gone".to_string())?;
+        rx.recv()
+            .map_err(|_| "the CUDA graph thread is gone".to_string())?
+    }
 
     /// Any number of samples, in chunks of the graph's batch.
     fn evaluate(&mut self, input: &[f32], n: usize) -> Vec<NnOutput> {
@@ -259,6 +335,17 @@ impl GraphSession {
             done += k;
         }
         out
+    }
+}
+
+#[cfg(feature = "cuda")]
+impl Drop for GraphSession {
+    /// Closing the channel ends the thread, which drops the session where it was made.
+    fn drop(&mut self) {
+        drop(self.jobs.take());
+        if let Some(t) = self.thread.take() {
+            let _ = t.join();
+        }
     }
 }
 
@@ -804,6 +891,106 @@ pub fn bench_nn_graph(
         for _ in 0..iters.max(1) {
             let t = std::time::Instant::now();
             std::hint::black_box(gs.run(&input, batch)?);
+            times.push(t.elapsed().as_secs_f64() * 1000.0);
+        }
+        times.sort_by(|a, b| a.total_cmp(b));
+        let pick = |q: f64| times[((times.len() - 1) as f64 * q).round() as usize];
+        let p50 = pick(0.5);
+        rows.push(BenchRow {
+            batch,
+            p50_ms: p50,
+            p90_ms: pick(0.9),
+            samples_per_s: batch as f64 * 1000.0 / p50,
+        });
+    }
+    Ok(rows)
+}
+
+/// `--bench-nn --trt`: the plain timing with the TensorRT provider (fp16, CUDA after
+/// it for anything TensorRT does not take). Engines are built for one optimisation
+/// profile per batch size and cached in `TAFLZERO_TRT_CACHE` (default `trt-cache`);
+/// the first build of a profile takes a while and is not timed.
+#[cfg(feature = "tensorrt")]
+pub fn bench_nn_trt(
+    path: &str,
+    board_size: usize,
+    batches: &[usize],
+    iters: usize,
+) -> Result<Vec<BenchRow>, String> {
+    use ort::ep::TensorRT;
+    let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
+    let planes = crate::search::nn::onnx_planes(&bytes, path)?;
+    let channels = planes.len();
+    let cache = std::env::var("TAFLZERO_TRT_CACHE").unwrap_or_else(|_| "trt-cache".into());
+    std::fs::create_dir_all(&cache).map_err(|e| format!("{cache}: {e}"))?;
+    let mut rows = Vec::with_capacity(batches.len());
+    for &batch in batches {
+        let probe = Session::builder(ort_env()?)
+            .map_err(|e| format!("session builder: {e}"))?
+            .commit_from_memory(&bytes)
+            .map_err(|e| format!("{path}: {e}"))?;
+        let input = probe.inputs()[0].name().to_string();
+        drop(probe);
+        let shape = |b: usize| format!("{input}:{b}x{channels}x{board_size}x{board_size}");
+        let trt = TensorRT::default()
+            .with_fp16(true)
+            .with_engine_cache(true)
+            .with_engine_cache_path(&cache)
+            .with_timing_cache(true)
+            .with_timing_cache_path(&cache)
+            .with_profile_min_shapes(shape(batch))
+            .with_profile_opt_shapes(shape(batch))
+            .with_profile_max_shapes(shape(batch));
+        let t0 = std::time::Instant::now();
+        let mut session = Session::builder(ort_env()?)
+            .map_err(|e| format!("session builder: {e}"))?
+            .with_intra_threads(1)
+            .map_err(|e| format!("intra threads: {e}"))?
+            .with_execution_providers([trt.build().error_on_failure(), cuda_provider().build()])
+            .map_err(|e| format!("TensorRT provider: {e}"))?
+            .commit_from_memory(&bytes)
+            .map_err(|e| format!("{path}: {e}"))?;
+        let sample = planes.sample_size(board_size);
+        let mut state = 0x2545_f491_4f6c_dd1du64;
+        let pattern: Vec<f32> = (0..batch * sample)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                (state & 7 == 0) as u8 as f32
+            })
+            .collect();
+        let mut input_buf = pattern.clone();
+        let mut out = FlatOutputs::default();
+        for _ in 0..3 {
+            out = run_inference_flat(
+                &mut session,
+                &mut input_buf,
+                batch,
+                batch,
+                channels,
+                board_size,
+                out,
+            );
+        }
+        println!(
+            "[NN] TensorRT batch {batch}: session + engine {:.1} s",
+            t0.elapsed().as_secs_f64()
+        );
+        let mut times = Vec::with_capacity(iters);
+        for _ in 0..iters.max(1) {
+            input_buf.clear();
+            input_buf.extend_from_slice(&pattern);
+            let t = std::time::Instant::now();
+            out = run_inference_flat(
+                &mut session,
+                &mut input_buf,
+                batch,
+                batch,
+                channels,
+                board_size,
+                out,
+            );
             times.push(t.elapsed().as_secs_f64() * 1000.0);
         }
         times.sort_by(|a, b| a.total_cmp(b));

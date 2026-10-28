@@ -27,6 +27,9 @@ struct CliArgs {
     bench_iters: usize,
     /// `--graph`: `--bench-nn` with a CUDA-graph session.
     bench_graph: bool,
+    /// `--trt`: `--bench-nn` with the TensorRT provider (builds with `--features tensorrt`).
+    #[cfg_attr(not(feature = "tensorrt"), allow(dead_code))]
+    bench_trt: bool,
     variant: RulesEnum,
     curriculum_fraction: f64,
     curriculum_path: Option<String>,
@@ -77,6 +80,7 @@ fn parse_args() -> CliArgs {
     let mut bench_nn: Option<Vec<usize>> = None;
     let mut bench_iters = 200usize;
     let mut bench_graph = false;
+    let mut bench_trt = false;
     let mut variant = RulesEnum::Copenhagen11x11;
     let mut curriculum_fraction = 0.0f64;
     let mut curriculum_path: Option<String> = None;
@@ -213,6 +217,7 @@ fn parse_args() -> CliArgs {
             }
             "--bench-iters" => bench_iters = usize_arg(&mut args, "--bench-iters", 1),
             "--graph" => bench_graph = true,
+            "--trt" => bench_trt = true,
             "--nn-eval" => {
                 if let Some(fen) = args.next() {
                     nn_eval_fen = Some(fen);
@@ -387,6 +392,7 @@ fn parse_args() -> CliArgs {
         bench_nn,
         bench_iters,
         bench_graph,
+        bench_trt,
         variant,
         curriculum_fraction,
         curriculum_path,
@@ -613,6 +619,33 @@ fn main() {
     }
     if let Some(batches) = &cli.bench_nn {
         let board_size = cli.variant.rules().board_size;
+        #[cfg(feature = "tensorrt")]
+        if cli.bench_trt {
+            match taflzero::search::nn::bench_nn_trt(
+                &cli.net_path,
+                board_size,
+                batches,
+                cli.bench_iters,
+            ) {
+                Ok(rows) => {
+                    println!(
+                        "bench-nn {} ({} calls per batch, TensorRT fp16)",
+                        cli.net_path, cli.bench_iters
+                    );
+                    for r in rows {
+                        println!(
+                            "{:>6} {:>9.3} {:>9.3} {:>12.0}",
+                            r.batch, r.p50_ms, r.p90_ms, r.samples_per_s
+                        );
+                    }
+                }
+                Err(err) => {
+                    eprintln!("{err}");
+                    std::process::exit(2);
+                }
+            }
+            return;
+        }
         #[cfg(feature = "cuda")]
         let result = if cli.bench_graph {
             taflzero::search::nn::bench_nn_graph(
