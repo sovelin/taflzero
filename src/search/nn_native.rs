@@ -47,11 +47,219 @@ fn cuda_provider() -> CUDA {
     ep
 }
 
-/// Where a net's inferences run: this process's own ORT session, or the shared
-/// batching server of a multi-threaded datagen process.
+/// Where a net's inferences run: this process's own ORT session, the same with a
+/// CUDA graph (fixed batch, see [`GraphSession`]), or the shared batching server of a
+/// multi-threaded datagen process.
 enum Backend {
     Local(Session),
+    #[cfg(feature = "cuda")]
+    Graph(Box<GraphSession>),
     Shared(Arc<BatchServer>),
+}
+
+/// Whether `NeuralNet::new` builds CUDA-graph sessions: `TAFLZERO_CUDA_GRAPH=1`.
+#[cfg(feature = "cuda")]
+fn graph_requested() -> bool {
+    std::env::var("TAFLZERO_CUDA_GRAPH").is_ok_and(|v| v == "1")
+}
+
+#[cfg(feature = "cuda")]
+fn ort_err<E: std::fmt::Display>(what: &str) -> impl Fn(E) -> String + '_ {
+    move |err| format!("{what}: {err}")
+}
+
+/// A session that replays a captured CUDA graph. A graph replays fixed device
+/// addresses, so the input is one device buffer and every output one device buffer,
+/// all bound once at a fixed batch size; a call copies the (zero-padded) input in from
+/// a pinned host buffer, replays, and copies the outputs out. Small batches gain the
+/// most: one call is a single graph launch instead of one launch per kernel.
+#[cfg(feature = "cuda")]
+pub(super) struct GraphSession {
+    session: Session,
+    binding: ort::session::IoBinding,
+    host_in: ort::value::Tensor<f32>,
+    dev_in: ort::value::Tensor<f32>,
+    host_out: Vec<ort::value::Tensor<f32>>,
+    batch: usize,
+    sample_size: usize,
+    policy_size: usize,
+}
+
+/// Binds `value` itself as input `name`. `IoBinding::bind_input` binds a copy of a
+/// tensor it may alias (any `Tensor::new` one), so writes into `value` afterwards
+/// never reach the session; a graph needs the very buffer it captured. `value` must
+/// outlive the binding (the caller keeps both in one struct).
+#[cfg(feature = "cuda")]
+fn bind_input_in_place(
+    binding: &mut ort::session::IoBinding,
+    name: &str,
+    value: &ort::value::Tensor<f32>,
+) -> Result<(), String> {
+    use ort::AsPointer;
+    let name = std::ffi::CString::new(name).map_err(|e| format!("input name: {e}"))?;
+    let api = ort::api();
+    // SAFETY: both pointers are live ORT objects; ORT keeps a reference to the value
+    // and the caller keeps the value alive as long as the binding.
+    unsafe {
+        let status = (api.BindInput)(binding.ptr_mut(), name.as_ptr(), value.ptr());
+        if !status.0.is_null() {
+            let msg = std::ffi::CStr::from_ptr((api.GetErrorMessage)(status.0))
+                .to_string_lossy()
+                .into_owned();
+            (api.ReleaseStatus)(status.0);
+            return Err(format!("bind input: {msg}"));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(feature = "cuda")]
+impl GraphSession {
+    /// Builds the session for `batch` samples per call and runs it a few times (the
+    /// first run captures the graph); returns it with the board size and plane set.
+    pub(super) fn new(
+        path: &str,
+        board_size: usize,
+        batch: usize,
+    ) -> Result<(Self, usize, PlaneSet), String> {
+        use ort::memory::{AllocationDevice, Allocator, AllocatorType, MemoryInfo, MemoryType};
+        use ort::value::Tensor;
+        let e = ort_err::<ort::Error>;
+        let intra_threads = std::env::var("TAFLZERO_ORT_THREADS")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(1);
+        let session = Session::builder(ort_env()?)
+            .map_err(ort_err("session builder"))?
+            .with_intra_threads(intra_threads)
+            .map_err(ort_err("intra threads"))?
+            .with_execution_providers([cuda_provider()
+                .with_cuda_graph(true)
+                .build()
+                .error_on_failure()])
+            .map_err(ort_err("CUDA graph provider"))?
+            .commit_from_file(path)
+            .map_err(|err| format!("cannot load neural net '{path}': {err}"))?;
+        let board_size = model_board_size(&session).unwrap_or(board_size);
+        let planes = model_planes(&session, &format!("neural net '{path}'"))?;
+        let channels = planes.len();
+        let policy_size = get_policy_size(board_size);
+        let device = Allocator::new(
+            &session,
+            MemoryInfo::new(
+                AllocationDevice::CUDA,
+                0,
+                AllocatorType::Device,
+                MemoryType::Default,
+            )
+            .map_err(e("cuda memory"))?,
+        )
+        .map_err(e("cuda allocator"))?;
+        let pinned = Allocator::new(
+            &session,
+            MemoryInfo::new(
+                AllocationDevice::CUDA_PINNED,
+                0,
+                AllocatorType::Device,
+                MemoryType::CPUOutput,
+            )
+            .map_err(e("pinned memory"))?,
+        )
+        .map_err(e("pinned allocator"))?;
+        let shape = [batch, channels, board_size, board_size];
+        let host_in = Tensor::<f32>::new(&pinned, shape).map_err(e("host input"))?;
+        let dev_in = Tensor::<f32>::new(&device, shape).map_err(e("device input"))?;
+        let mut binding = session.create_binding().map_err(e("binding"))?;
+        bind_input_in_place(&mut binding, session.inputs()[0].name(), &dev_in)?;
+        // Output 0 is the policy, the others (value, moves-left) one number per sample.
+        let mut host_out = Vec::new();
+        for (i, outlet) in session.outputs().iter().enumerate() {
+            let out_shape = if i == 0 {
+                vec![batch, policy_size]
+            } else {
+                vec![batch, 1]
+            };
+            let dev = Tensor::<f32>::new(&device, out_shape.clone()).map_err(e("device output"))?;
+            binding
+                .bind_output(outlet.name(), dev)
+                .map_err(e("bind output"))?;
+            // A pinned target trips ORT's copy (`dst_data != src_data`); plain host memory works.
+            host_out.push(
+                Tensor::<f32>::new(&Allocator::default(), out_shape).map_err(e("host output"))?,
+            );
+        }
+        let mut gs = GraphSession {
+            session,
+            binding,
+            host_in,
+            dev_in,
+            host_out,
+            batch,
+            sample_size: planes.sample_size(board_size),
+            policy_size,
+        };
+        let zeros = vec![0.0f32; gs.sample_size];
+        let start = std::time::Instant::now();
+        for _ in 0..3 {
+            gs.run(&zeros, 1)?;
+        }
+        println!(
+            "[NN] CUDA graph session: batch={batch}, warmup {:.1} ms",
+            start.elapsed().as_secs_f64() * 1000.0
+        );
+        Ok((gs, board_size, planes))
+    }
+
+    /// Runs the first `n` (<= batch) samples of `input`; returns their outputs, flat.
+    pub(super) fn run(&mut self, input: &[f32], n: usize) -> Result<FlatOutputs, String> {
+        let e = ort_err::<ort::Error>;
+        assert!(n <= self.batch && input.len() >= n * self.sample_size);
+        {
+            let (_, data) = self.host_in.extract_tensor_mut();
+            let len = n * self.sample_size;
+            data[..len].copy_from_slice(&input[..len]);
+            data[len..].fill(0.0);
+        }
+        // Synchronous: the copy runs on another session's stream, and the graph must
+        // not start before it has landed.
+        self.host_in
+            .copy_into(&mut self.dev_in)
+            .map_err(e("copy in"))?;
+        let outputs = self.session.run_binding(&self.binding).map_err(e("run"))?;
+        for (i, h) in self.host_out.iter_mut().enumerate() {
+            outputs[i]
+                .view()
+                .downcast::<ort::value::TensorValueType<f32>>()
+                .map_err(e("output type"))?
+                .copy_into(&mut *h)
+                .map_err(e("copy out"))?;
+        }
+        let ps = self.policy_size;
+        Ok(FlatOutputs {
+            policy: self.host_out[0].extract_tensor().1[..n * ps].to_vec(),
+            value: self.host_out[1].extract_tensor().1[..n].to_vec(),
+            moves_left: self
+                .host_out
+                .get(2)
+                .map(|t| t.extract_tensor().1[..n].to_vec()),
+            policy_size: ps,
+        })
+    }
+
+    /// Any number of samples, in chunks of the graph's batch.
+    fn evaluate(&mut self, input: &[f32], n: usize) -> Vec<NnOutput> {
+        let mut out = Vec::with_capacity(n);
+        let mut done = 0;
+        while done < n {
+            let k = (n - done).min(self.batch);
+            let flat = self
+                .run(&input[done * self.sample_size..], k)
+                .unwrap_or_else(|err| panic!("CUDA graph inference failed: {err}"));
+            out.extend(flat.slice(0, k));
+            done += k;
+        }
+        out
+    }
 }
 
 pub struct NeuralNet {
@@ -142,6 +350,18 @@ impl NeuralNet {
     /// shape wins. Whether that size fits the current board is checked at search time.
     pub fn new(path: &str, board_size: usize, batch_size: usize) -> Result<Self, String> {
         println!("[NN] Loading model: {}", path);
+        #[cfg(feature = "cuda")]
+        if graph_requested() {
+            let (gs, board_size, planes) = GraphSession::new(path, board_size, batch_size.max(1))?;
+            return Ok(Self {
+                backend: Backend::Graph(Box::new(gs)),
+                path: path.to_string(),
+                loaded_mtime: file_mtime(path),
+                board_size,
+                planes,
+                batch_size,
+            });
+        }
         let (session, board_size, planes) = Self::build_session(path, board_size, batch_size)?;
         Ok(Self {
             backend: Backend::Local(session),
@@ -184,8 +404,24 @@ impl NeuralNet {
         if mtime.is_none() || mtime == self.loaded_mtime {
             return Ok(false);
         }
-        let (session, board_size, planes) =
-            Self::build_session(&self.path, self.board_size, self.batch_size)?;
+        #[cfg(feature = "cuda")]
+        let graph = matches!(self.backend, Backend::Graph(_));
+        #[cfg(not(feature = "cuda"))]
+        let graph = false;
+        let (backend, board_size, planes) = if graph {
+            #[cfg(feature = "cuda")]
+            {
+                let (gs, b, p) =
+                    GraphSession::new(&self.path, self.board_size, self.batch_size.max(1))?;
+                (Backend::Graph(Box::new(gs)), b, p)
+            }
+            #[cfg(not(feature = "cuda"))]
+            unreachable!()
+        } else {
+            let (session, b, p) =
+                Self::build_session(&self.path, self.board_size, self.batch_size)?;
+            (Backend::Local(session), b, p)
+        };
         if board_size != self.board_size {
             return Err(format!(
                 "reloaded net is for a {board_size}x{board_size} board, expected {0}x{0}",
@@ -198,7 +434,7 @@ impl NeuralNet {
                 self.planes
             ));
         }
-        self.backend = Backend::Local(session);
+        self.backend = backend;
         self.loaded_mtime = mtime;
         Ok(true)
     }
@@ -361,6 +597,8 @@ impl NeuralNet {
                 let channels = self.planes.len();
                 run_inference(session, input_data, n, padded, channels, geom.board_size)
             }
+            #[cfg(feature = "cuda")]
+            Backend::Graph(gs) => gs.evaluate(&input_data, n),
             Backend::Shared(server) => server.evaluate(input_data, n),
         }
     }
@@ -538,9 +776,8 @@ pub fn bench_nn(
     Ok(rows)
 }
 
-/// `--bench-nn --graph`: the same timing with a CUDA-graph session. The input lives in
-/// one device buffer and the outputs in pinned host buffers, all bound once (a graph
-/// replays fixed addresses); each call copies the host input in and replays the graph.
+/// `--bench-nn --graph`: the same timing through a [`GraphSession`] (CUDA graph, the
+/// input copied in and the outputs copied out on every call).
 #[cfg(feature = "cuda")]
 pub fn bench_nn_graph(
     path: &str,
@@ -548,108 +785,25 @@ pub fn bench_nn_graph(
     batches: &[usize],
     iters: usize,
 ) -> Result<Vec<BenchRow>, String> {
-    use ort::memory::{AllocationDevice, Allocator, AllocatorType, MemoryInfo, MemoryType};
-    use ort::value::Tensor;
-    fn e<E: std::fmt::Display>(what: &str) -> impl Fn(E) -> String + '_ {
-        move |err| format!("{what}: {err}")
-    }
     let mut rows = Vec::with_capacity(batches.len());
     for &batch in batches {
-        let mut session = Session::builder(ort_env()?)
-            .map_err(e("session builder"))?
-            .with_intra_threads(1)
-            .map_err(e("intra threads"))?
-            .with_execution_providers([cuda_provider()
-                .with_cuda_graph(true)
-                .build()
-                .error_on_failure()])
-            .map_err(e("CUDA graph provider"))?
-            .commit_from_file(path)
-            .map_err(e("load"))?;
-        let board_size = model_board_size(&session).unwrap_or(board_size);
-        let planes = model_planes(&session, path)?;
-        let channels = planes.len();
-        let policy_size = get_policy_size(board_size);
-        let input_name = session.inputs()[0].name().to_string();
-        let output_names: Vec<String> = session
-            .outputs()
-            .iter()
-            .map(|o| o.name().to_string())
-            .collect();
-        let device = Allocator::new(
-            &session,
-            MemoryInfo::new(
-                AllocationDevice::CUDA,
-                0,
-                AllocatorType::Device,
-                MemoryType::Default,
-            )
-            .map_err(e("cuda mem"))?,
-        )
-        .map_err(e("cuda allocator"))?;
-        let pinned = Allocator::new(
-            &session,
-            MemoryInfo::new(
-                AllocationDevice::CUDA_PINNED,
-                0,
-                AllocatorType::Device,
-                MemoryType::CPUOutput,
-            )
-            .map_err(e("pinned mem"))?,
-        )
-        .map_err(e("pinned allocator"))?;
-        let shape = [batch, channels, board_size, board_size];
-        let mut host = Tensor::<f32>::new(&pinned, shape).map_err(e("host input"))?;
-        let mut dev = Tensor::<f32>::new(&device, shape).map_err(e("device input"))?;
-        {
-            let (_, data) = host.extract_tensor_mut();
-            let mut state = 0x2545_f491_4f6c_dd1du64;
-            for x in data.iter_mut() {
+        let (mut gs, _, _) = GraphSession::new(path, board_size, batch)?;
+        let mut state = 0x2545_f491_4f6c_dd1du64;
+        let input: Vec<f32> = (0..batch * gs.sample_size)
+            .map(|_| {
                 state ^= state << 13;
                 state ^= state >> 7;
                 state ^= state << 17;
-                *x = (state & 7 == 0) as u8 as f32;
-            }
-        }
-        let mut binding = session.create_binding().map_err(e("binding"))?;
-        binding
-            .bind_input(&input_name, &dev)
-            .map_err(e("bind input"))?;
-        let mut host_out = Vec::new();
-        for (i, name) in output_names.iter().enumerate() {
-            let out_shape: Vec<usize> = if i == 0 {
-                vec![batch, policy_size]
-            } else {
-                vec![batch, 1]
-            };
-            // Outputs stay on the device (fixed addresses for the graph) and are
-            // copied into pinned host buffers after each run.
-            let t = Tensor::<f32>::new(&device, out_shape.clone()).map_err(e("output"))?;
-            binding.bind_output(name, t).map_err(e("bind output"))?;
-            host_out.push(
-                Tensor::<f32>::new(&Allocator::default(), out_shape).map_err(e("host output"))?,
-            );
-        }
-        let mut call = |session: &mut Session| -> Result<f32, String> {
-            host.copy_into_async(&mut dev).map_err(e("copy in"))?;
-            let outputs = session.run_binding(&binding).map_err(e("run"))?;
-            for (i, h) in host_out.iter_mut().enumerate() {
-                outputs[i]
-                    .view()
-                    .downcast::<ort::value::TensorValueType<f32>>()
-                    .map_err(e("output type"))?
-                    .copy_into(&mut *h)
-                    .map_err(e("copy out"))?;
-            }
-            Ok(host_out[1].extract_tensor().1[0] + host_out[0].extract_tensor().1[0])
-        };
+                (state & 7 == 0) as u8 as f32
+            })
+            .collect();
         for _ in 0..3 {
-            call(&mut session)?;
+            gs.run(&input, batch)?;
         }
         let mut times = Vec::with_capacity(iters);
         for _ in 0..iters.max(1) {
             let t = std::time::Instant::now();
-            std::hint::black_box(call(&mut session)?);
+            std::hint::black_box(gs.run(&input, batch)?);
             times.push(t.elapsed().as_secs_f64() * 1000.0);
         }
         times.sort_by(|a, b| a.total_cmp(b));
@@ -707,6 +861,81 @@ mod tests {
         assert!(out.value.is_finite());
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The CUDA-graph session answers like the plain one: same policy and value (and
+    /// moves-left) on real positions, for a full batch, one sample, and more samples
+    /// than the graph's batch. GPU only (`cargo test --release -- --ignored`); the net
+    /// is copenhagen11x11.onnx, or `TAFL_GRAPH_NET` (e.g. a 24-plane fp16 T9 net).
+    #[cfg(feature = "cuda")]
+    #[test]
+    #[ignore]
+    fn graph_session_matches_the_plain_session() {
+        use crate::board::Board;
+        use crate::board::rules::RulesEnum;
+        use crate::mcts::get_left_moves;
+        use crate::movegen::MoveGen;
+        let path =
+            std::env::var("TAFL_GRAPH_NET").unwrap_or_else(|_| "copenhagen11x11.onnx".into());
+        let batch = 8;
+        let mut plain = NeuralNet::new(&path, 11, batch).unwrap();
+        let (gs, _, planes) = GraphSession::new(&path, 11, batch).unwrap();
+        let mut graph = NeuralNet {
+            backend: Backend::Graph(Box::new(gs)),
+            path: path.clone(),
+            loaded_mtime: None,
+            board_size: plain.board_size(),
+            planes,
+            batch_size: batch,
+        };
+        // Positions from a few pseudo-random games.
+        let mut board = Board::new();
+        board.set_rules(RulesEnum::Copenhagen11x11);
+        board.setup_initial_position().unwrap();
+        let mut mg = MoveGen::new();
+        let mut inputs = Vec::new();
+        let mut state = 12345u64;
+        while inputs.len() < 40 {
+            inputs.push(NnInput::from_board(&mut board, &mut mg, plain.planes()));
+            let moves = get_left_moves(&board, &mut mg);
+            if moves.is_empty() || crate::terminal::check_terminal(&mut board).is_some() {
+                board.setup_initial_position().unwrap();
+                continue;
+            }
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            board
+                .make_move_simple(moves[(state >> 33) as usize % moves.len()])
+                .unwrap();
+        }
+        let geom = board.precomputed().clone();
+        let mut worst = (0.0f32, 0.0f32);
+        for chunk in [&inputs[..8], &inputs[8..9], &inputs[9..22]] {
+            let refs: Vec<&NnInput> = chunk.iter().collect();
+            let a = plain.evaluate_batch(&refs, &geom);
+            let b = graph.evaluate_batch(&refs, &geom);
+            assert_eq!(a.len(), b.len());
+            for (x, y) in a.iter().zip(&b) {
+                let dp = x
+                    .policy
+                    .iter()
+                    .zip(&y.policy)
+                    .map(|(p, q)| (p - q).abs())
+                    .fold(0.0, f32::max);
+                worst = (worst.0.max(dp), worst.1.max((x.value - y.value).abs()));
+                assert_eq!(x.moves_left.is_some(), y.moves_left.is_some());
+                if let (Some(m), Some(n)) = (x.moves_left, y.moves_left) {
+                    assert!((m - n).abs() < 1e-2, "moves-left {m} vs {n}");
+                }
+            }
+        }
+        println!(
+            "{path}: max |policy logit diff| {:.2e}, max |value diff| {:.2e}",
+            worst.0, worst.1
+        );
+        // fp16 nets differ by kernel choice; fp32 ones should agree to ~1e-4.
+        assert!(worst.0 < 5e-2 && worst.1 < 1e-2, "{worst:?}");
     }
 
     /// The byte reader of the browser build gives the plane set the session gives, on the
