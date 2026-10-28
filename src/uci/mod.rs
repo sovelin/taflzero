@@ -280,6 +280,8 @@ impl<O: UciOutput> UciController<O> {
                 UciRunState::Continue
             }
             "board" => {
+                #[cfg(not(target_arch = "wasm32"))]
+                self.collect_search(false);
                 self.send(&format!("{:?}", self.engine().board()));
                 UciRunState::Continue
             }
