@@ -28,6 +28,25 @@ fn ort_env() -> Result<&'static Environment, String> {
 
 use super::nn_batch::BatchServer;
 
+/// The CUDA provider with the optional tuning switches from the environment
+/// (`TAFLZERO_CUDA_NHWC`, `TAFLZERO_CUDA_FUSE_BIAS`, `TAFLZERO_CUDA_TF32` = 1); unset,
+/// it is ORT's default provider.
+#[cfg(feature = "cuda")]
+fn cuda_provider() -> CUDA {
+    let on = |name: &str| std::env::var(name).is_ok_and(|v| v == "1");
+    let mut ep = CUDA::default();
+    if on("TAFLZERO_CUDA_NHWC") {
+        ep = ep.with_prefer_nhwc(true);
+    }
+    if on("TAFLZERO_CUDA_FUSE_BIAS") {
+        ep = ep.with_fuse_conv_bias(true);
+    }
+    if on("TAFLZERO_CUDA_TF32") {
+        ep = ep.with_tf32(true);
+    }
+    ep
+}
+
 /// Where a net's inferences run: this process's own ORT session, or the shared
 /// batching server of a multi-threaded datagen process.
 enum Backend {
@@ -217,7 +236,7 @@ impl NeuralNet {
             // with CPU EPs"), and a CUDA provider that fails to load is skipped
             // silently, so registering both always ended on DirectML. Try CUDA alone
             // first; fall back to DirectML only when it cannot load.
-            match builder.with_execution_providers([CUDA::default().build().error_on_failure()]) {
+            match builder.with_execution_providers([cuda_provider().build().error_on_failure()]) {
                 Ok(b) => {
                     println!("[NN] Backend: CUDA");
                     builder = b;
@@ -236,7 +255,7 @@ impl NeuralNet {
         #[cfg(all(feature = "cuda", not(feature = "directml")))]
         {
             builder = builder
-                .with_execution_providers([CUDA::default().build()])
+                .with_execution_providers([cuda_provider().build()])
                 .unwrap();
         }
         #[cfg(all(feature = "directml", not(feature = "cuda")))]
@@ -442,6 +461,208 @@ pub(super) fn run_inference(
         FlatOutputs::default(),
     )
     .slice(0, n)
+}
+
+/// One row of `--bench-nn`: a batch size and the wall time of one net call on it.
+#[derive(Debug, Clone)]
+pub struct BenchRow {
+    pub batch: usize,
+    pub p50_ms: f64,
+    pub p90_ms: f64,
+    pub samples_per_s: f64,
+}
+
+/// Times net calls the way the engine makes them, for `--bench-nn`: per batch size a
+/// fresh session warmed up on that shape, then `iters` calls through the path the
+/// batch server uses (`run_inference_flat`, buffers reused). Inputs are a fixed
+/// pseudo-random 0/1 pattern, since an all-zero input could take shortcuts.
+pub fn bench_nn(
+    path: &str,
+    board_size: usize,
+    batches: &[usize],
+    iters: usize,
+) -> Result<Vec<BenchRow>, String> {
+    let mut rows = Vec::with_capacity(batches.len());
+    for &batch in batches {
+        let (mut session, board_size, planes) = NeuralNet::build_session(path, board_size, batch)?;
+        let channels = planes.len();
+        let sample = planes.sample_size(board_size);
+        let mut state = 0x2545_f491_4f6c_dd1du64;
+        let pattern: Vec<f32> = (0..batch * sample)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                (state & 7 == 0) as u8 as f32
+            })
+            .collect();
+        let mut input = pattern.clone();
+        let mut out = FlatOutputs::default();
+        for _ in 0..3 {
+            out = run_inference_flat(
+                &mut session,
+                &mut input,
+                batch,
+                batch,
+                channels,
+                board_size,
+                out,
+            );
+        }
+        let mut times = Vec::with_capacity(iters);
+        for _ in 0..iters.max(1) {
+            input.clear();
+            input.extend_from_slice(&pattern);
+            let t = std::time::Instant::now();
+            out = run_inference_flat(
+                &mut session,
+                &mut input,
+                batch,
+                batch,
+                channels,
+                board_size,
+                out,
+            );
+            times.push(t.elapsed().as_secs_f64() * 1000.0);
+        }
+        times.sort_by(|a, b| a.total_cmp(b));
+        let pick = |q: f64| times[((times.len() - 1) as f64 * q).round() as usize];
+        let p50 = pick(0.5);
+        rows.push(BenchRow {
+            batch,
+            p50_ms: p50,
+            p90_ms: pick(0.9),
+            samples_per_s: batch as f64 * 1000.0 / p50,
+        });
+    }
+    Ok(rows)
+}
+
+/// `--bench-nn --graph`: the same timing with a CUDA-graph session. The input lives in
+/// one device buffer and the outputs in pinned host buffers, all bound once (a graph
+/// replays fixed addresses); each call copies the host input in and replays the graph.
+#[cfg(feature = "cuda")]
+pub fn bench_nn_graph(
+    path: &str,
+    board_size: usize,
+    batches: &[usize],
+    iters: usize,
+) -> Result<Vec<BenchRow>, String> {
+    use ort::memory::{AllocationDevice, Allocator, AllocatorType, MemoryInfo, MemoryType};
+    use ort::value::Tensor;
+    fn e<E: std::fmt::Display>(what: &str) -> impl Fn(E) -> String + '_ {
+        move |err| format!("{what}: {err}")
+    }
+    let mut rows = Vec::with_capacity(batches.len());
+    for &batch in batches {
+        let mut session = Session::builder(ort_env()?)
+            .map_err(e("session builder"))?
+            .with_intra_threads(1)
+            .map_err(e("intra threads"))?
+            .with_execution_providers([cuda_provider()
+                .with_cuda_graph(true)
+                .build()
+                .error_on_failure()])
+            .map_err(e("CUDA graph provider"))?
+            .commit_from_file(path)
+            .map_err(e("load"))?;
+        let board_size = model_board_size(&session).unwrap_or(board_size);
+        let planes = model_planes(&session, path)?;
+        let channels = planes.len();
+        let policy_size = get_policy_size(board_size);
+        let input_name = session.inputs()[0].name().to_string();
+        let output_names: Vec<String> = session
+            .outputs()
+            .iter()
+            .map(|o| o.name().to_string())
+            .collect();
+        let device = Allocator::new(
+            &session,
+            MemoryInfo::new(
+                AllocationDevice::CUDA,
+                0,
+                AllocatorType::Device,
+                MemoryType::Default,
+            )
+            .map_err(e("cuda mem"))?,
+        )
+        .map_err(e("cuda allocator"))?;
+        let pinned = Allocator::new(
+            &session,
+            MemoryInfo::new(
+                AllocationDevice::CUDA_PINNED,
+                0,
+                AllocatorType::Device,
+                MemoryType::CPUOutput,
+            )
+            .map_err(e("pinned mem"))?,
+        )
+        .map_err(e("pinned allocator"))?;
+        let shape = [batch, channels, board_size, board_size];
+        let mut host = Tensor::<f32>::new(&pinned, shape).map_err(e("host input"))?;
+        let mut dev = Tensor::<f32>::new(&device, shape).map_err(e("device input"))?;
+        {
+            let (_, data) = host.extract_tensor_mut();
+            let mut state = 0x2545_f491_4f6c_dd1du64;
+            for x in data.iter_mut() {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                *x = (state & 7 == 0) as u8 as f32;
+            }
+        }
+        let mut binding = session.create_binding().map_err(e("binding"))?;
+        binding
+            .bind_input(&input_name, &dev)
+            .map_err(e("bind input"))?;
+        let mut host_out = Vec::new();
+        for (i, name) in output_names.iter().enumerate() {
+            let out_shape: Vec<usize> = if i == 0 {
+                vec![batch, policy_size]
+            } else {
+                vec![batch, 1]
+            };
+            // Outputs stay on the device (fixed addresses for the graph) and are
+            // copied into pinned host buffers after each run.
+            let t = Tensor::<f32>::new(&device, out_shape.clone()).map_err(e("output"))?;
+            binding.bind_output(name, t).map_err(e("bind output"))?;
+            host_out.push(
+                Tensor::<f32>::new(&Allocator::default(), out_shape).map_err(e("host output"))?,
+            );
+        }
+        let mut call = |session: &mut Session| -> Result<f32, String> {
+            host.copy_into_async(&mut dev).map_err(e("copy in"))?;
+            let outputs = session.run_binding(&binding).map_err(e("run"))?;
+            for (i, h) in host_out.iter_mut().enumerate() {
+                outputs[i]
+                    .view()
+                    .downcast::<ort::value::TensorValueType<f32>>()
+                    .map_err(e("output type"))?
+                    .copy_into(&mut *h)
+                    .map_err(e("copy out"))?;
+            }
+            Ok(host_out[1].extract_tensor().1[0] + host_out[0].extract_tensor().1[0])
+        };
+        for _ in 0..3 {
+            call(&mut session)?;
+        }
+        let mut times = Vec::with_capacity(iters);
+        for _ in 0..iters.max(1) {
+            let t = std::time::Instant::now();
+            std::hint::black_box(call(&mut session)?);
+            times.push(t.elapsed().as_secs_f64() * 1000.0);
+        }
+        times.sort_by(|a, b| a.total_cmp(b));
+        let pick = |q: f64| times[((times.len() - 1) as f64 * q).round() as usize];
+        let p50 = pick(0.5);
+        rows.push(BenchRow {
+            batch,
+            p50_ms: p50,
+            p90_ms: pick(0.9),
+            samples_per_s: batch as f64 * 1000.0 / p50,
+        });
+    }
+    Ok(rows)
 }
 
 #[cfg(test)]

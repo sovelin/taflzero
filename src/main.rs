@@ -22,6 +22,11 @@ struct CliArgs {
     gamelog_path: Option<String>,
     dump_sample_path: Option<String>,
     nn_eval_fen: Option<String>,
+    /// `--bench-nn <batches>`: time net calls per batch size (comma-separated) and exit.
+    bench_nn: Option<Vec<usize>>,
+    bench_iters: usize,
+    /// `--graph`: `--bench-nn` with a CUDA-graph session.
+    bench_graph: bool,
     variant: RulesEnum,
     curriculum_fraction: f64,
     curriculum_path: Option<String>,
@@ -69,6 +74,9 @@ fn parse_args() -> CliArgs {
     let mut gamelog_path: Option<String> = None;
     let mut dump_sample_path: Option<String> = None;
     let mut nn_eval_fen: Option<String> = None;
+    let mut bench_nn: Option<Vec<usize>> = None;
+    let mut bench_iters = 200usize;
+    let mut bench_graph = false;
     let mut variant = RulesEnum::Copenhagen11x11;
     let mut curriculum_fraction = 0.0f64;
     let mut curriculum_path: Option<String> = None;
@@ -187,6 +195,24 @@ fn parse_args() -> CliArgs {
                     std::process::exit(2);
                 }
             }
+            "--bench-nn" => {
+                let raw = path_arg(&mut args, "--bench-nn");
+                match raw
+                    .split(',')
+                    .map(|b| b.trim().parse::<usize>())
+                    .collect::<Result<Vec<_>, _>>()
+                {
+                    Ok(list) if !list.is_empty() && list.iter().all(|&b| b > 0) => {
+                        bench_nn = Some(list)
+                    }
+                    _ => {
+                        eprintln!("Invalid value for --bench-nn (e.g. 1,8,1024): {raw}");
+                        std::process::exit(2);
+                    }
+                }
+            }
+            "--bench-iters" => bench_iters = usize_arg(&mut args, "--bench-iters", 1),
+            "--graph" => bench_graph = true,
             "--nn-eval" => {
                 if let Some(fen) = args.next() {
                     nn_eval_fen = Some(fen);
@@ -358,6 +384,9 @@ fn parse_args() -> CliArgs {
         gamelog_path,
         dump_sample_path,
         nn_eval_fen,
+        bench_nn,
+        bench_iters,
+        bench_graph,
         variant,
         curriculum_fraction,
         curriculum_path,
@@ -580,6 +609,48 @@ fn main() {
     apply_worker_overrides(&mut cli);
     if let Some(moves) = cli.replay.clone() {
         run_replay(&cli, &moves);
+        return;
+    }
+    if let Some(batches) = &cli.bench_nn {
+        let board_size = cli.variant.rules().board_size;
+        #[cfg(feature = "cuda")]
+        let result = if cli.bench_graph {
+            taflzero::search::nn::bench_nn_graph(
+                &cli.net_path,
+                board_size,
+                batches,
+                cli.bench_iters,
+            )
+        } else {
+            taflzero::search::nn::bench_nn(&cli.net_path, board_size, batches, cli.bench_iters)
+        };
+        #[cfg(not(feature = "cuda"))]
+        let result =
+            taflzero::search::nn::bench_nn(&cli.net_path, board_size, batches, cli.bench_iters);
+        match result {
+            Ok(rows) => {
+                println!(
+                    "bench-nn {} ({} calls per batch{})",
+                    cli.net_path,
+                    cli.bench_iters,
+                    if cli.bench_graph { ", CUDA graph" } else { "" }
+                );
+                println!(
+                    "{:>6} {:>9} {:>9} {:>12}",
+                    "batch", "p50 ms", "p90 ms", "samples/s"
+                );
+                for r in rows {
+                    println!(
+                        "{:>6} {:>9.3} {:>9.3} {:>12.0}",
+                        r.batch, r.p50_ms, r.p90_ms, r.samples_per_s
+                    );
+                }
+            }
+            Err(err) => {
+                eprintln!("{err}");
+                std::process::exit(2);
+            }
+        }
         return;
     }
     if cli.match_mode {
