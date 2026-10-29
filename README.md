@@ -99,7 +99,7 @@ TaflZero speaks a UCI-based protocol. Run the binary and communicate via stdin/s
 | Tablut 9×9 | [tablut9x9.onnx](https://github.com/sovelin/taflzero/raw/v0.2.0/tablut9x9.onnx) |
 
 The T9 net (finished on 2026-10-28) is about +400 Elo stronger than the previous default,
-the T2 net `copenhagen11x11.onnx` of v0.2.0 (2026-10-17): +382 Elo (95% CI +270…+493) in 100
+the T2 net `copenhagen11x11.onnx` (generation 225, trained in August 2026, the default since v0.2.0): +382 Elo (95% CI +270…+493) in 100
 paired games at 100 nodes a move (89 wins, 9 losses, 2 draws), and +419 ± 54 on the training
 run's checkpoint ladder at 20 nodes.
 
