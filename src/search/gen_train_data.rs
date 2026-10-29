@@ -1273,12 +1273,19 @@ mod tests {
             "one record per sample"
         );
         let want = std::fs::read(&replayed).unwrap();
-        // Surprise and FLAGS2 are self-play only; the replay writes 0 there.
+        // Surprise and FLAGS2 are self-play only; the replay writes 0 there. The
+        // replay infers how a game ended from its candidate last moves and writes
+        // TERMINAL_UNKNOWN when they disagree; self-play knows, so that byte counts as
+        // equal then.
         let mut feat = feat;
         for r in 0..stats.records {
             let at = 16 + r * 144;
             feat[at + crate::search::features::offset::SURPRISE] = 0;
             feat[at + crate::search::features::offset::FLAGS2] = 0;
+            let term = at + crate::search::features::offset::TERMINAL;
+            if want[term] == crate::search::features::TERMINAL_UNKNOWN {
+                feat[term] = crate::search::features::TERMINAL_UNKNOWN;
+            }
         }
         if feat != want {
             let at = feat.iter().zip(&want).position(|(a, b)| a != b).unwrap();
