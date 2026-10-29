@@ -95,9 +95,9 @@ TaflZero speaks a UCI-based protocol. Run the binary and communicate via stdin/s
 
 | Variant | File |
 |---|---|
-| Copenhagen / Historical 11×11 (default) | [copenhagen-T9-10x128-step620381.onnx](https://github.com/sovelin/taflzero/raw/main/copenhagen-T9-10x128-step620381.onnx) (T9, 10×128, 24 input planes, fp16) |
+| Copenhagen / Historical 11×11 (default) | [copenhagen-T9-10x128-step620381.onnx](https://github.com/sovelin/taflzero/raw/v0.3.0/copenhagen-T9-10x128-step620381.onnx) (T9, 10×128, 24 input planes, fp16) |
 | Copenhagen / Historical 11×11 (previous net) | [copenhagen11x11.onnx](https://github.com/sovelin/taflzero/raw/v0.2.0/copenhagen11x11.onnx) |
-| Tablut 9×9 | [tablut9x9.onnx](https://github.com/sovelin/taflzero/raw/v0.2.0/tablut9x9.onnx) |
+| Tablut 9×9 | [tablut9x9.onnx](https://github.com/sovelin/taflzero/raw/v0.3.0/tablut9x9.onnx) |
 
 The T9 net (finished on 2026-10-28) is about +400 Elo stronger than the previous default,
 the T2 net `copenhagen11x11.onnx` (generation 225, trained in August 2026, the default since v0.2.0): +382 Elo (95% CI +270…+493) in 100

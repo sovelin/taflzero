@@ -1,6 +1,6 @@
 [package]
 name = "taflzero"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.91"
 description = "Artificial intelligence that plays Copenhagen and Historical Hnefatafl (11x11) and Tablut (9x9)"

@@ -822,7 +822,7 @@ function __wbg_get_imports() {
             const ret = Atomics.load(getObject(arg0), arg1 >>> 0);
             return ret;
         }, arguments); },
-        __wbg_load_c0649d8c6d96a9ce: function() { return handleError(function (arg0, arg1) {
+        __wbg_load_5acb1b8788826b03: function() { return handleError(function (arg0, arg1) {
             const ret = Atomics.load(getObject(arg0), arg1 >>> 0);
             return ret;
         }, arguments); },
