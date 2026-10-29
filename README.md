@@ -103,6 +103,9 @@ the T2 net `copenhagen11x11.onnx` (generation 225, trained in August 2026, the d
 paired games at 100 nodes a move (89 wins, 9 losses, 2 draws), and +419 ± 54 on the training
 run's checkpoint ladder at 20 nodes.
 
+T9 trained from scratch in 4.75 days of wall-clock time (2026-10-24 to 2026-10-28) on one RTX 5080: 870,379 self-play
+games, 158.9 million positions, 620,381 training steps of 1,024 positions.
+
 **Command-line arguments:**
 
 ```
