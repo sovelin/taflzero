@@ -200,14 +200,15 @@ impl<O: UciOutput> UciController<O> {
                 UciRunState::Continue
             }
             "setoption" => {
+                // A finished `go` still holds the engine until a command collects it.
+                #[cfg(not(target_arch = "wasm32"))]
+                self.collect_search(false);
                 if tokens.len() >= 5
                     && tokens[1] == "name"
                     && tokens[2] == "NNFile"
                     && tokens[3] == "value"
                 {
                     let path = tokens[4];
-                    #[cfg(not(target_arch = "wasm32"))]
-                    self.collect_search(false);
                     match self.engine_mut().set_nn(path.to_string()) {
                         Ok(()) => self.send(&format!("NN file set to '{}'", path)),
                         Err(err) => self.send(&format!("cannot set NN file: {err}")),
@@ -283,6 +284,8 @@ impl<O: UciOutput> UciController<O> {
                 UciRunState::Continue
             }
             "board" => {
+                #[cfg(not(target_arch = "wasm32"))]
+                self.collect_search(false);
                 self.send(&format!("{:?}", self.engine().board()));
                 UciRunState::Continue
             }
