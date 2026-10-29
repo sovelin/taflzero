@@ -23,7 +23,7 @@ def _load_match_tool():
 match_tool = _load_match_tool()
 
 
-# в”Ђв”Ђв”Ђ tools/match.py: moves / evals lines в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+# ─── tools/match.py: moves / evals lines ────────────────────────────────────
 
 
 def test_parse_record_lines() -> None:
@@ -76,7 +76,7 @@ def test_match_stream_older_engine_without_records() -> None:
     assert pair == 0 and "moves" not in both[True] and both[False]["reason"] == "max_plies"
 
 
-# в”Ђв”Ђв”Ђ dashboard: self-play game index and /api/game в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+# ─── dashboard: self-play game index and /api/game ──────────────────────────
 
 import json  # noqa: E402
 import struct  # noqa: E402
