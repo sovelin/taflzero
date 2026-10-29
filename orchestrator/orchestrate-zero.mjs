@@ -84,6 +84,8 @@ function parseArgs(argv) {
         else if (a === "--aux-policy-weight") args.auxPolicyWeight = floatArg(next(), a, 0);
         else if (a === "--corner-weight") args.cornerWeight = floatArg(next(), a, 0);
         else if (a === "--decided-policy-k") args.decidedPolicyK = floatArg(next(), a, 0);
+        else if (a === "--moves-left") args.movesLeft = true;
+        else if (a === "--moves-left-weight") args.movesLeftWeight = floatArg(next(), a, 0);
         else if (a === "--weight-decay") args.weightDecay = floatArg(next(), a, 0);
         else if (a === "--defender-weight") args.defenderWeight = floatArg(next(), a, 0);
         else if (a === "--workers") args.workers = intArg(next(), a, 1);
@@ -422,6 +424,15 @@ async function main() {
         }
         if (args.decidedPolicyK != null) {
             trainArgs.push("--decided-policy-k", String(args.decidedPolicyK));
+        }
+        // Moves-left head: --moves-left grafts/keeps it, --moves-left-weight
+        // trains it. Grafting is a no-op once the checkpoint already carries the
+        // head, so it is safe to pass every generation.
+        if (args.movesLeft) {
+            trainArgs.push("--moves-left");
+        }
+        if (args.movesLeftWeight != null) {
+            trainArgs.push("--moves-left-weight", String(args.movesLeftWeight));
         }
         await run(python, trainArgs);
 

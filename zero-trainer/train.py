@@ -10,23 +10,35 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import itertools
 import json
 import sys
 import time
 from pathlib import Path
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, random_split
 
 from az_micro_net import TaflAlphaZeroNet
-from dataset import SelfPlayDataset
+from dataset import SelfPlayDataset, parse_planes
 from export_onnx import export_model_to_onnx
 from qnxx_io import save_qnxx, load_qnxx
-from training_utils import alpha_zero_loss, policy_loss_masked
+from training_utils import alpha_zero_loss, policy_loss_masked, moves_left_loss, value_loss
 
 LOG_INTERVAL = 100  # print stats every N steps
+
+
+def _autocast(device: torch.device, amp_dtype: torch.dtype | None):
+    if amp_dtype is None:
+        return contextlib.nullcontext()
+    return torch.autocast(device_type=device.type, dtype=amp_dtype)
+
+
+def _to_fp32(outs):
+    return tuple(o.float() if isinstance(o, torch.Tensor) else o for o in outs)
 
 
 def compute_batch_loss(
@@ -38,8 +50,30 @@ def compute_batch_loss(
     corner_weight: float,
     use_aux: bool,
     decided_policy_k: float = 0.0,
+    moves_left_weight: float = 0.0,
+    amp_dtype: torch.dtype | None = None,
+    cheap_value_weight: float = 1.0,
+    value_weight: float = 1.0,
+    td_weight: float = 0.0,
+    soft_policy_weight: float = 0.0,
+    extra: dict | None = None,
 ):
     """Forward + all loss terms for one batch.
+
+    T9 options (docs/plan-T9.md), all off by default; with every one off this
+    function computes exactly what it always did:
+      value_weight        scales the value loss in the total.
+      td_weight           per short-term value head (model built with td_heads);
+                          needs the 14-element replay batch (z, td targets).
+      soft_policy_weight  soft policy CE (model built with soft_policy).
+      a WDL value head (model built with value_wdl) trains on win/draw/loss
+                          classes: games with an unknown result are draws.
+    `extra`, when given, receives the T9 metrics (td, soft_p, draw_pred, draw_frac).
+
+    `amp_dtype` (e.g. torch.bfloat16) runs the forward pass under autocast; the
+    network outputs are cast back to float32 before any loss is computed, so the
+    loss terms, masks and their reductions stay in full precision. Weights and
+    gradients stay float32 (autocast only changes the matmul/conv precision).
 
     `decided_policy_k` > 0 down-weights the policy loss in decided positions:
     policy weight *= (1 - |root_q|**decided_policy_k).  In won/lost positions
@@ -47,10 +81,29 @@ def compute_batch_loss(
     training policy on them teaches diffuse, non-converting late-game play.
     Value loss is NOT down-weighted (the outcome signal there is correct).
 
+    Samples whose game outcome is unknown (`moves_left_valid` = 0: the game hit
+    a ply / no-capture limit) are masked out of the value loss entirely.  Their
+    value_target is the search's own root_q, and training on it feeds the
+    net's evaluation back to itself.
+
+    `cheap_value_weight` scales the value loss of cheap-search samples
+    (policy_valid = 0, value target plain z); 1.0 = as every other sample, 0.0 =
+    value from full-search samples only (KataGo records only those).
+
     Returns (total, p_loss, v_loss, aux_p_loss, corner_loss) as tensors.
     """
+    if (getattr(model, "value_wdl", False) or value_weight != 1.0
+            or (td_weight > 0.0 and "td_head" in model._modules)
+            or (soft_policy_weight > 0.0 and "soft_policy_head" in model._modules)):
+        return _compute_batch_loss_t9(
+            model, batch, device, defender_weight, aux_policy_weight, corner_weight, use_aux,
+            decided_policy_k, moves_left_weight, amp_dtype, cheap_value_weight,
+            value_weight, td_weight, soft_policy_weight, extra,
+        )
+
     (planes, legal_mask, pi_target, value_target,
-     policy_valid, aux_policy, aux_legal, aux_valid, corner, root_q) = batch
+     policy_valid, aux_policy, aux_legal, aux_valid, corner, root_q,
+     moves_left_target, moves_left_valid) = batch[:12]
 
     planes = planes.to(device)
     legal_mask = legal_mask.to(device)
@@ -58,7 +111,15 @@ def compute_batch_loss(
     value_target = value_target.to(device)
     policy_valid = policy_valid.to(device)
 
+    want_ml = moves_left_weight > 0.0 and model.has_moves_left
+    if want_ml:
+        moves_left_target = moves_left_target.to(device)
+        moves_left_valid = moves_left_valid.to(device)
+
     weights = compute_sample_weights(planes, value_target, defender_weight)
+    value_weights = weights * moves_left_valid.to(device)
+    if cheap_value_weight != 1.0:
+        value_weights = value_weights * (policy_valid + (1.0 - policy_valid) * cheap_value_weight)
 
     policy_weights = None
     if decided_policy_k > 0.0:
@@ -72,35 +133,49 @@ def compute_batch_loss(
         aux_valid = aux_valid.to(device)
         corner = corner.to(device)
 
-        policy_logits, value_pred, aux_logits, corner_logits = model.forward_with_aux(planes)
+        with _autocast(device, amp_dtype):
+            outs = model.forward_with_aux(planes)
+        policy_logits, value_pred, aux_logits, corner_logits, ml_pred = _to_fp32(outs)
         total, p_loss, v_loss = alpha_zero_loss(
             policy_logits=policy_logits,
             value_pred=value_pred,
             pi_target=pi_target,
             value_target=value_target,
             legal_mask=legal_mask,
-            sample_weights=weights,
+            sample_weights=value_weights,
             policy_valid=policy_valid,
-            policy_sample_weights=policy_weights,
+            policy_sample_weights=policy_weights if policy_weights is not None else weights,
         )
         aux_p_loss = policy_loss_masked(aux_logits, aux_policy, aux_legal, aux_valid)
         corner_loss = F.cross_entropy(corner_logits, corner)
         total = total + aux_policy_weight * aux_p_loss + corner_weight * corner_loss
-        return total, p_loss, v_loss, aux_p_loss, corner_loss
+        ml_loss = total.detach() * 0.0
+        if want_ml and ml_pred is not None:
+            ml_loss = moves_left_loss(ml_pred, moves_left_target, moves_left_valid)
+            total = total + moves_left_weight * ml_loss
+        return total, p_loss, v_loss, aux_p_loss, corner_loss, ml_loss
 
-    policy_logits, value_pred = model(planes)
+    with _autocast(device, amp_dtype):
+        out = model(planes)
+    out = _to_fp32(out)
+    policy_logits, value_pred = out[0], out[1]
+    ml_pred = out[2] if len(out) > 2 else None
     total, p_loss, v_loss = alpha_zero_loss(
         policy_logits=policy_logits,
         value_pred=value_pred,
         pi_target=pi_target,
         value_target=value_target,
         legal_mask=legal_mask,
-        sample_weights=weights,
+        sample_weights=value_weights,
         policy_valid=policy_valid,
-        policy_sample_weights=policy_weights,
+        policy_sample_weights=policy_weights if policy_weights is not None else weights,
     )
     zero = total.detach() * 0.0
-    return total, p_loss, v_loss, zero, zero
+    ml_loss = zero
+    if want_ml and ml_pred is not None:
+        ml_loss = moves_left_loss(ml_pred, moves_left_target, moves_left_valid)
+        total = total + moves_left_weight * ml_loss
+    return total, p_loss, v_loss, zero, zero, ml_loss
 
 
 def infinite_dataloader(loader: DataLoader):
@@ -119,6 +194,7 @@ def compute_val_loss(
     aux_policy_weight: float = 0.0,
     corner_weight: float = 0.0,
     use_aux: bool = False,
+    cheap_value_weight: float = 1.0,
 ) -> tuple[float, float, float]:
     """Compute average validation loss over a few batches."""
     model.eval()
@@ -127,9 +203,10 @@ def compute_val_loss(
     total_v = 0.0
     n = 0
     for batch in itertools.islice(val_loader, max_batches):
-        loss, p_loss, v_loss, _, _ = compute_batch_loss(
+        loss, p_loss, v_loss, _, _, _ = compute_batch_loss(
             model, batch, device, defender_weight,
             aux_policy_weight, corner_weight, use_aux,
+            cheap_value_weight=cheap_value_weight,
         )
         total_loss += loss.item()
         total_p += p_loss.item()
@@ -140,6 +217,109 @@ def compute_val_loss(
     if n == 0:
         return 0.0, 0.0, 0.0
     return total_loss / n, total_p / n, total_v / n
+
+
+WDL_WIN, WDL_DRAW, WDL_LOSS = 0, 1, 2
+
+
+def wdl_classes(z: torch.Tensor, known: torch.Tensor) -> torch.Tensor:
+    """Win/draw/loss class per sample from the side to move: a known result by the
+    sign of z, an unknown one (ply / no-capture limit) a draw."""
+    cls = torch.full(z.shape, WDL_DRAW, dtype=torch.long, device=z.device)
+    k = known > 0.5
+    cls[k & (z > 0)] = WDL_WIN
+    cls[k & (z < 0)] = WDL_LOSS
+    return cls
+
+
+def soft_policy_target(pi_target: torch.Tensor, legal_mask: torch.Tensor, power: float = 0.25) -> torch.Tensor:
+    """KataGo's soft policy target: (pi + 1e-7) ** power over the legal moves, renormalized."""
+    legal = legal_mask.to(pi_target.dtype)
+    t = ((pi_target + 1e-7) * legal).pow(power) * legal
+    return t / t.sum(dim=1, keepdim=True).clamp_min(1e-12)
+
+
+def _compute_batch_loss_t9(
+    model, batch, device, defender_weight, aux_policy_weight, corner_weight, use_aux,
+    decided_policy_k, moves_left_weight, amp_dtype, cheap_value_weight,
+    value_weight, td_weight, soft_policy_weight, extra,
+):
+    """compute_batch_loss with the T9 heads; same return tuple."""
+    (planes, legal_mask, pi_target, value_target,
+     policy_valid, aux_policy, aux_legal, aux_valid, corner, root_q,
+     moves_left_target, moves_left_valid) = batch[:12]
+    has_t9 = len(batch) >= 14
+    planes = planes.to(device)
+    legal_mask = legal_mask.to(device)
+    pi_target = pi_target.to(device)
+    value_target = value_target.to(device)
+    policy_valid = policy_valid.to(device)
+    known = moves_left_valid.to(device)
+
+    with _autocast(device, amp_dtype):
+        raw = model.forward_train(planes)
+    outs = {k: (v.float() if isinstance(v, torch.Tensor) else v) for k, v in raw.items()}
+
+    weights = compute_sample_weights(planes, value_target, defender_weight)
+    cheap_scale = policy_valid + (1.0 - policy_valid) * cheap_value_weight
+
+    policy_weights = weights
+    if decided_policy_k > 0.0:
+        rq = root_q.to(device)
+        policy_weights = weights * (1.0 - rq.abs().clamp(0.0, 1.0) ** decided_policy_k)
+    p_loss = policy_loss_masked(outs["policy"], pi_target, legal_mask, policy_valid, policy_weights)
+
+    if model.value_wdl:
+        if not has_t9:
+            raise ValueError("a WDL value head needs the replay batch with z (14 elements)")
+        z = batch[12].to(device)
+        cls = wdl_classes(z, known)
+        vw = weights * cheap_scale
+        ce = F.cross_entropy(outs["value_logits"], cls, reduction="none")
+        v_loss = (ce * vw).sum() / vw.sum().clamp_min(1e-6)
+        if extra is not None:
+            extra["draw_pred"] = float(torch.softmax(outs["value_logits"].detach(), dim=1)[:, WDL_DRAW].mean())
+            extra["draw_frac"] = float((cls == WDL_DRAW).float().mean())
+    else:
+        v_loss = value_loss(outs["value"], value_target, weights * known * cheap_scale)
+
+    total = p_loss + value_weight * v_loss
+    zero = total.detach() * 0.0
+    aux_p_loss = corner_loss = ml_loss = zero
+
+    if use_aux and outs["aux_policy"] is not None:
+        aux_p_loss = policy_loss_masked(outs["aux_policy"], aux_policy.to(device), aux_legal.to(device),
+                                        aux_valid.to(device))
+        corner_loss = F.cross_entropy(outs["corner"], corner.to(device))
+        total = total + aux_policy_weight * aux_p_loss + corner_weight * corner_loss
+
+    if moves_left_weight > 0.0 and outs["moves_left"] is not None:
+        ml_loss = moves_left_loss(outs["moves_left"], moves_left_target.to(device), known)
+        total = total + moves_left_weight * ml_loss
+
+    if td_weight > 0.0 and outs["td"] is not None:
+        if not has_t9:
+            raise ValueError("short-term value heads need the replay batch with td targets (14 elements)")
+        td_t = batch[13].to(device)
+        if td_t.shape != outs["td"].shape:
+            raise ValueError(f"td targets {tuple(td_t.shape)} vs heads {tuple(outs['td'].shape)}")
+        # masked like the value loss: NaN targets out, sample and cheap-search weights in
+        valid = torch.isfinite(td_t).float() * (weights * cheap_scale).unsqueeze(1)
+        err = (outs["td"] - torch.nan_to_num(td_t)).pow(2) * valid
+        per_head = err.sum(dim=0) / valid.sum(dim=0).clamp_min(1e-6)
+        td_loss = per_head.sum()
+        total = total + td_weight * td_loss
+        if extra is not None:
+            extra["td"] = float(per_head.detach().mean())
+
+    if soft_policy_weight > 0.0 and outs["soft_policy"] is not None:
+        soft_t = soft_policy_target(pi_target, legal_mask)
+        soft_loss = policy_loss_masked(outs["soft_policy"], soft_t, legal_mask, policy_valid, weights)
+        total = total + soft_policy_weight * soft_loss
+        if extra is not None:
+            extra["soft_p"] = float(soft_loss.detach())
+
+    return total, p_loss, v_loss, aux_p_loss, corner_loss, ml_loss
 
 
 def compute_sample_weights(
@@ -173,11 +353,14 @@ def train(
     restore_best: bool,
     device: torch.device,
     warmup_steps: int = 0,
+    lr_final: float | None = None,
     aux_policy_weight: float = 0.0,
     corner_weight: float = 0.0,
     decided_policy_k: float = 0.0,
+    moves_left_weight: float = 0.0,
     checkpoint_every: int = 0,
     checkpoint_path=None,
+    cheap_value_weight: float = 1.0,
 ) -> dict:
     model.to(device)
     model.train()
@@ -211,11 +394,13 @@ def train(
     print(f"Device: {device}, defender_weight={defender_weight}")
     print()
 
+    use_ml = model.has_moves_left and moves_left_weight > 0.0
     running_loss = 0.0
     running_p = 0.0
     running_v = 0.0
     running_ap = 0.0
     running_c = 0.0
+    running_ml = 0.0
     t0 = time.time()
     best_val_loss = float("inf")
     best_state_dict = None
@@ -230,11 +415,21 @@ def train(
         if warmup_steps > 0 and step <= warmup_steps:
             for group in optimizer.param_groups:
                 group["lr"] = lr * step / warmup_steps
+        elif lr_final is not None and lr_final != lr:
+            # Cosine decay from lr -> lr_final over the post-warmup steps.
+            import math as _math
+            prog = (step - warmup_steps) / max(1, steps - warmup_steps)
+            prog = min(max(prog, 0.0), 1.0)
+            cur_lr = lr_final + 0.5 * (lr - lr_final) * (1 + _math.cos(_math.pi * prog))
+            for group in optimizer.param_groups:
+                group["lr"] = cur_lr
 
-        total_loss, p_loss, v_loss, ap_loss, c_loss = compute_batch_loss(
+        total_loss, p_loss, v_loss, ap_loss, c_loss, ml_loss = compute_batch_loss(
             model, batch, device, defender_weight,
             aux_policy_weight, corner_weight, use_aux,
             decided_policy_k=decided_policy_k,
+            moves_left_weight=moves_left_weight,
+            cheap_value_weight=cheap_value_weight,
         )
 
         optimizer.zero_grad(set_to_none=True)
@@ -256,6 +451,7 @@ def train(
         running_v += v_loss.item()
         running_ap += ap_loss.item()
         running_c += c_loss.item()
+        running_ml += ml_loss.item()
 
         if step % LOG_INTERVAL == 0 or step == steps:
             dt = time.time() - t0
@@ -264,6 +460,7 @@ def train(
             avg_v = running_v / LOG_INTERVAL
             avg_ap = running_ap / LOG_INTERVAL
             avg_c = running_c / LOG_INTERVAL
+            avg_ml = running_ml / LOG_INTERVAL
             speed = LOG_INTERVAL * batch_size / dt
 
             val_loss, val_p, val_v = compute_val_loss(
@@ -272,13 +469,15 @@ def train(
                 aux_policy_weight=aux_policy_weight,
                 corner_weight=corner_weight,
                 use_aux=use_aux,
+                cheap_value_weight=cheap_value_weight,
             )
 
             aux_str = f"aux_p={avg_ap:.4f}  corner={avg_c:.4f}  " if use_aux else ""
+            ml_str = f"moves_left={avg_ml:.4f}  " if use_ml else ""
             print(
                 f"Step {step:5d}/{steps}  "
                 f"loss={avg_loss:.4f}  policy={avg_p:.4f}  value={avg_v:.4f}  "
-                f"{aux_str}"
+                f"{aux_str}{ml_str}"
                 f"val_loss={val_loss:.4f}  val_p={val_p:.4f}  val_v={val_v:.4f}  "
                 f"{speed:.0f} samples/s"
             )
@@ -312,6 +511,7 @@ def train(
             running_v = 0.0
             running_ap = 0.0
             running_c = 0.0
+            running_ml = 0.0
             t0 = time.time()
 
     # Restore best model if we tracked it
@@ -338,6 +538,8 @@ def main() -> None:
     parser.add_argument("--se", action="store_true", help="Squeeze-excitation blocks for a fresh model (ignored if --checkpoint given)")
     parser.add_argument("--gpool-channels", type=int, default=None, help="Global pooling channels on odd blocks for a fresh model (0 = off; ignored if --checkpoint given)")
     parser.add_argument("--aux-heads", action="store_true", help="Build training-only aux heads (opponent policy + king corner) for a fresh model")
+    parser.add_argument("--moves-left", action="store_true", help="Build/graft a moves-left head (predicts plies to game end; adds a 3rd ONNX output). Grafts onto a loaded checkpoint if it lacks one.")
+    parser.add_argument("--moves-left-weight", type=float, default=0.0, help="Loss weight for the moves-left head (0 = don't train it). Try 0.1. Requires --moves-left or an MLH checkpoint.")
     parser.add_argument("--decided-policy-k", type=float, default=0.0, help="Down-weight policy loss in decided positions by (1-|root_q|**k); 0 = off. Try 4.0. Value loss unaffected.")
     parser.add_argument("--aux-policy-weight", type=float, default=0.15, help="Loss weight of the opponent-reply aux policy head (used only if the model has aux heads)")
     parser.add_argument("--corner-weight", type=float, default=0.1, help="Loss weight of the king-escape-corner aux head (used only if the model has aux heads)")
@@ -350,18 +552,45 @@ def main() -> None:
     parser.add_argument("--batch", type=int, default=256, help="Batch size")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
     parser.add_argument("--warmup-steps", type=int, default=0, help="Linear LR warmup steps from 0 to --lr (0 = disabled, no warmup)")
+    parser.add_argument("--lr-final", type=float, default=None, help="If set, cosine-decay LR from --lr to this value over post-warmup steps (None = constant LR)")
     parser.add_argument("--weight-decay", type=float, default=1e-4, help="Weight decay (L2 regularization)")
     parser.add_argument("--defender-weight", type=float, default=1.0, help="Loss weight for defender-win samples (1.0 = no reweighting)")
     parser.add_argument("--value-lambda", type=float, default=0.5, help="Weight of final result z in value target; (1-lambda) goes to MCTS root Q")
+    parser.add_argument("--value-gamma", type=float, default=1.0, help="Per-ply discount of the game outcome z (z *= gamma**plies_remaining); 1.0 = off (flat +/-1). Try 0.99 to reward fast conversion of won positions.")
     parser.add_argument("--early-stopping-patience", type=int, default=0, help="Stop if val_loss doesn't improve for N checks (0 = disabled)")
     parser.add_argument("--no-restore-best", action="store_true", help="Always use final model weights, don't restore best val_loss checkpoint")
+    parser.add_argument("--planes", type=str, default="base", help="Input plane list, e.g. base,-throne,last2 (dataset.parse_planes, docs/probe-input-planes.md); a fresh model's in_channels follows it")
+    parser.add_argument("--features", type=Path, default=None, help="Feature side file from `taflzero --features` (needed by the last*/rep_dst/king12/ply/cap/mob planes)")
+    parser.add_argument("--limit", type=int, default=0, help="Use only the first N samples of --data (0 = all); with --features, the side file's record count when the data file has grown since")
+    parser.add_argument("--cheap-value-weight", type=float, default=1.0, help="Value-loss weight of cheap-search samples (policy_valid=0); 0 = value from full searches only")
+    parser.add_argument("--seed", type=int, default=0, help="RNG seed for reproducible weight init + data order (0 = unseeded). Set equal across A/B runs to isolate one changed flag.")
     args = parser.parse_args()
 
     if not args.data.exists():
         print(f"Data file not found: {args.data}", file=sys.stderr)
         sys.exit(1)
 
+    # Deterministic weight init + data order so A/B runs differ ONLY by the flag
+    # under test (e.g. --value-gamma).  0 = leave RNG unseeded (original behavior).
+    if args.seed != 0:
+        import random as _random
+        _random.seed(args.seed)
+        np.random.seed(args.seed)
+        torch.manual_seed(args.seed)
+        torch.cuda.manual_seed_all(args.seed)
+        print(f"Seeded RNG with {args.seed}")
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    try:
+        plane_spec = parse_planes(args.planes)
+    except ValueError as e:
+        parser.error(str(e))
+    if plane_spec.needs_features and args.features is None:
+        parser.error(f"--planes {args.planes} needs --features")
+    # compute_sample_weights reads the side to move from channel 3.
+    if args.defender_weight != 1.0 and plane_spec.index_of("stm") != 3:
+        parser.error("--defender-weight needs the stm plane at channel 3 (keep base's first four planes)")
 
     # Load or create model
     if args.checkpoint and args.checkpoint.exists():
@@ -374,6 +603,8 @@ def main() -> None:
         if args.blocks is not None:
             model_kwargs["num_blocks"] = args.blocks
         model_kwargs["board_size"] = args.board_size
+        model_kwargs["in_channels"] = plane_spec.num_planes
+        model_kwargs["planes"] = plane_spec.canonical
         if args.value_channels is not None:
             model_kwargs["value_channels"] = args.value_channels
         if args.se:
@@ -382,8 +613,21 @@ def main() -> None:
             model_kwargs["gpool_channels"] = args.gpool_channels
         if args.aux_heads:
             model_kwargs["aux_heads"] = True
+        if args.moves_left:
+            model_kwargs["moves_left"] = True
         model = TaflAlphaZeroNet(**model_kwargs)
         print(f"Creating new model: {model.model_kwargs}")
+
+    # Graft a moves-left head onto a loaded checkpoint that lacks one, so a
+    # mature run can continue with MLH instead of restarting from scratch.
+    if args.moves_left and not model.has_moves_left:
+        model.enable_moves_left()
+        model.to(device)
+        print("Grafted a fresh moves-left head onto the loaded model")
+
+    if model.model_kwargs["in_channels"] != plane_spec.num_planes:
+        parser.error(f"the model reads {model.model_kwargs['in_channels']} planes, "
+                     f"--planes {args.planes} gives {plane_spec.num_planes}")
 
     # Load dataset
     print(f"Loading data: {args.data}")
@@ -391,7 +635,9 @@ def main() -> None:
     board_size = model.model_kwargs.get("board_size", 11)
     dataset = SelfPlayDataset(
         args.data, window_size=args.window, z_lambda=args.value_lambda,
-        legacy=args.legacy_data, board_size=board_size,
+        legacy=args.legacy_data, board_size=board_size, value_gamma=args.value_gamma,
+        need_moves_left=(model.has_moves_left and args.moves_left_weight > 0.0),
+        planes=args.planes, features=args.features, limit=args.limit,
     )
     print(f"Loaded {len(dataset)} samples" + (f" (window={args.window})" if args.window > 0 else ""))
 
@@ -423,11 +669,14 @@ def main() -> None:
         restore_best=not args.no_restore_best,
         device=device,
         warmup_steps=args.warmup_steps,
+        lr_final=args.lr_final,
         aux_policy_weight=args.aux_policy_weight,
         corner_weight=args.corner_weight,
         decided_policy_k=args.decided_policy_k,
+        moves_left_weight=args.moves_left_weight,
         checkpoint_every=args.checkpoint_every,
         checkpoint_path=args.save_checkpoint,
+        cheap_value_weight=args.cheap_value_weight,
     )
 
     # Save outputs

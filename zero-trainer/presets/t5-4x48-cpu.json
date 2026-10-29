@@ -1,0 +1,16 @@
+{
+  "description": "Acceptance run of the continuous loop: 4x48 from scratch on CPU, 14 workers, Gumbel 16 at 160/40, MLH 0.15. Target: >= 10% attacker wins by 1M positions.",
+  "trainer": {
+    "channels": 48, "blocks": 4, "value_channels": 4, "se": true, "gpool_channels": 16,
+    "aux_heads": true, "moves_left": true,
+    "workers": 14, "train_threads": 2, "batch": 512, "optimizer": "sgd",
+    "sample_reuse": 4, "min_samples": 100000, "window_base": 250000, "window_cap": 2000000,
+    "max_training_lag": 200000, "sync_every": 40, "checkpoint_every": 2000, "log_every": 100,
+    "full_nodes": 160, "cheap_nodes": 40, "full_prob": 0.25, "max_plies": 400,
+    "gumbel": 16, "mlh_alpha": 0.15, "variant": "copenhagen11x11"
+  },
+  "eval": {
+    "anchors": ["copenhagen11x11.onnx", "zero-trainer/weights/T2/gen0061.onnx"],
+    "pairs": 30, "nodes": 400, "workers": 2, "blind": true, "playout_every": 5
+  }
+}

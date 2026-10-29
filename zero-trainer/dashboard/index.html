@@ -1,0 +1,1755 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TaflZero Training</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg: #fcfcfb; --surface: #ffffff; --ink: #1d1d1b; --ink-2: #5a5a56; --ink-3: #8a8a85; --line: #e4e4e0;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
+  --good: #1a8a3c; --warn: #b26b00; --bad: #c42b2b;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #1a1a19; --surface: #242423; --ink: #ececea; --ink-2: #b4b4b0; --ink-3: #85857f; --line: #363634;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #2aa02a; --s7: #9085e9; --s8: #e66767;
+}}
+:root[data-theme="dark"] {
+  --bg: #1a1a19; --surface: #242423; --ink: #ececea; --ink-2: #b4b4b0; --ink-3: #85857f; --line: #363634;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #2aa02a; --s7: #9085e9; --s8: #e66767;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { display: flex; align-items: center; gap: 16px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+header .spacer { flex: 1; }
+.layout { display: grid; grid-template-columns: 280px 1fr; min-height: calc(100vh - 49px); }
+aside { border-right: 1px solid var(--line); padding: 12px; overflow: auto; }
+main { padding: 16px; overflow: auto; }
+@media (max-width: 900px) { .layout { grid-template-columns: 1fr; } aside { border-right: 0; border-bottom: 1px solid var(--line); } }
+.run { padding: 8px 10px; border-radius: 6px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.run:hover { background: var(--surface); }
+.run.active { background: var(--surface); outline: 1px solid var(--line); }
+.run .name { font-weight: 600; }
+.run .meta { color: var(--ink-3); font-size: 12px; }
+.pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-2); white-space: nowrap; }
+.pill.running { color: var(--good); border-color: var(--good); }
+.pill.stopping { color: var(--warn); border-color: var(--warn); }
+.pill.stopped { color: var(--ink-3); }
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-3); margin: 16px 0 8px; font-weight: 600; }
+button { font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+button.primary { background: var(--s1); border-color: var(--s1); color: #fff; }
+button.danger { color: var(--bad); border-color: var(--bad); }
+button:disabled { opacity: .5; cursor: default; }
+input, select { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); width: 100%; }
+label { display: block; font-size: 12px; color: var(--ink-2); margin: 8px 0 2px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.tile .k { font-size: 12px; color: var(--ink-3); }
+.tile .v { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tile .s { font-size: 12px; color: var(--ink-2); }
+.live { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 16px; font-size: 13px; }
+.live .bar { height: 6px; background: var(--line); border-radius: 3px; margin: 8px 0 6px; overflow: hidden; }
+.live .bar > div { height: 100%; background: var(--s1); }
+.rr .bar { height: 6px; background: var(--line); border-radius: 3px; margin: 8px 0 6px; overflow: hidden; }
+.rr .bar > div { height: 100%; background: var(--s1); }
+.live .big { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.rr { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 16px; font-size: 13px; }
+.rr summary { cursor: pointer; font-weight: 600; }
+.rr .picker { display: flex; flex-wrap: wrap; gap: 4px 12px; max-height: 120px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; margin: 6px 0; }
+.rr .picker label { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.rr .picker input { width: auto; min-width: 0; margin: 0; padding: 0; }
+.rr input[type=number] { width: 70px; }
+.rr table { border-collapse: collapse; width: 100%; margin-top: 8px; font-variant-numeric: tabular-nums; }
+.rr th, .rr td { text-align: left; padding: 3px 8px; border-bottom: 1px solid var(--line); }
+.rr th { color: var(--ink-2); font-weight: 500; }
+.rr td.num, .rr th.num { text-align: right; }
+.rr .games { color: var(--ink-2); font-size: 12px; margin-top: 6px; line-height: 1.6; }
+.live .recent { color: var(--ink-3); font-family: ui-monospace, monospace; font-size: 12px; }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 14px; }
+.chart { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.smooth input[type=range] { width: 220px; }
+.chart h3 select.endpick { width: auto; margin-left: 8px; font-size: 12px; padding: 1px 4px; }
+.chart h3 button.details { float: right; font-size: 12px; padding: 1px 8px; }
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; z-index: 10; overflow: auto; padding: 24px; }
+.modal.open { display: block; }
+.modal .box { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; max-width: 1400px; margin: 0 auto; padding: 16px 20px; }
+.modal .head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.modal .head h2 { margin: 0; text-transform: none; letter-spacing: 0; font-size: 16px; color: var(--ink); }
+.modal .head select { width: auto; }
+.vsTabs { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.vsTabs button { padding: 3px 10px; font-size: 13px; }
+.vsTabs button.on { background: var(--s1); border-color: var(--s1); color: #fff; }
+.modal .head label.gvTheme { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: 12px; white-space: nowrap; }
+.modal .head .spacer { flex: 1; }
+.modal .tiles { margin-bottom: 12px; }
+.modal .charts { grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }
+.modal .chart canvas { height: 260px !important; }
+.modal table { border-collapse: collapse; width: 100%; margin-top: 14px; font-variant-numeric: tabular-nums; font-size: 13px; }
+.modal th, .modal td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.modal th { color: var(--ink-2); font-weight: 500; position: sticky; top: 0; background: var(--bg); }
+.modal td.num, .modal th.num { text-align: right; white-space: nowrap; }
+.modal td.why { color: var(--ink-2); font-size: 12px; }
+.modal .pos { color: var(--good); } .modal .neg { color: var(--bad); }
+/* game viewer modal */
+.gv { display: grid; grid-template-columns: minmax(300px, 400px) 1fr; gap: 16px; align-items: start; }
+@media (max-width: 900px) { .gv { grid-template-columns: 1fr; } }
+.gv-list { max-height: 78vh; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+.modal .gv-list table { margin-top: 0; }
+.gv-list tr.game { cursor: pointer; }
+.lad { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 16px; }
+@media (max-width: 900px) { .lad { grid-template-columns: 1fr; } }
+.lad .pane { max-height: 76vh; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+.lad thead th { position: sticky; top: 0; background: var(--bg); z-index: 1; }
+.lad tr.pl { cursor: pointer; }
+.lad tr.pl:hover td, .lad tr.pl.sel td { background: var(--surface); }
+.lad tr.pl.sel td { font-weight: 600; }
+.lad td.anc { color: var(--s4); }
+.ladday { border: 1px solid var(--line); border-radius: 8px; margin-bottom: 12px; overflow-x: auto; }
+.ladday tr.partial td { color: var(--ink-3); }
+.lad .h2hhead, .ladday .h2hhead { padding: 10px 12px; font-family: ui-monospace, Consolas, monospace; font-size: 13px; border-bottom: 1px solid var(--line); }
+.enc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 12px; }
+.enc-card { border: 1px solid var(--line); border-radius: 8px; padding: 6px; cursor: pointer; background: var(--surface); }
+.enc-card:hover { border-color: var(--ink-3); }
+.enc-card svg { width: 100%; height: auto; display: block; }
+.enc-card .why { font-size: 11px; color: var(--ink-2); margin-top: 4px; }
+#encRows tr { cursor: pointer; }
+#encRows tr:hover td, #encRows tr.sel td { background: var(--surface); }
+#encRows tr.sel td { font-weight: 600; }
+.gv-list tr.game:hover td { background: var(--surface); }
+.gv-list tr.game.sel td { background: var(--surface); font-weight: 600; }
+.gv-main { min-width: 0; }
+.gv-board { display: flex; justify-content: center; }
+/* player cards above the board: one per side */
+.gv-players { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.gv-card { position: relative; display: flex; align-items: center; gap: 12px; padding: 10px 14px 10px 18px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; transition: border-color .15s; }
+.gv-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: var(--side); }
+.gv-card.move { border-color: var(--side); box-shadow: 0 0 0 1px var(--side) inset; }
+.gv-card .who { flex: 1; min-width: 0; }
+.gv-card .side { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); display: flex; gap: 8px; align-items: center; }
+.gv-card .side .tomove { color: var(--side); font-weight: 600; letter-spacing: .04em; }
+.gv-card .net { font-size: 17px; font-weight: 600; color: var(--ink); margin: 2px 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gv-card .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.gv-card .chip { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-2); }
+.gv-card .chip.run { border-color: var(--side); color: var(--ink); font-weight: 600; }
+.gv-card .pct { text-align: right; font-variant-numeric: tabular-nums; }
+.gv-card .pct b { display: block; font-size: 22px; color: var(--ink); line-height: 1.1; }
+.gv-card .pct span { font-size: 11px; color: var(--ink-3); }
+.gv-card.won .pct span { color: var(--side); }
+@media (max-width: 600px) { .gv-players { grid-template-columns: 1fr; } }
+.modal .gv .chart canvas { cursor: crosshair; }
+.gv-nav { display: flex; align-items: center; gap: 8px; margin: 10px 0 4px; }
+.gv-nav input[type=range] { flex: 1; padding: 0; }
+.gv-nav .ply { font-variant-numeric: tabular-nums; min-width: 92px; text-align: right; }
+.gv-info { font-size: 13px; color: var(--ink-2); margin-bottom: 8px; }
+.gv-info b { color: var(--ink); }
+.gv-top { font-size: 13px; font-variant-numeric: tabular-nums; margin-top: 8px; }
+.gv-top span { display: inline-block; margin-right: 14px; }
+.modal .gv .chart canvas { height: 200px !important; }
+.modal .chart canvas#cEnc { height: 440px !important; }
+.chart h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; }
+.chart .sub { color: var(--ink-3); font-size: 12px; margin-bottom: 6px; }
+.chart canvas { width: 100% !important; height: 240px !important; }
+pre.log { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px; font-size: 12px; max-height: 260px; overflow: auto; white-space: pre-wrap; color: var(--ink-2); }
+.msg { color: var(--bad); font-size: 12px; min-height: 1.2em; }
+.desc { font-size: 12px; color: var(--ink-2); margin-top: 4px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.row .spacer { flex: 1; }
+details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>TaflZero Training</h1>
+  <span id="engine" class="pill"></span>
+  <span class="spacer"></span>
+  <button id="themeBtn" title="Toggle light / dark">Dark</button>
+  <span id="clock" class="pill"></span>
+</header>
+<div class="layout">
+  <aside>
+    <h2>Runs</h2>
+    <div id="runs"></div>
+    <h2>New run</h2>
+    <label>Preset</label>
+    <select id="preset"></select>
+    <div id="presetDesc" class="desc"></div>
+    <label>Name</label>
+    <input id="runName" placeholder="T5-4x48" spellcheck="false">
+    <label>Workers (engine processes)</label>
+    <input id="workers" type="number" min="1" max="64" placeholder="preset default">
+    <details><summary>Advanced overrides</summary>
+      <label>Training threads</label><input id="trainThreads" type="number" min="1" placeholder="preset default">
+      <label>Full / cheap nodes</label>
+      <div class="row"><input id="fullNodes" type="number" placeholder="160"><input id="cheapNodes" type="number" placeholder="40"></div>
+      <label>Start checkpoint (.qnxx)</label><input id="startCkpt" placeholder="optional">
+      <label>Engine binary</label><input id="engineBin" placeholder="auto">
+    </details>
+    <div style="margin-top:12px" class="row">
+      <button class="primary" id="startBtn">Start</button>
+    </div>
+    <div id="startMsg" class="msg"></div>
+  </aside>
+  <main>
+    <div id="empty" class="desc">Select a run on the left or start a new one.</div>
+    <div id="detail" style="display:none">
+      <div class="row" style="margin-bottom:12px">
+        <strong id="dName" style="font-size:16px"></strong>
+        <span id="dStatus" class="pill"></span>
+        <span id="dPaused" class="pill" style="display:none">paused: trainer catching up</span>
+        <span id="dEngine" class="pill" title=""></span>
+        <span class="spacer"></span>
+        <button id="stopBtn" class="danger">Stop</button>
+        <button id="resumeBtn">Resume</button>
+      </div>
+      <div class="tiles" id="tiles"></div>
+      <div class="live" id="live" style="display:none"></div>
+      <details class="rr" id="rrBox">
+        <summary>Round robin <span id="rrHead" class="pill"></span></summary>
+        <div class="sub">pick nets, play every pairing at a small node budget; the table updates after every game</div>
+        <div><b>Nets</b> <button id="rrLatest">latest 4</button> <button id="rrSpread">spread 6</button> <button id="rrClear">clear</button></div>
+        <div class="picker" id="rrNets"></div>
+        <div class="row">nodes <input id="rrNodes" type="number" value="20" min="1"> pairs per pairing <input id="rrPairs" type="number" value="2" min="1">
+          games at once <input id="rrWorkers" type="number" value="1" min="1" max="4">
+          <span class="spacer"></span><button id="rrStart">Start</button><button id="rrStop" class="danger">Stop</button></div>
+        <div id="rrMsg" class="sub"></div>
+        <div id="rrLive"></div>
+      </details>
+      <div class="row smooth">Smoothing <input type="range" id="smooth" min="1" max="90" value="1"> <span id="smoothVal" class="sub"></span>
+        <span class="spacer"></span><span class="sub">drag across a chart to zoom all charts to those positions, double-click to reset</span> <button id="zoomReset" disabled>Reset zoom</button></div>
+      <div class="charts">
+        <div class="chart"><h3>Elo against anchors <select id="eloSmooth" class="endpick" title="mean over neighbouring checkpoints (this chart only)"><option value="1">no smoothing</option><option value="3">mean of 3</option><option value="5">mean of 5</option><option value="9">mean of 9</option><option value="15">mean of 15</option><option value="25">mean of 25</option></select> <button class="details" id="vsOpen">Details</button><button class="details" id="gvOpen" style="margin-right:6px">Games</button></h3><div class="sub" id="eloSub">paired games at fixed nodes; shaded = 95% CI</div><canvas id="cElo"></canvas></div>
+        <div class="chart" id="ladderBox" style="display:none"><h3>Checkpoint ladder <button class="details" id="ladOpen">Details</button></h3><div class="sub" id="ladderSub"></div><canvas id="cLadder"></canvas></div>
+        <div class="chart"><h3>Self-play outcomes <button class="details" id="trOpen">Trends</button></h3><div class="sub">share of games, per logging window</div><canvas id="cOut"></canvas></div>
+        <div class="chart"><h3>How games end</h3><div class="sub">share of games by final position, per logging window; real attacking progress = king captured, not repetition</div><canvas id="cEnd"></canvas></div>
+        <div class="chart"><h3>One ending in detail <select id="endPick" class="endpick"></select> <button class="details" id="encOpen">Encirclements</button></h3><div class="sub">the chosen ending on its own scale: % of all games and % of that side's wins, per logging window</div><canvas id="cFortSp"></canvas></div>
+        <div class="chart"><h3>Average game length</h3><div class="sub">plies</div><canvas id="cLen"></canvas></div>
+        <div class="chart"><h3>Losses</h3><div class="sub">policy and value, per 100 steps; short-term value and soft policy when the run trains them</div><canvas id="cLoss"></canvas></div>
+        <div class="chart" id="drawBox" style="display:none"><h3>Draws and soft resignation</h3><div class="sub">WDL head: predicted draw probability vs the share of draw targets in the batch; share of positions searched after soft resignation</div><canvas id="cDraw"></canvas></div>
+        <div class="chart" id="surpriseBox" style="display:none"><h3>Sampling weights</h3><div class="sub">mean policy surprise of full searches (nats) and the largest sampling weight of the games added</div><canvas id="cSurprise"></canvas></div>
+        <div class="chart"><h3>Blind-spot metrics</h3><div class="sub">attacker winrate the bare net gives: lost positions should fall, won positions should rise</div><canvas id="cBlind"></canvas></div>
+        <div class="chart" id="fortBox" style="display:none"><h3>Fort recognition</h3><div class="sub">attacker winrate the bare net gives k plies before g0213 completed a fort (truth: defenders win), lower = sees it; distance = mean gap to g0213's own values; dashed = anchors; read with won positions above</div><canvas id="cFort"></canvas></div>
+        <div class="chart"><h3>Brier on his positions</h3><div class="sub">random 0.25, T2 g0213 0.096, his 0.087</div><canvas id="cBrier"></canvas></div>
+        <div class="chart"><h3>Training throughput</h3><div class="sub">samples per second through the trainer (not generation)</div><canvas id="cSpeed"></canvas></div>
+        <div class="chart"><h3>Self-play speed</h3><div class="sub">games per second, per logging window (positions/s in the tile)</div><canvas id="cGen"></canvas></div>
+        <div class="chart"><h3>GPU</h3><div class="sub">utilisation %, sampled at each trainer log line</div><canvas id="cGpu"></canvas></div>
+        <div class="chart"><h3>Window and buffer</h3><div class="sub">positions</div><canvas id="cWin"></canvas></div>
+      </div>
+      <h2>Trainer log</h2>
+      <pre class="log" id="log"></pre>
+      <h2>Evaluator log</h2>
+      <pre class="log" id="evalLog"></pre>
+      <details><summary>Config</summary><pre class="log" id="cfg"></pre></details>
+    </div>
+  </main>
+</div>
+<div class="modal" id="vsModal">
+  <div class="box">
+    <div class="head"><h2>Matches against</h2><span class="vsTabs" id="vsPick"></span><span class="sub" id="vsSub"></span><span class="spacer"></span><button id="vsClose">Close</button></div>
+    <div class="tiles" id="vsTiles"></div>
+    <div class="charts">
+      <div class="chart"><h3>Outcomes by side</h3><div class="sub">share of each match's games: the checkpoint's wins and losses as attacker and as defender, draws (ply limit) by side</div><canvas id="cVsOut"></canvas></div>
+      <div class="chart"><h3>Won by</h3><div class="sub">share of each match's games the checkpoint won, by how the game ended</div><canvas id="cVsWin"></canvas></div>
+      <div class="chart"><h3>Lost to</h3><div class="sub">share of each match's games the checkpoint lost, by how the game ended</div><canvas id="cVsLoss"></canvas></div>
+    </div>
+    <table><thead><tr><th>checkpoint</th><th>time</th><th class="num">Elo</th><th class="num">W-L-D</th><th class="num">as attacker</th><th class="num">as defender</th><th class="why">won by</th><th class="why">lost to</th></tr></thead><tbody id="vsRows"></tbody></table>
+  </div>
+</div>
+<div class="modal" id="ladModal">
+  <div class="box">
+    <div class="head"><h2>Checkpoint ladder</h2>
+      <input id="ladFind" placeholder="filter players" style="width:180px">
+      <select id="ladSort"><option value="rating">by rating</option><option value="step">by step</option></select>
+      <span class="sub" id="ladSub"></span><span class="spacer"></span><button id="ladClose">Close</button></div>
+    <div class="sub" style="margin-bottom:8px">As Ordo prints a rating list: every checkpoint and anchor on the ladder's one scale (the reference pinned at 0), error = 95% interval, points and games from the ladder's own matches. Click a player for its head-to-head: games (+ won, = drawn, − lost), score, Diff = rating difference, SD = its standard error (from the two players' errors, covariance ignored), CFS = confidence that the player is the stronger one.</div>
+    <div class="ladday">
+      <div class="h2hhead" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-family:inherit">Gain per day
+        <select id="ladDayWin" style="width:auto"><option value="10">mean of 10</option><option value="20">mean of 20</option><option value="40" selected>mean of 40</option><option value="80">mean of 80</option></select>
+        <select id="ladDayW" style="width:auto"><option value="mean">plain mean</option><option value="ivw">weighted by 1/se²</option></select>
+        <span class="sub" id="ladDaySub"></span></div>
+      <table><thead><tr><th>day</th><th>until</th><th class="num">ckpts</th><th class="num">positions</th><th class="num">games</th><th class="num">rating</th><th class="num">±</th><th class="num">gain</th><th class="num">per 10M pos</th><th class="num">per 100k games</th></tr></thead><tbody id="ladDays"></tbody></table>
+    </div>
+    <div class="lad">
+      <div class="pane"><table><thead><tr><th class="num">#</th><th>player</th><th class="num">positions</th><th class="num">rating</th><th class="num">error</th><th class="num">points</th><th class="num">played</th><th class="num">%</th></tr></thead><tbody id="ladRows"></tbody></table></div>
+      <div class="pane"><div class="h2hhead" id="ladHead">pick a player on the left</div><table><thead><tr><th>vs.</th><th class="num">games</th><th class="num">+</th><th class="num">=</th><th class="num">−</th><th class="num">%</th><th class="num">Diff</th><th class="num">SD</th><th class="num">CFS</th></tr></thead><tbody id="ladH2h"></tbody></table></div>
+    </div>
+  </div>
+</div>
+<div class="modal" id="trModal">
+  <div class="box">
+    <div class="head"><h2>Self-play trends</h2>
+      <select id="trWin" title="window the trend is fitted over"><option value="10">last 10M positions</option><option value="15">last 15M positions</option><option value="20">last 20M positions</option><option value="40">last 40M positions</option></select>
+      <span class="sub" id="trSub"></span><span class="spacer"></span><button id="trClose">Close</button></div>
+    <div class="sub">Every self-play ending, the game length and the encirclement sizes, sorted by how strongly they move. Trend = weighted least-squares slope over the window (binomial weights for shares; for the length, weights = games and the noise taken from the scatter), its interval widened when the points scatter more than chance allows. With ~20 metrics one of them reaches |z| &gt; 2 by chance about every other look, so only |z| &ge; 3 is called rising / falling, 2&ndash;3 is "maybe". Previous = the window of the same length just before. The sparkline is the last 40M positions.</div>
+    <table><thead><tr><th>metric</th><th>last 40M</th><th class="num">games in window</th><th class="num">now</th><th class="num">previous</th><th class="num">change</th><th class="num">trend per 10M positions</th><th class="num">z</th><th>verdict</th></tr></thead><tbody id="trRows"></tbody></table>
+  </div>
+</div>
+<div class="modal" id="encModal">
+  <div class="box">
+    <div class="head"><h2>Encirclements</h2>
+      <select id="encSource"><option value="selfplay">self-play</option><option value="match">anchor matches</option></select>
+      <select id="encCount" title="how many of the newest encirclement games"><option value="100">100 newest</option><option value="300">300 newest</option><option value="1000">1000 newest</option><option value="all">whole run (self-play)</option></select>
+      <select id="encBy" title="who encircled whom"><option value="all">either side encircled</option><option value="ckpt">checkpoint encircled the anchor</option><option value="anchor">anchor encircled the checkpoint</option></select>
+      <span class="sub" id="encSub"></span><span class="spacer"></span><button id="encClose">Close</button></div>
+    <div class="sub">Final position of each game the attackers won by surrounding every defender. Pieces encircled = the defenders left, king included; region = squares they can still move in (shaded); ring = attackers next to that region; inside = attackers within it, cut off from every edge (ringed in red). Click a row to show only those games, a board to open the game at its last move.</div>
+    <div class="chart" id="encChartBox" style="display:none; margin: 10px 0"><h3>Encirclements over the run
+      <span class="sub" style="margin-left:12px">smoothing</span> <input type="range" id="encSmooth" min="1" max="41" step="2" value="9" style="width:140px; vertical-align:middle"> <span class="sub" id="encSmoothVal"></span>
+      <span class="sub" style="margin-left:12px">trend over</span> <select id="encTrendWin" class="endpick"><option value="20">last 20M positions</option><option value="40">last 40M positions</option><option value="all">the run since 10M</option></select>
+      <span class="sub" style="margin-left:12px; white-space:nowrap"><input type="checkbox" id="encLog" checked style="width:auto; margin:0 4px 0 0; vertical-align:middle">log scale</span></h3>
+      <div class="sub" id="encChartSub"></div><canvas id="cEnc"></canvas>
+      <table style="margin-top:10px"><thead><tr><th>pieces encircled</th><th class="num">games in window</th><th class="num">share of all games</th><th class="num">trend, pp per 10M positions</th><th class="num">z</th><th>verdict</th></tr></thead><tbody id="encTrendRows"></tbody></table>
+      <div class="sub">Trend: weighted least-squares slope of the share against positions over the chosen window, binomial weights; its interval is widened when the points scatter more than chance allows (drift, bursts), so a "rising" or "falling" verdict needs |z| &gt; 2 against that larger noise. Groups with fewer than 30 games in the window get no verdict.</div></div>
+    <table><thead><tr><th>pieces encircled</th><th class="num">games</th><th class="num">share</th><th class="num">avg region</th><th class="num">avg ring</th><th class="num">avg inside</th><th class="num">avg attackers left</th><th class="num">avg plies</th></tr></thead><tbody id="encRows"></tbody></table>
+    <div class="enc-grid" id="encGrid"></div>
+  </div>
+</div>
+<div class="modal" id="gvModal">
+  <div class="box">
+    <div class="head"><h2>Games</h2>
+      <select id="gvSource"><option value="selfplay">self-play</option><option value="match">anchor matches</option></select>
+      <select id="gvWorker" title="self-play worker file"></select>
+      <select id="gvPickMode" title="which games to list"><option value="newest">100 newest</option><option value="spread">100 over the whole run</option></select>
+      <button id="gvReload" title="re-read the game list">Refresh list</button>
+      <label class="gvTheme">Board <select id="gvBoardTheme" title="board theme"></select></label>
+      <label class="gvTheme">Pieces <select id="gvPieceTheme" title="piece theme"></select></label>
+      <span class="sub" id="gvSub"></span><span class="spacer"></span><button id="gvClose">Close</button></div>
+    <div class="gv">
+      <div class="gv-list"><table><thead id="gvHead"></thead><tbody id="gvRows"></tbody></table></div>
+      <div class="gv-main">
+        <div class="gv-players" id="gvPlayers"></div>
+        <div class="gv-board" id="gvBoardWrap"><div id="gvBoard"></div></div>
+        <div class="gv-nav"><button id="gvPrev" title="previous ply (←)">◀</button><input type="range" id="gvSlider" min="0" max="0" value="0"><button id="gvNext" title="next ply (→)">▶</button><span class="ply" id="gvPly"></span></div>
+        <div class="gv-info" id="gvInfo">pick a game on the left</div>
+        <div class="chart"><h3 id="gvChartTitle">Evaluation</h3><div class="sub" id="gvChartSub"></div><canvas id="gvChart"></canvas></div>
+        <div class="gv-top" id="gvTop"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+// Theme: explicit choice wins and is remembered; otherwise the OS setting applies.
+function applyTheme(t) {
+  if (t) document.documentElement.setAttribute('data-theme', t); else document.documentElement.removeAttribute('data-theme');
+  const dark = t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  document.getElementById('themeBtn').textContent = dark ? 'Light' : 'Dark';
+  for (const c of Object.values(charts)) c.destroy();
+  charts = {};
+}
+let savedTheme = null; try { savedTheme = localStorage.getItem('theme'); } catch (e) {}
+const SERIES = () => ['--s1','--s2','--s3','--s4','--s5','--s6','--s7','--s8'].map(css);
+let presets = {}, runs = [], selected = null, charts = {};
+const $ = (id) => document.getElementById(id);
+
+async function api(path, body) {
+  const r = await fetch(path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
+  return r.json();
+}
+
+function fmt(n, d = 0) { return n == null || isNaN(n) ? '–' : Number(n).toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d }); }
+function fmtK(n) { return n == null ? '–' : n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(0) + 'k' : String(n); }
+
+async function loadPresets() {
+  const p = await api('/api/presets');
+  presets = p.presets;
+  $('engine').textContent = p.engine_exists ? 'engine: ' + p.engine_bin.split(/[\\/]/).slice(-3).join('/') : 'engine binary missing: ' + p.engine_bin;
+  $('engine').style.color = p.engine_exists ? '' : css('--bad');
+  const sel = $('preset');
+  sel.innerHTML = '';
+  for (const name of Object.keys(presets)) { const o = document.createElement('option'); o.value = name; o.textContent = name; sel.appendChild(o); }
+  if (presets['t5-4x48-cpu']) sel.value = 't5-4x48-cpu';
+  sel.onchange = () => { $('presetDesc').textContent = presets[sel.value]?.description || ''; };
+  sel.onchange();
+}
+
+async function loadRuns() {
+  runs = (await api('/api/runs')).runs;
+  const box = $('runs');
+  box.innerHTML = runs.length ? '' : '<div class="desc">no runs yet</div>';
+  for (const r of runs) {
+    const d = document.createElement('div');
+    d.className = 'run' + (r.name === selected ? ' active' : '');
+    d.innerHTML = `<div><div class="name">${r.name}</div><div class="meta">step ${fmt(r.step)} · ${fmtK(r.generated)} pos</div></div><span class="pill ${r.status}">${r.status}</span>`;
+    d.onclick = () => { selected = r.name; routeWrite(); loadDetail(); loadRuns(); };
+    box.appendChild(d);
+  }
+}
+
+// Smoothing slider: the self-play charts pool `smoothN` logging windows (shares from the
+// cumulative counters over the whole span), the trainer charts take a trailing mean of as many points.
+let smoothN = 1, lastDetail = null;
+// Endings for the 'one ending in detail' chart: [label, selfplay.csv columns, wins column of that side].
+const END_PICKS = [
+  ['exit fort', ['fort'], 'def_wins'],
+  ['king in corner', ['def_corner', 'edge'], 'def_wins'],
+  ['king captured', ['king_captured'], 'atk_wins'],
+  ['defenders surrounded', ['surrounded'], 'atk_wins'],
+  ['defenders without moves', ['no_moves_atk'], 'atk_wins'],
+  ['repetition (attackers win)', ['threefold'], 'atk_wins'],
+  ['attackers without moves', ['no_moves_def'], 'def_wins'],
+  ['undecided (limits)', ['max_plies', 'no_capture'], null],
+];
+let endPick = 'exit fort';
+try { endPick = localStorage.getItem('endPick') || endPick; } catch (e) {}
+let vsPick = '';
+// Display names of the anchors ('T6 step486399', 'copenhagen11x11 (T2 gen0225)'), from
+// /api/run; the files keep the bare names, so every lookup still uses those.
+let ANCHOR_LABELS = {};
+const alabel = (n) => ANCHOR_LABELS[n] || n;
+try { vsPick = localStorage.getItem('vsPick') || ''; } catch (e) {}
+try { smoothN = Math.max(1, parseInt(localStorage.getItem('smooth') || '1')); } catch (e) {}
+// The anchor Elo chart has its own smoothing, counted in checkpoints (one point per
+// checkpoint every ~0.5M positions, far sparser than the logging windows of the slider).
+let eloSmoothN = 1;
+try { eloSmoothN = Math.max(1, parseInt(localStorage.getItem('eloSmooth') || '1')); } catch (e) {}
+function smoothPts(pts, n = smoothN) {
+  // Centred: point i is the mean of points i-h..i+h, so a peak stays where it was
+  // (a trailing mean would shift every curve right by half the window).
+  if (n <= 1) return pts;
+  const h = Math.floor(n / 2), out = [];
+  for (let i = 0; i < pts.length; i++) {
+    let sum = 0, n = 0;
+    for (let j = Math.max(0, i - h); j <= Math.min(pts.length - 1, i + h); j++) {
+      if (pts[j].y != null && !isNaN(pts[j].y)) { sum += +pts[j].y; n++; }
+    }
+    out.push({ x: pts[i].x, y: n ? sum / n : null });
+  }
+  return out;
+}
+
+// Drag-to-zoom along the x axis, shared by every chart: all of them plot against positions
+// generated, so a band dragged on one sets the range of all. Only x is zoomed: a chart
+// with fixed bounds (0-100 %) keeps them, the others fit y to their data in the range.
+// The charts are rebuilt on every refresh, so the range lives here and goes into each new
+// set of options. Double-click on any chart or the Reset zoom button clears it.
+let xZoom = null, dragBand = null;
+function setXZoom(range) {
+  xZoom = range;
+  $('zoomReset').disabled = !xZoom;
+  if (lastDetail) {
+    renderDetail(lastDetail);
+    if ($('vsModal').classList.contains('open')) renderVs(lastDetail);
+  }
+}
+// Draws the band being dragged, full height of the plot area.
+const dragBandPlugin = {
+  id: 'dragBand',
+  afterDraw(chart) {
+    if (!dragBand || dragBand.chart !== chart) return;
+    const { ctx, chartArea: a } = chart;
+    const x0 = Math.max(a.left, Math.min(dragBand.x0, dragBand.x1)), x1 = Math.min(a.right, Math.max(dragBand.x0, dragBand.x1));
+    ctx.save();
+    ctx.fillStyle = css('--s1') + '2e';
+    ctx.strokeStyle = css('--s1');
+    ctx.fillRect(x0, a.top, x1 - x0, a.bottom - a.top);
+    ctx.strokeRect(x0, a.top, x1 - x0, a.bottom - a.top);
+    ctx.restore();
+  },
+};
+function attachDragZoom(chart) {
+  const canvas = chart.canvas;
+  const px = (ev) => ev.clientX - canvas.getBoundingClientRect().left;
+  canvas.addEventListener('mousedown', (ev) => {
+    if (ev.button !== 0) return;
+    const x = px(ev), a = chart.chartArea;
+    if (x < a.left || x > a.right) return;
+    dragBand = { chart, x0: x, x1: x };
+    ev.preventDefault();
+  });
+  canvas.addEventListener('mousemove', (ev) => {
+    if (dragBand && dragBand.chart === chart) { dragBand.x1 = px(ev); chart.draw(); }
+  });
+}
+window.addEventListener('mouseup', () => {
+  if (!dragBand) return;
+  const { chart, x0, x1 } = dragBand;
+  dragBand = null;
+  chart.draw();
+  if (Math.abs(x1 - x0) < 6) return;  // a click, not a drag
+  const sx = chart.scales.x, a = chart.chartArea;
+  const clamp = (v) => Math.max(a.left, Math.min(a.right, v));
+  setXZoom([sx.getValueForPixel(clamp(Math.min(x0, x1))), sx.getValueForPixel(clamp(Math.max(x0, x1)))]);
+});
+
+// y bounds of the visible datasets' points inside [x0, x1], padded by 5 %.
+function yRangeIn(datasets, x0, x1) {
+  let lo = Infinity, hi = -Infinity;
+  for (const d of datasets) {
+    if (d.hidden) continue;
+    for (const pt of d.data) {
+      if (pt == null || pt.y == null || isNaN(pt.y) || pt.x < x0 || pt.x > x1) continue;
+      const y = +pt.y;
+      if (y < lo) lo = y;
+      if (y > hi) hi = y;
+    }
+  }
+  if (lo === Infinity) return null;
+  const pad = (hi - lo) * 0.05 || Math.abs(hi) * 0.05 || 1;
+  return [lo - pad, hi + pad];
+}
+
+function lineChart(id, datasets, opts = {}) {
+  const ctx = $(id);
+  const ink2 = css('--ink-2'), line = css('--line');
+  const config = {
+    type: 'line',
+    data: { datasets },
+    options: {
+      animation: false, responsive: true, maintainAspectRatio: false, parsing: false, normalized: true,
+      interaction: { mode: 'nearest', axis: 'x', intersect: false },
+      elements: { line: { borderWidth: 2, tension: 0 }, point: { radius: 0, hitRadius: 10, hoverRadius: 4 } },
+      plugins: {
+        legend: { display: datasets.filter(d => !d._ci).length > 1, position: 'bottom', labels: { color: ink2, boxWidth: 10, boxHeight: 10, usePointStyle: true, filter: (i) => !i.text.startsWith('_') } },
+        tooltip: { callbacks: { title: (items) => (opts.xLabel || 'positions') + ' ' + fmtK(items[0]?.parsed?.x), label: (i) => i.dataset.label.startsWith('_') ? null : `${i.dataset.label}: ${fmt(i.parsed.y, opts.digits ?? 1)}` } },
+      },
+      scales: {
+        x: { type: 'linear', grid: { color: line }, ticks: { color: ink2, callback: fmtK, maxTicksLimit: 8 }, title: { display: true, text: opts.xLabel || 'positions', color: ink2 } },
+        y: { type: opts.yType || 'linear', grid: { color: line }, ticks: opts.yType === 'logarithmic'
+          // 1-2-5 steps only, plain numbers (the default prints 10,000 for 10)
+          ? { color: ink2, autoSkip: false, callback: (v) => { const m = v / 10 ** Math.floor(Math.log10(v)); return [1, 2, 5].includes(Math.round(m * 1000) / 1000) ? String(+v.toPrecision(1)) : ''; } }
+          : { color: ink2, maxTicksLimit: 6 }, min: opts.min, max: opts.max, title: { display: !!opts.yLabel, text: opts.yLabel || '', color: ink2 } },
+      },
+    },
+  };
+  config.plugins = [dragBandPlugin];
+  if (xZoom) {
+    Object.assign(config.options.scales.x, { min: xZoom[0], max: xZoom[1] });
+    const yr = yRangeIn(datasets, xZoom[0], xZoom[1]);
+    if (yr && opts.yType !== 'logarithmic') {
+      if (opts.min == null) config.options.scales.y.min = yr[0];
+      if (opts.max == null) config.options.scales.y.max = yr[1];
+    }
+  }
+  if (charts[id]) {
+    // Keep series hidden from the legend hidden across refreshes.
+    const hidden = new Set(charts[id].data.datasets.filter((_, i) => !charts[id].isDatasetVisible(i)).map(x => x.label));
+    datasets.forEach(x => { if (hidden.has(x.label)) x.hidden = true; });
+    charts[id].data.datasets = datasets; charts[id].options = config.options; charts[id].update();
+  }
+  else {
+    charts[id] = new Chart(ctx, config);
+    attachDragZoom(charts[id]);
+    ctx.ondblclick = () => { if (xZoom) setXZoom(null); };
+  }
+}
+$('zoomReset').onclick = () => setXZoom(null);
+
+function ds(label, color, points, extra = {}) { return Object.assign({ label, data: points, borderColor: color, backgroundColor: color, pointStyle: 'circle' }, extra); }
+
+// How games ended, from the checkpoint's side: {win: {reason: n}, loss: {...}, draw: {...}}.
+const REASON = { atk_capture: 'king captured', atk_surrounded: 'surrounded', atk_no_moves: 'no moves', atk_threefold: 'threefold',
+  def_corner: 'corner', def_fort: 'fort', def_edge: 'edge', def_no_moves: 'no moves', max_plies: 'ply limit' };
+function reasonsText(r) {
+  if (!r) return '';
+  const part = (k, label) => {
+    const e = Object.entries(r[k] || {}).sort((a, b) => b[1] - a[1]);
+    return e.length ? `<b>${label}</b> ${e.map(([w, n]) => `${REASON[w] || w} ${n}`).join(', ')}` : '';
+  };
+  return [part('win', 'won by'), part('loss', 'lost to'), part('draw', 'drawn by')].filter(Boolean).join(' · ');
+}
+
+function renderLive(p, alive, eloRows = []) {
+  const el = $('live');
+  if (!p || !alive) { el.style.display = 'none'; return; }
+  el.style.display = '';
+  // Latest finished match per anchor that recorded endings (older rows have none).
+  const last = {};
+  for (const e of eloRows) if (e.reasons) last[e.anchor] = e;
+  const finished = Object.values(last).map(e => `<div class="row"><span>${e.ckpt} vs <b>${alabel(e.anchor)}</b> ${e.w}-${e.l}-${e.d}:</span><span>${reasonsText(e.reasons) || '–'}</span></div>`).join('');
+  const age = Math.round((Date.now() / 1000 - (p.updated || 0)) / 60);
+  const stale = age > 30 ? ` · no update for ${age} min` : '';
+  const stem = f => (f || '').replace(/\.onnx$/, '');
+  if (p.phase === 'idle') { el.innerHTML = `Evaluation idle — waiting for a new checkpoint${stale}` + finished; return; }
+  if (p.phase === 'blind') { el.innerHTML = `Evaluation: blind-spot metrics for <b>${stem(p.a)}</b>${stale}` + finished; return; }
+  const n = p.games || 0, done = p.pairs_done || 0, total = p.pairs || 0;
+  const sgn = x => (x > 0 ? '+' : '') + fmt(x, 0);
+  const elo = p.elo == null ? '–' : sgn(p.elo);
+  const ci = p.ci ? `[${sgn(p.ci[0])}, ${sgn(p.ci[1])}]` : '';
+  const mins = p.started ? Math.round((Date.now() / 1000 - p.started) / 60) : 0;
+  el.innerHTML = `<div class="row"><span>Live match: <b>${stem(p.a)}</b> vs <b>${alabel(stem(p.b))}</b> · ${p.nodes || ''} nodes</span><span class="spacer"></span><span>pair ${done}/${total} · ${mins} min</span></div>
+    <div class="bar"><div style="width:${total ? 100 * done / total : 0}%"></div></div>
+    <div class="row"><span class="big">${elo}</span><span>${ci}</span><span>W${p.w || 0} L${p.l || 0} D${p.d || 0} · ${n} games · score ${n ? fmt(100 * (p.w + 0.5 * p.d) / n, 0) : '–'}%</span>
+    <span class="spacer"></span><span class="recent">${(p.recent || []).join('  ')}</span></div>
+    ${p.reasons ? `<div class="row">${reasonsText(p.reasons) || '–'}</div>` : ''}
+    <div class="sub">W/L from the checkpoint's side; each pair = one opening from both sides (result of game 1 / game 2)${stale}</div>` + finished;
+}
+
+// selfplay.csv rows are logging windows (cumulative counts + per-window avg_len); older runs
+// wrote windows of a few games, whose shares jump to 0/100. Fold such a row into the next one.
+function mergeWindows(rows, minGames) {
+  const out = [];
+  let open = null;
+  for (const r of rows) {
+    const prev = out[out.length - 1] || { games: 0 };
+    const start = open ? open.start : prev.games;
+    const g = r.games - start;
+    if (!open) open = { start, len: 0, n: 0 };
+    const wg = r.games - (open.last ? open.last.games : start);
+    if (wg > 0 && r.avg_len != null) { open.len += r.avg_len * wg; open.n += wg; }
+    open.last = r;
+    if (g >= minGames) { out.push({ ...r, avg_len: open.n ? open.len / open.n : r.avg_len }); open = null; }
+  }
+  if (open && open.last && (!out.length || open.last.games > out[out.length - 1].games)) out.push({ ...open.last, avg_len: open.n ? open.len / open.n : open.last.avg_len });
+  return out;
+}
+
+function renderDetail(d) {
+  ANCHOR_LABELS = d.anchor_labels || {};
+  $('dName').textContent = d.name;
+  $('dStatus').textContent = d.status + (d.eval_alive ? ' · eval on' : '');
+  $('dStatus').className = 'pill ' + d.status;
+  $('dPaused').style.display = d.paused ? '' : 'none';
+  // The engine the run recorded at its last start (config.json, continuous.py).
+  const cfg = d.config || {};
+  const engPath = cfg.engine_bin ? String(cfg.engine_bin).split(/[\\/]/).slice(-3).join('/') : '';
+  $('dEngine').textContent = engPath
+    ? `engine: ${engPath} · ${cfg.engine_version || 'version ?'} · ${(cfg.engine_sha256 || '').slice(0, 12) || 'sha ?'}`
+    : '';
+  $('dEngine').title = cfg.engine_bin ? `${cfg.engine_bin}\nsha256 ${cfg.engine_sha256 || '?'}` : '';
+  $('dEngine').style.display = engPath ? '' : 'none';
+  $('stopBtn').disabled = !d.trainer_alive;
+  $('resumeBtn').disabled = d.trainer_alive;
+
+  const m = d.metrics, last = m[m.length - 1] || {}, sp = mergeWindows(d.selfplay, 50), lsp = sp[sp.length - 1] || {};
+  const st = d.state || {};
+  const elo = d.elo.filter(e => e.anchor === (d.elo[0] || {}).anchor);
+  const lastElo = d.elo.length ? d.elo[d.elo.length - 1] : null;
+  // Self-play rate over the last ~10 minutes of selfplay.csv rows.
+  const genRate = (() => {
+    if (sp.length < 2) return {};
+    const b = sp[sp.length - 1];
+    let a = sp[sp.length - 2];
+    for (let i = sp.length - 2; i >= 0 && b.time - sp[i].time <= 600; i--) a = sp[i];
+    const dt = b.time - a.time;
+    return dt > 0 ? { pos: (b.generated - a.generated) / dt, games: (b.games - a.games) / dt } : {};
+  })();
+  const tiles = [
+    ['Step', fmt(st.step), `${fmt(last.steps_per_s, 2)} steps/s`],
+    ['Positions', fmtK(st.generated), `${fmt(st.games)} games`],
+    ['Attacker wins', lsp.atk_pct != null ? fmt(lsp.atk_pct, 1) + '%' : '–', `undecided ${lsp.games ? fmt(100 * (lsp.undecided || 0) / lsp.games, 0) : '–'}% total`],
+    ['Game length', fmt(lsp.avg_len, 0), 'plies, last window'],
+    ['Loss', fmt(last.loss, 3), `policy ${fmt(last.policy, 3)} · value ${fmt(last.value, 3)}`],
+    ['Train speed', fmt(last.samples_per_s, 0), `samples/s${last.gpu_util !== '' && last.gpu_util != null ? ` · GPU ${fmt(last.gpu_util, 0)}%` : ''}`],
+    ['Self-play', genRate.pos != null ? fmt(genRate.pos, 0) : '–', genRate.games != null ? `positions/s · ${fmt(genRate.games, 2)} games/s` : 'positions/s'],
+    ['Window', fmtK(st.window), `buffer ${fmtK(st.buffer)}`],
+    ['Last Elo', lastElo ? (lastElo.elo > 0 ? '+' : '') + fmt(lastElo.elo, 0) : '–', lastElo ? `vs ${alabel(lastElo.anchor)} @${lastElo.ckpt.replace('step', '')}` : 'no matches yet'],
+  ];
+  renderLive(d.eval_progress, d.eval_alive, d.elo);
+  renderRrPicker(d.nets);
+  if (!rrTimer || !(d.rr && d.rr.status === 'running')) renderRr(d.rr);
+  $('tiles').innerHTML = tiles.map(t => `<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="s">${t[2]}</div></div>`).join('');
+
+  const S = SERIES();
+  // Elo per anchor, x = generated (fallback step)
+  const retired = new Set(d.retired_anchors || []);
+  const anchors = [...new Set(d.elo.map(e => e.anchor))].filter(a => !retired.has(a));
+  const eloSets = [];
+  anchors.forEach((a, i) => {
+    const rows = d.elo.filter(e => e.anchor === a).sort((p, q) => p.step - q.step);
+    const x = (e) => e.generated ?? e.step;
+    const raw = rows.map(e => ({ x: x(e), y: e.elo }));
+    // An anchor played only now and then (an external one every few million positions) has
+    // too few points for a mean or even a visible line: drawn as marked points, unsmoothed.
+    const sparse = rows.length < Math.max(8, 2 * eloSmoothN);
+    if (sparse) {
+      eloSets.push(ds(alabel(a), S[i % 8], raw, { pointRadius: 4, pointHoverRadius: 6 }));
+      if (eloSmoothN <= 1) {
+        eloSets.push(ds('_' + a + ' lo', S[i % 8], rows.map(e => ({ x: x(e), y: e.ci[0] })), { borderWidth: 0, pointRadius: 0, fill: '+1', backgroundColor: S[i % 8] + '22', _ci: true }));
+        eloSets.push(ds('_' + a + ' hi', S[i % 8], rows.map(e => ({ x: x(e), y: e.ci[1] })), { borderWidth: 0, pointRadius: 0, _ci: true }));
+      }
+      return;
+    }
+    if (eloSmoothN > 1) {
+      // Smoothed line plus the single checkpoints as faint dots; no CI band (it belongs to
+      // one checkpoint, not to the mean).
+      eloSets.push(ds(`${alabel(a)} (mean of ${eloSmoothN})`, S[i % 8], smoothPts(raw, eloSmoothN), { pointRadius: 0 }));
+      eloSets.push(ds(`${alabel(a)} (single)`, S[i % 8] + '55', raw, { borderWidth: 0, pointRadius: 2.5, showLine: false }));
+      return;
+    }
+    eloSets.push(ds(alabel(a), S[i % 8], raw));
+    eloSets.push(ds('_' + a + ' lo', S[i % 8], rows.map(e => ({ x: x(e), y: e.ci[0] })), { borderWidth: 0, pointRadius: 0, fill: '+1', backgroundColor: S[i % 8] + '22', _ci: true }));
+    eloSets.push(ds('_' + a + ' hi', S[i % 8], rows.map(e => ({ x: x(e), y: e.ci[1] })), { borderWidth: 0, pointRadius: 0, _ci: true }));
+  });
+  $('eloSub').textContent = eloSmoothN > 1
+    ? `paired games at fixed nodes; line = centred mean of ${eloSmoothN} checkpoints, dots = single checkpoints`
+    : 'paired games at fixed nodes; shaded = 95% CI';
+  lineChart('cElo', eloSets, { yLabel: 'Elo', digits: 0 });
+
+  // Optional ladder (eval_ladder.py): every checkpoint on one scale from cheap matches.
+  const lad = d.ladder;
+  $('ladderBox').style.display = lad && lad.players && lad.players.length ? '' : 'none';
+  if (lad && lad.players && lad.players.length) {
+    const ck = lad.players.filter(p => !p.anchor).sort((p, q) => p.step - q.step);
+    const xOf = p => p.generated ?? p.step;
+    const raw = ck.map(p => ({ x: xOf(p), y: p.elo }));
+    // The slider smooths here too: a trailing mean over `smoothN` checkpoints, the raw
+    // points left as dots; the per-checkpoint CI band only makes sense unsmoothed.
+    const sets = smoothN > 1
+      ? [ds(`checkpoints (mean of ${smoothN})`, S[0], smoothPts(raw), { pointRadius: 0 }),
+         ds('checkpoints', S[0] + '55', raw, { borderWidth: 0, pointRadius: 2.5, showLine: false })]
+      : [ds('checkpoints', S[0], raw)];
+    if (smoothN <= 1) {
+      sets.push(ds('_lo', S[0], ck.map(p => ({ x: xOf(p), y: p.elo - 1.96 * p.se })), { borderWidth: 0, pointRadius: 0, fill: '+1', backgroundColor: S[0] + '22', _ci: true }));
+      sets.push(ds('_hi', S[0], ck.map(p => ({ x: xOf(p), y: p.elo + 1.96 * p.se })), { borderWidth: 0, pointRadius: 0, _ci: true }));
+    }
+    const span = ck.length ? [xOf(ck[0]), xOf(ck[ck.length - 1])] : [0, 1];
+    // An anchor is drawn once the ladder has placed it: early on every checkpoint loses
+    // to it, its rating is unconstrained (0 +- several hundred) and a line at 0 would
+    // read as "level with the reference".
+    const PLACED_SE = 150;
+    const anc = lad.players.filter(p => p.anchor);
+    const placed = anc.filter(p => p.name === lad.reference || p.se < PLACED_SE);
+    const unplaced = anc.filter(p => !placed.includes(p));
+    placed.forEach((p, i) => sets.push(ds(alabel(p.name), S[(i + 2) % 8], span.map(x => ({ x, y: p.elo })), { borderDash: [6, 4], pointRadius: 0 })));
+    const games = lad.players.reduce((a, p) => a + p.games, 0) / 2;
+    $('ladderSub').textContent = `${lad.nodes} nodes, ${ck.length} checkpoints, ${fmt(games)} games; ${alabel(lad.reference)} = 0; ${smoothN > 1 ? 'dots = single checkpoints' : 'shaded = 95% CI'}; dashed = anchors`
+      + (unplaced.length ? `; not placed yet (no checkpoint has scored against them): ${unplaced.map(p => alabel(p.name)).join(', ')}` : '');
+    lineChart('cLadder', sets, { yLabel: 'Elo', digits: 0 });
+  }
+
+  // The rows bounding the span pooled for row i: `p` just before it, `r` its last row.
+  // Centred on i (i-h..i+h windows), one window when smoothing is off; `p` is null for the
+  // first row, sp[0] when the span would start before the data.
+  const win = (i) => {
+    if (smoothN <= 1) return { p: i > 0 ? sp[i - 1] : null, r: sp[i] };
+    const h = Math.floor(smoothN / 2), lo = i - h, hi = Math.min(sp.length - 1, i + h);
+    return { p: lo > 0 ? sp[lo - 1] : (i > 0 ? sp[0] : null), r: sp[hi] };
+  };
+  const span = sp.length > 2 ? (sp[sp.length - 1].time - sp[0].time) / (sp.length - 1) : 0;
+  $('smoothVal').textContent = smoothN <= 1 ? 'off' : `${smoothN} windows${span ? ` ≈ ${fmt(smoothN * span / 60, 0)} min` : ''} (self-play, trainer and ladder charts)`;
+  // Self-play outcomes: shares per window (cumulative counts -> diffs)
+  const out = { atk: [], def: [], und: [] }, lens = [];
+  for (let i = 0; i < sp.length; i++) {
+    const w = win(i), r = w.r, p = w.p || { games: 0, atk_wins: 0, def_wins: 0, undecided: 0 }, xg = sp[i].generated;
+    const g = r.games - p.games; if (g <= 0) continue;
+    out.atk.push({ x: xg, y: 100 * (r.atk_wins - p.atk_wins) / g });
+    out.def.push({ x: xg, y: 100 * (r.def_wins - p.def_wins) / g });
+    out.und.push({ x: xg, y: 100 * (r.undecided - p.undecided) / g });
+    lens.push({ x: xg, y: +r.avg_len });
+  }
+  lineChart('cOut', [ds('attackers win', S[1], out.atk), ds('defenders win', S[0], out.def), ds('undecided', S[3], out.und)], { yLabel: '% of games', min: 0, max: 100 });
+  lineChart('cLen', [ds('average length', S[0], smoothPts(lens))], { yLabel: 'plies', digits: 0 });
+
+  // Game endings by terminal type (cumulative counts in selfplay.csv -> per-window shares)
+  const ENDS = [
+    ['king captured', S[1], ['king_captured']],
+    ['repetition (attackers win)', S[7], ['threefold']],
+    ['defenders surrounded', S[4], ['surrounded']],
+    ['defenders without moves', S[5], ['no_moves_atk']],
+    ['king in corner', S[0], ['def_corner', 'edge']],
+    ['exit fort', S[2], ['fort']],
+    ['attackers immobilised', S[6], ['no_moves_def']],
+    ['undecided (limits)', S[3], ['max_plies', 'no_capture']],
+  ];
+  const endSeries = ENDS.map(() => []);
+  for (let i = 1; i < sp.length; i++) {
+    const { p, r } = win(i), xg = sp[i].generated;
+    const g = r.games - p.games; if (g <= 0) continue;
+    ENDS.forEach(([, , cols], k) => {
+      const n = cols.reduce((acc, c) => acc + ((r[c] || 0) - (p[c] || 0)), 0);
+      endSeries[k].push({ x: xg, y: 100 * n / g });
+    });
+  }
+  if (sp.length === 1) {
+    const r = sp[0];
+    ENDS.forEach(([, , cols], k) => endSeries[k].push({ x: xg, y: r.games ? 100 * cols.reduce((a, c) => a + (r[c] || 0), 0) / r.games : 0 }));
+  }
+  lineChart('cEnd', ENDS.map(([label, color], k) => ds(label, color, endSeries[k])), { yLabel: '% of games', min: 0, max: 100 });
+
+  // One ending on its own scale: a few percent is invisible on the 0-100 chart above.
+  const pick = END_PICKS.find(e => e[0] === endPick) || END_PICKS[0];
+  const [, cols, side] = pick;
+  const allPts = [], sidePts = [];
+  for (let i = 1; i < sp.length; i++) {
+    const { p, r } = win(i), xg = sp[i].generated;
+    const g = r.games - p.games; if (g <= 0) continue;
+    const n = cols.reduce((a, c) => a + ((r[c] || 0) - (p[c] || 0)), 0);
+    allPts.push({ x: xg, y: 100 * n / g });
+    const wins = side ? r[side] - p[side] : 0;
+    if (wins > 0) sidePts.push({ x: xg, y: 100 * n / wins });
+  }
+  const sideName = side === 'def_wins' ? '% of defender wins' : '% of attacker wins';
+  lineChart('cFortSp', [ds('% of all games', S[2], allPts)].concat(side ? [ds(sideName, S[0], sidePts)] : []), { yLabel: '%', min: 0, digits: 2 });
+
+  const mx = (r) => r.generated;
+  // T9 columns are blank when the option is off: a series only when it has numbers.
+  const col = (k, f = (v) => v) => m.filter(r => typeof r[k] === 'number').map(r => ({ x: mx(r), y: f(r[k]) }));
+  // A WDL run logs the value loss as cross-entropy, not MSE: say so in the legend.
+  const valueLabel = (d.config && d.config.value_wdl) || col('draw_pred').length ? 'value (win/draw/loss CE)' : 'value';
+  const lossSets = [ds('policy', S[0], smoothPts(m.map(r => ({ x: mx(r), y: r.policy })))), ds(valueLabel, S[1], smoothPts(m.map(r => ({ x: mx(r), y: r.value })))), ds('moves left', S[2], smoothPts(m.map(r => ({ x: mx(r), y: r.moves_left }))))];
+  if (col('td').length) lossSets.push(ds('short-term value', S[3], smoothPts(col('td'))));
+  if (col('soft_p').length) lossSets.push(ds('soft policy', S[4], smoothPts(col('soft_p'))));
+  lineChart('cLoss', lossSets, { digits: 3 });
+  const pct = (v) => 100 * v;
+  const drawSets = [];
+  if (col('draw_pred').length) drawSets.push(ds('predicted draw %', S[1], smoothPts(col('draw_pred', pct))), ds('draw targets %', S[0], smoothPts(col('draw_frac', pct))));
+  if (col('reduced').length) drawSets.push(ds('soft-resigned positions %', S[2], smoothPts(col('reduced', pct))));
+  $('drawBox').style.display = drawSets.length ? '' : 'none';
+  if (drawSets.length) lineChart('cDraw', drawSets, { yLabel: '%', min: 0, digits: 1 });
+  const wSets = [];
+  if (col('surprise').length) wSets.push(ds('policy surprise (nats)', S[0], smoothPts(col('surprise'))));
+  if (col('w_max').length) wSets.push(ds('largest weight', S[3], smoothPts(col('w_max'))));
+  $('surpriseBox').style.display = wSets.length ? '' : 'none';
+  if (wSets.length) lineChart('cSurprise', wSets, { min: 0, digits: 2 });
+  lineChart('cSpeed', [ds('samples/s', S[0], smoothPts(m.map(r => ({ x: mx(r), y: r.samples_per_s }))))], { digits: 0 });
+  // Self-play speed from the cumulative counters in selfplay.csv.
+  const gen = [];
+  for (let i = 1; i < sp.length; i++) {
+    const { p, r } = win(i), xg = sp[i].generated, dt = r.time - p.time;
+    if (dt > 0 && r.games > p.games) gen.push({ x: xg, y: (r.games - p.games) / dt });
+  }
+  lineChart('cGen', [ds('games/s', S[2], gen)], { digits: 2, min: 0 });
+  lineChart('cGpu', [ds('GPU %', S[1], smoothPts(m.filter(r => r.gpu_util !== '' && r.gpu_util != null).map(r => ({ x: mx(r), y: +r.gpu_util }))))], { digits: 0, min: 0, max: 100 });
+  lineChart('cWin', [ds('window', S[0], m.map(r => ({ x: mx(r), y: r.window }))), ds('buffer', S[2], m.map(r => ({ x: mx(r), y: r.buffer })))], { digits: 0 });
+
+  // Blind metrics by checkpoint step -> generated via elo rows (same ckpt) or metrics nearest
+  const genOf = (name) => { const e = d.elo.find(x => x.ckpt === name); if (e && e.generated != null) return e.generated; const s = parseInt((name.match(/step(\d+)/) || [])[1] || '0'); let best = null; for (const r of m) if (!best || Math.abs(r.step - s) < Math.abs(best.step - s)) best = r; return best ? best.generated : s; };
+  const ev = d.eval.map(r => ({ x: genOf(r.net), r })).sort((a, b) => a.x - b.x);
+  lineChart('cBlind', [ds('lost positions (→ 5)', S[7], ev.map(e => ({ x: e.x, y: e.r.lost_pos }))), ds('won positions (→ 95)', S[2], ev.map(e => ({ x: e.x, y: e.r.won_pos })))], { yLabel: 'attacker winrate %', min: 0, max: 100 });
+  lineChart('cBrier', [ds('brier', S[0], ev.map(e => ({ x: e.x, y: e.r.brier_his })))], { digits: 3, min: 0 });
+
+  // Fort metric: eval.jsonl rows of new checkpoints, fort.jsonl (backfill) for the rest and the anchors.
+  const fortBy = {};
+  for (const r of [...d.eval, ...(d.fort || [])]) if (r.fort_far != null || r.fort_near != null) fortBy[r.net] = r;
+  const isAnchor = n => (d.nets.anchors || []).includes(n) || !/^step\d+$/.test(n);
+  const fck = Object.values(fortBy).filter(r => !isAnchor(r.net)).map(r => ({ x: genOf(r.net), r })).sort((a, b) => a.x - b.x);
+  $('fortBox').style.display = fck.length ? '' : 'none';
+  if (fck.length) {
+    const sets = [ds('far (k ≥ 24)', S[0], fck.map(e => ({ x: e.x, y: e.r.fort_far }))),
+                  ds('near (k ≤ 8)', S[7], fck.map(e => ({ x: e.x, y: e.r.fort_near }))),
+                  ds('distance to g0213', S[3], fck.map(e => ({ x: e.x, y: e.r.fort_ref })))];
+    const span = [fck[0].x, fck[fck.length - 1].x];
+    Object.values(fortBy).filter(r => isAnchor(r.net)).forEach((r, i) => {
+      sets.push(ds(`${r.net} far`, S[(i + 4) % 8], span.map(x => ({ x, y: r.fort_far })), { borderDash: [6, 4], pointRadius: 0 }));
+    });
+    lineChart('cFort', sets, { yLabel: 'attacker winrate %', min: 0, max: 100 });
+  }
+
+  if ($('vsModal').classList.contains('open')) renderVs(d);
+  $('log').textContent = d.log.join('\n');
+  $('evalLog').textContent = d.eval_log.join('\n') || '(no evaluator output yet)';
+  $('cfg').textContent = JSON.stringify(d.config, null, 2);
+}
+
+// ─── match details modal: one anchor, every match the side-car played against it ───
+// The elo row's `reasons` name the winner's terminal (def_* = defenders won, atk_* =
+// attackers won); `sides` (eval.games.jsonl) gives W/L/D by the side the checkpoint played.
+const WHY_COLORS = { atk_capture: 1, atk_surrounded: 4, atk_no_moves: 5, atk_threefold: 7, def_corner: 0, def_edge: 0, def_fort: 2, def_no_moves: 6, max_plies: 3 };
+function whyText(o) {
+  const e = Object.entries(o || {}).sort((a, b) => b[1] - a[1]);
+  return e.length ? e.map(([w, n]) => `${REASON[w] || w} ${n}`).join(', ') : '–';
+}
+function renderVs(d) {
+  const S = SERIES();
+  const retired = new Set(d.retired_anchors || []);
+  const anchors = [...new Set(d.elo.filter(e => e.reasons).map(e => e.anchor))].filter(a => !retired.has(a));
+  if (!anchors.length) { $('vsRows').innerHTML = '<tr><td colspan="8">no matches with endings recorded yet</td></tr>'; return; }
+  if (!anchors.includes(vsPick)) vsPick = anchors[anchors.length - 1];
+  // One tab per anchor, the chosen one highlighted.
+  const html = anchors.map(a => `<button data-a="${a}" class="${a === vsPick ? 'on' : ''}">${alabel(a)}</button>`).join('');
+  if ($('vsPick').innerHTML !== html) $('vsPick').innerHTML = html;
+  const rows = d.elo.filter(e => e.anchor === vsPick && e.reasons).sort((p, q) => p.step - q.step);
+  const x = (e) => e.generated ?? e.step, n = (e) => e.w + e.l + e.d || 1;
+  const side = (e, s) => (d.sides || {})[e.key]?.[s];
+  const sum = (o, pref) => Object.entries(o || {}).reduce((a, [k, v]) => a + (k.startsWith(pref) ? v : 0), 0);
+  const pct = (f) => rows.map(e => ({ x: x(e), y: 100 * f(e) / n(e) }));
+  const games = rows.reduce((a, e) => a + e.w + e.l + e.d, 0);
+  $('vsSub').textContent = `${rows.length} matches, ${fmt(games)} games, ${rows[rows.length - 1].nodes} nodes, ${rows[rows.length - 1].pairs} pairs each`;
+
+  const last = rows[rows.length - 1], la = side(last, 'atk'), ld = side(last, 'def');
+  const wld = (t) => t ? `${t[0]}-${t[1]}-${t[2]}` : '–';
+  const trend = rows.length > 1 ? last.elo - rows[rows.length - 2].elo : null;
+  $('vsTiles').innerHTML = [
+    ['Last Elo', (last.elo > 0 ? '+' : '') + fmt(last.elo, 0), `${last.ckpt} · 95% CI ${fmt(last.ci[0], 0)}…${fmt(last.ci[1], 0)}`],
+    ['Score', `${last.w}-${last.l}-${last.d}`, `${fmt(100 * last.score, 1)}% of points${trend != null ? ` · ${trend > 0 ? '+' : ''}${fmt(trend, 0)} vs previous` : ''}`],
+    ['As attacker', wld(la), la ? `${fmt(100 * (la[0] + la[2] / 2) / (la[0] + la[1] + la[2] || 1), 0)}% of points` : 'W-L-D'],
+    ['As defender', wld(ld), ld ? `${fmt(100 * (ld[0] + ld[2] / 2) / (ld[0] + ld[1] + ld[2] || 1), 0)}% of points` : 'W-L-D'],
+    ['Won by', whyText(last.reasons.win), ''],
+    ['Lost to', whyText(last.reasons.loss), last.d ? `drawn ${whyText(last.reasons.draw)}` : ''],
+  ].map(t => `<div class="tile"><div class="k">${t[0]}</div><div class="v" style="font-size:${t[1].length > 12 ? 14 : 22}px">${t[1]}</div><div class="s">${t[2]}</div></div>`).join('');
+
+  // Outcomes by side. Draws by side come from `sides`; wins/losses from either source agree.
+  const sideSet = (lbl, color, s, i, extra) => ds(lbl, color, rows.map(e => { const t = side(e, s); return { x: x(e), y: t ? 100 * t[i] / n(e) : null }; }), extra);
+  const hasSides = rows.some(e => side(e, 'atk'));
+  lineChart('cVsOut', hasSides ? [
+    sideSet('won as attacker', S[1], 'atk', 0), sideSet('won as defender', S[0], 'def', 0),
+    sideSet('lost as attacker', S[1], 'atk', 1, { borderDash: [6, 4] }), sideSet('lost as defender', S[0], 'def', 1, { borderDash: [6, 4] }),
+    sideSet('drawn as attacker', S[3], 'atk', 2, { borderDash: [2, 3] }), sideSet('drawn as defender', S[3], 'def', 2, { borderDash: [2, 3], borderColor: S[3] + 'aa' }),
+  ] : [
+    ds('won as attacker', S[1], pct(e => sum(e.reasons.win, 'atk_'))), ds('won as defender', S[0], pct(e => sum(e.reasons.win, 'def_'))),
+    ds('lost as attacker', S[1], pct(e => sum(e.reasons.loss, 'def_')), { borderDash: [6, 4] }), ds('lost as defender', S[0], pct(e => sum(e.reasons.loss, 'atk_')), { borderDash: [6, 4] }),
+    ds('drawn', S[3], pct(e => e.d)),
+  ], { yLabel: '% of games', min: 0, max: 100 });
+
+  const keys = (part) => Object.keys(WHY_COLORS).filter(k => rows.some(e => (e.reasons[part] || {})[k]));
+  const whyLabel = (k, part) => `${REASON[k] || k} (${(k.startsWith('atk_') === (part === 'win')) ? 'as attacker' : 'as defender'})`;
+  lineChart('cVsWin', keys('win').map(k => ds(whyLabel(k, 'win'), S[WHY_COLORS[k]], pct(e => (e.reasons.win || {})[k] || 0))), { yLabel: '% of games', min: 0 });
+  lineChart('cVsLoss', keys('loss').map(k => ds(whyLabel(k, 'loss'), S[WHY_COLORS[k]], pct(e => (e.reasons.loss || {})[k] || 0))), { yLabel: '% of games', min: 0 });
+
+  $('vsRows').innerHTML = rows.slice().reverse().map(e => {
+    const a = side(e, 'atk'), f = side(e, 'def');
+    return `<tr><td>${e.ckpt}</td><td class="num">${(e.time || '').slice(5)}</td><td class="num ${e.elo >= 0 ? 'pos' : 'neg'}">${e.elo > 0 ? '+' : ''}${fmt(e.elo, 0)}</td><td class="num">${e.w}-${e.l}-${e.d}</td><td class="num">${wld(a)}</td><td class="num">${wld(f)}</td><td class="why">${whyText(e.reasons.win)}</td><td class="why">${whyText(e.reasons.loss)}${e.d ? ` · drawn ${whyText(e.reasons.draw)}` : ''}</td></tr>`;
+  }).join('');
+}
+function vsShow() { $('vsModal').classList.add('open'); if (lastDetail) renderVs(lastDetail); }
+function vsHide() { if ($('vsModal').classList.contains('open')) { $('vsModal').classList.remove('open'); routeWrite(); } }
+$('vsOpen').onclick = () => { vsShow(); routeWrite(); };
+$('vsClose').onclick = vsHide;
+$('vsModal').onclick = (ev) => { if (ev.target === $('vsModal')) vsHide(); };
+document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') vsHide(); });
+$('vsPick').onclick = (ev) => {
+  const b = ev.target.closest('button[data-a]');
+  if (!b) return;
+  vsPick = b.dataset.a;
+  try { localStorage.setItem('vsPick', vsPick); } catch (e) {}
+  if (lastDetail) renderVs(lastDetail);
+};
+
+// ─── game viewer modal (docs/plan-game-viewer.md) ───
+// The board is taflground (a Vue 3 component, served from /vendor/), mounted as a tiny
+// Vue app inside the modal; Vue and the 27 MB board bundle load on first open only.
+// Squares are the engine's flat index row * n + col, row 0 = rank 1 = bottom row,
+// which is taflground's numbering too (checked by gvSelfTest once the board is up).
+const gv = { source: 'selfplay', worker: 0, games: [], game: null, gameId: null, ply: 0, run: null,
+             state: null, chart: null, poll: null, ready: null };
+const GV_RESULT = { atk: 'attackers won', def: 'defenders won', draw: 'undecided (limit)', unknown: 'result unknown' };
+const gvAlg = (sq, n) => String.fromCharCode(97 + sq % n) + (Math.floor(sq / n) + 1);
+const gvSq = (alg, n = 11) => (parseInt(alg.slice(1)) - 1) * n + (alg.charCodeAt(0) - 97);
+const gvMove = (m, n) => m ? gvAlg(m.from, n) + '-' + gvAlg(m.to, n) : '';
+function gvLoadScript(src) {
+  return new Promise((ok, fail) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => fail(new Error('cannot load ' + src)); document.head.appendChild(s); });
+}
+function gvEnsureBoard() {
+  if (gv.ready) return gv.ready;
+  gv.ready = (async () => {
+    const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = '/vendor/taflground/dist/style.css'; document.head.appendChild(css);
+    if (!window.Vue) await gvLoadScript('https://cdnjs.cloudflare.com/ajax/libs/vue/3.5.13/vue.global.prod.min.js');
+    try { await gvLoadScript('/vendor/taflground/dist/index.umd.cjs'); }
+    catch (e) { throw new Error('taflground bundle missing: copy dist/index.umd.cjs of the taflground package into zero-trainer/dashboard/vendor/taflground/dist/ (27 MB, kept out of git)'); }
+    const { createApp, reactive, h } = Vue, TG = window.TaflGround;
+    // Board and piece themes: taflground's enums, the choice kept per viewer in localStorage.
+    const themeKeys = (en) => Object.keys(en).filter(k => typeof en[k] !== 'function');
+    const pick = (store, en, fallback) => { let v = null; try { v = localStorage.getItem(store); } catch (e) {} return v && en[v] !== undefined ? v : fallback; };
+    gv.state = reactive({ pieces: [], highlight: null, size: 480,
+      boardTheme: pick('gvBoardTheme', TG.BoardTheme, 'CLASSIC_BROWN'), pieceTheme: pick('gvPieceTheme', TG.PieceTheme, 'ALPHA') });
+    for (const [id, en, key] of [['gvBoardTheme', TG.BoardTheme, 'boardTheme'], ['gvPieceTheme', TG.PieceTheme, 'pieceTheme']]) {
+      const sel = $(id);
+      sel.innerHTML = themeKeys(en).map(k => `<option value="${k}">${k.toLowerCase().replace(/_/g, ' ')}</option>`).join('');
+      sel.value = gv.state[key];
+      sel.onchange = () => { gv.state[key] = sel.value; try { localStorage.setItem(id, sel.value); } catch (e) {} };
+    }
+    const none = new Set();
+    createApp({ render: () => h(TG.TaflBoard, { piecesList: gv.state.pieces, selectableSquares: none, size: gv.state.size,
+      boardTheme: TG.BoardTheme[gv.state.boardTheme], pieceTheme: TG.PieceTheme[gv.state.pieceTheme], highlightMove: gv.state.highlight,
+      preMove: null, possibleMoves: [] }) }).mount('#gvBoard');
+    await gvSelfTest();
+  })();
+  return gv.ready;
+}
+// One-time check of the square convention: our algebraic mapping, and where the
+// component actually draws a1 and k11 (a1 bottom-left, k11 top-right).
+async function gvSelfTest() {
+  console.assert(gvSq('a1') === 0 && gvSq('k11') === 120 && gvSq('f6') === 60, 'gv: algebraic -> square mapping');
+  console.assert(gvAlg(0, 11) === 'a1' && gvAlg(120, 11) === 'k11' && gvAlg(60, 11) === 'f6', 'gv: square -> algebraic mapping');
+  gv.state.pieces = [{ sq: 0, type: 'attacker' }, { sq: 120, type: 'defender' }];
+  await Vue.nextTick();
+  const at = {};
+  for (const el of document.querySelectorAll('#gvBoard .piece-cell')) {
+    const left = parseFloat(el.style.getPropertyValue('--left')), top = parseFloat(el.style.getPropertyValue('--top'));
+    at[left < 50 ? 'low' : 'high'] = top;
+  }
+  console.assert(at.low > 50 && at.high < 50, 'gv: taflground draws square 0 bottom-left and 120 top-right', at);
+  gv.state.pieces = [];
+}
+function gvBoardSize() {
+  const w = $('gvBoardWrap').clientWidth || 480;
+  return Math.max(280, Math.min(560, w, window.innerHeight - 330));
+}
+async function gvOpen() {
+  $('gvModal').classList.add('open');
+  if (gv.run !== selected) { gv.run = selected; gv.games = []; gv.game = null; gv.gameId = null; }
+  try { await gvEnsureBoard(); } catch (e) { $('gvInfo').textContent = 'board failed to load: ' + e.message; }
+  if (gv.state) gv.state.size = gvBoardSize();
+  if (!gv.games.length) await gvLoadList(); else gvRenderList();
+  if (gv.game) gvShow(gv.ply);
+}
+function gvClose() { const was = $('gvModal').classList.contains('open'); $('gvModal').classList.remove('open'); clearTimeout(gv.poll); if (was) routeWrite(); }
+async function gvLoadList() {
+  clearTimeout(gv.poll);
+  if (!selected) return;
+  const q = `/api/games?name=${encodeURIComponent(selected)}&source=${gv.source}&n=100` + (gv.source === 'selfplay' ? `&worker=${gv.worker}&pick=${$('gvPickMode').value}` : '');
+  $('gvSub').textContent = 'loading…';
+  const r = await api(q);
+  if (r.workers) {
+    const html = r.workers.map(w => `<option value="${w}">worker ${w}</option>`).join('');
+    if ($('gvWorker').innerHTML !== html) $('gvWorker').innerHTML = html;
+    $('gvWorker').value = gv.worker;
+  }
+  $('gvWorker').style.display = $('gvPickMode').style.display = gv.source === 'selfplay' ? '' : 'none';
+  gv.games = r.games || [];
+  const parts = [];
+  if (r.error) parts.push(r.error);
+  if (r.indexing != null) parts.push(`indexing worker${gv.worker}.bin… ${(100 * r.indexing).toFixed(0)}%`);
+  if (r.index_error) parts.push('index error: ' + r.index_error);
+  const spread = $('gvPickMode').value === 'spread';
+  if (gv.source === 'selfplay' && !r.error) parts.push(`${gv.games.length} ${spread ? 'spread over' : 'newest of'} ${fmt(r.indexed_games)} games${r.indexing != null ? ' indexed so far' : ''}` +(r.feat ? '' : ' · no .feat side file: endings unknown except limits'));
+  if (gv.source === 'match' && !r.error) parts.push(gv.games.length ? `${gv.games.length} recorded games` : 'no match has recorded moves yet (needs an engine that prints moves/evals)');
+  $('gvSub').textContent = parts.join(' · ');
+  gvRenderList();
+  // Keep polling while the first index is built, so the list appears when it is done.
+  if (r.indexing != null && $('gvModal').classList.contains('open')) gv.poll = setTimeout(gvLoadList, 2000);
+}
+function gvRenderList() {
+  const sp = gv.source === 'selfplay';
+  $('gvHead').innerHTML = sp ? '<tr><th>game</th><th>result</th><th>ending</th><th class="num">plies</th></tr>'
+    : '<tr><th>checkpoint vs anchor</th><th>checkpoint was</th><th>checkpoint</th><th>ending</th><th class="num">plies</th></tr>';
+  const res = (r) => ({ atk: 'atk', def: 'def', draw: 'draw', unknown: '?' })[r] || r;
+  $('gvRows').innerHTML = gv.games.map((g, i) => `<tr class="game${g.id === gv.gameId ? ' sel' : ''}" data-i="${i}">` + (sp
+    ? `<td>#${fmt(g.start_sample)}</td><td>${res(g.result)}</td><td class="why">${REASON[g.reason] || g.reason}</td><td class="num">${g.plies}</td>`
+    : `<td>${g.ckpt}<div class="why">vs ${alabel(g.anchor)} · ${(g.time || '').slice(5)}</div></td><td>${g.a_side === 'atk' ? 'attacker' : 'defender'}</td><td>${({ w: 'won', l: 'lost', d: 'drawn' })[g.score] || g.score}</td><td class="why">${REASON[g.reason] || g.reason}</td><td class="num">${g.plies}</td>`) + '</tr>').join('')
+    || '<tr><td colspan="6" class="why">no games</td></tr>';
+  $('gvRows').querySelectorAll('tr.game').forEach(tr => tr.onclick = () => gvPick(gv.games[+tr.dataset.i]));
+}
+async function gvPick(g) {
+  gv.gameId = g.id; gvRenderList(); routeWrite();
+  $('gvInfo').textContent = 'loading game…';
+  const d = await api(`/api/game?name=${encodeURIComponent(selected)}&id=${encodeURIComponent(g.id)}`);
+  if (d.error) { $('gvInfo').textContent = d.error; return; }
+  gv.game = d; gv.meta = g;
+  $('gvSlider').max = d.plies.length - 1;
+  gvRenderChart();
+  gvShow(0);
+}
+// Root values are stored from the mover's view; the attackers' view flips the defenders' moves.
+const gvAtkView = (p) => p.root_q == null ? null : (p.stm === 0 ? p.root_q : -p.root_q);
+// The value head predicts the expected score in [-1, 1] (win +1, draw 0, loss -1), so
+// (v + 1) / 2 is the side's chance to win counting a draw as half: shown as a win chance.
+const gvAtkChance = (p) => { const v = gvAtkView(p); return v == null ? null : 50 * (v + 1); };
+// Who plays each side: in a match the checkpoint and the anchor, in self-play one net twice.
+// origin is the run a net comes from (T7-10x128, ...) or what the fixed anchor is.
+function gvPlayerInfo(d) {
+  if (d.source !== 'match') {
+    const sp = { net: 'latest net', role: 'self-play', origin: d.run || selected };
+    return { 0: sp, 1: sp };
+  }
+  const ck = { net: d.ckpt, role: 'checkpoint', origin: d.ckpt_origin || d.run || selected };
+  const an = { net: d.anchor, role: 'anchor', origin: d.anchor_origin || (d.anchor === 'copenhagen11x11' ? 'T2 gen0225 (best 11x11 net)' : '') };
+  return d.a_side === 'atk' ? { 0: ck, 1: an } : { 0: an, 1: ck };
+}
+function gvPlayers(d) {
+  const pi = gvPlayerInfo(d);
+  return { 0: `${pi[0].net} (${pi[0].role})`, 1: `${pi[1].net} (${pi[1].role})` };
+}
+// "T7-10x128" -> "T7"; other origins are shown as they are.
+const gvRunTag = (o) => (o.match(/^(T\d+(?:\.\d+)?)-/) || [])[1] || o;
+function gvRenderPlayers(d, p) {
+  const pi = gvPlayerInfo(d), C = GV_COLOR();
+  const ch = gvAtkChance(p);
+  const winner = { atk: 0, def: 1 }[d.result];
+  $('gvPlayers').innerHTML = [0, 1].map(side => {
+    const x = pi[side], mine = ch == null ? null : (side === 0 ? ch : 100 - ch);
+    const end = winner == null ? (d.result === 'draw' ? 'draw' : '') : (winner === side ? 'won' : 'lost');
+    return `<div class="gv-card${p.stm === side ? ' move' : ''}${winner === side ? ' won' : ''}" style="--side:${C[side]}">
+      <div class="who"><div class="side">${GV_SIDE[side]}${p.stm === side ? '<span class="tomove">● to move</span>' : ''}</div>
+        <div class="net" title="${x.net}">${x.net}</div>
+        <div class="chips">${x.origin ? `<span class="chip run" title="${x.origin}">${gvRunTag(x.origin)}</span>` : ''}<span class="chip">${x.role}</span></div></div>
+      <div class="pct"><b>${mine == null ? '–' : fmt(mine, 0) + '%'}</b><span>${end ? end : 'win chance'}</span></div></div>`;
+  }).join('');
+}
+const GV_SIDE = { 0: 'attackers', 1: 'defenders' };
+// Side colours in the game viewer: attackers brown, defenders blue.
+const GV_COLOR = () => ({ 0: '#b07a45', 1: css('--s1') });
+function gvRenderChart() {
+  const d = gv.game, S = SERIES(), ink2 = css('--ink-2'), ink3 = css('--ink-3'), line = css('--line');
+  const pl = gvPlayers(d);
+  const atkScore = { atk: 100, def: 0, draw: 50 }[d.result];
+  $('gvChartTitle').textContent = 'Win chance per ply, one line per side';
+  $('gvChartSub').textContent = 'each side\'s root value on its own moves, as that side\'s chance to win (a draw counts half)'
+    + (d.source === 'selfplay' ? '; faded = cheap search' : `; the first ${d.opening} plies are the random opening`)
+    + '; dashed = the result in that side\'s colour. Hover to preview a ply, click or drag to go there';
+  const sets = [];
+  for (const side of [0, 1]) {
+    const col = GV_COLOR()[side];
+    const pts = d.plies.map((p, i) => ({ x: i, y: p.root_q == null || p.stm !== side ? null : 50 * (p.root_q + 1), cheap: !!p.cheap }))
+      .filter(pt => pt.y != null);
+    sets.push({ label: `${GV_SIDE[side]} · ${pl[side]}`, side, data: pts, borderColor: col, backgroundColor: col, pointRadius: 0, borderWidth: 2,
+      segment: { borderColor: (c) => pts[c.p1DataIndex]?.cheap ? col + '59' : col } });
+  }
+  if (atkScore != null) for (const side of [0, 1]) {
+    const y = side === 0 ? atkScore : 100 - atkScore;
+    sets.push({ label: '_result', side, data: [{ x: 0, y }, { x: d.plies.length - 1, y }], borderColor: GV_COLOR()[side], borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5 });
+  }
+  sets.push({ label: '_hover', data: [], borderColor: ink3, borderDash: [3, 3], borderWidth: 1, pointRadius: 0 });
+  sets.push({ label: '_ply', data: [{ x: gv.ply, y: 0 }, { x: gv.ply, y: 100 }], borderColor: ink2, borderWidth: 1.5, pointRadius: 0 });
+  if (gv.chart) gv.chart.destroy();
+  const plyAt = (chart, px) => {
+    const x = Math.round(chart.scales.x.getValueForPixel(px));
+    return x >= 0 && x < d.plies.length ? x : null;
+  };
+  gv.chart = new Chart($('gvChart'), {
+    type: 'line', data: { datasets: sets },
+    options: {
+      animation: false, responsive: true, maintainAspectRatio: false, parsing: false,
+      interaction: { mode: 'nearest', axis: 'x', intersect: false },
+      plugins: { legend: { position: 'bottom', labels: { color: ink2, boxWidth: 10, filter: (i) => !i.text.startsWith('_') } },
+                 tooltip: { filter: (i) => !i.dataset.label.startsWith('_'), callbacks: { title: (it) => 'ply ' + it[0]?.parsed?.x,
+                   label: (i) => `${i.dataset.label}: ${GV_SIDE[i.dataset.side]} win ${fmt(i.parsed.y, 0)}%` } } },
+      scales: { x: { type: 'linear', min: 0, max: d.plies.length - 1, grid: { color: line }, ticks: { color: ink2 }, title: { display: true, text: 'ply', color: ink2 } },
+                y: { min: 0, max: 100, grid: { color: line }, ticks: { color: ink2, stepSize: 25, callback: (v) => v + '%' }, title: { display: true, text: 'win chance of that side', color: ink2 } } },
+      // Hover shows the ply on the board for as long as the pointer stays; a click goes there.
+      onHover: (ev, _els, chart) => {
+        // Chart.js delivers hover a frame late, so a move queued before leaving must not
+        // bring the preview back after mouseleave has dropped it.
+        if (ev.type === 'mouseout' || !gv.overChart) return;
+        const x = plyAt(chart, ev.x);
+        if (x == null) return;
+        // With the button held the game follows the pointer for real; without, only a preview.
+        if (gv.dragging) { if (x !== gv.ply || gv.preview != null) gvShow(x); }
+        else if (x !== gv.preview) gvShow(x, true);
+      },
+    },
+  });
+}
+// Leaving the chart drops the preview and puts the board back on the chosen ply.
+$('gvChart').addEventListener('mouseenter', () => { gv.overChart = true; });
+$('gvChart').addEventListener('mousedown', (ev) => {
+  if (ev.button !== 0 || !gv.chart) return;
+  gv.dragging = true;
+  ev.preventDefault();
+  const x = Math.round(gv.chart.scales.x.getValueForPixel(ev.offsetX));
+  if (gv.game && x >= 0 && x < gv.game.plies.length) gvShow(x);
+});
+window.addEventListener('mouseup', () => { gv.dragging = false; });
+$('gvChart').addEventListener('mouseleave', () => { gv.overChart = false; if (gv.preview != null) gvShow(gv.ply); });
+// Shows ply i. A preview (hovering the chart) leaves the chosen ply, the slider and the
+// solid marker where they are; anything else moves them.
+function gvShow(i, preview = false) {
+  const d = gv.game;
+  if (!d) return;
+  i = Math.max(0, Math.min(d.plies.length - 1, i));
+  gv.preview = preview ? i : null;
+  if (!preview) gv.ply = i;
+  const p = d.plies[i], n = d.board_size, pl = gvPlayers(d);
+  if (gv.state) { gv.state.pieces = p.pieces; gv.state.highlight = p.move; }
+  $('gvSlider').value = gv.ply;
+  $('gvPly').textContent = preview ? `preview ply ${i} · at ply ${gv.ply} / ${d.plies.length - 1}` : `ply ${i} / ${d.plies.length - 1}`;
+  const last = i === d.plies.length - 1;
+  const ch = gvAtkChance(p);
+  const val = ch == null ? (p.opening ? 'opening (random move)' : 'no evaluation')
+    : `win chance <b>attackers ${fmt(ch, 0)}%</b> · <b>defenders ${fmt(100 - ch, 0)}%</b> (${GV_SIDE[p.stm]}' search)`;
+  gvRenderPlayers(d, p);
+  $('gvInfo').innerHTML = `<b>${GV_SIDE[p.stm]}</b> (${pl[p.stm]}) to move · ${p.move ? 'last move ' + gvMove(p.move, n) + ' · ' : ''}${val}` +
+    (p.cheap ? ' · cheap search' : '') + `<br>${GV_RESULT[d.result] || d.result} · ${REASON[d.reason] || d.reason}` +
+    (last && d.source === 'selfplay' ? ' · the final move is not stored (the terminal position is not a sample)' : '');
+  $('gvTop').innerHTML = p.top && p.top.length
+    ? `<b>search policy${p.cheap ? ' (cheap search: visits of a low-node search, not a training target)' : ''}</b> ` + p.top.map(t => `<span>${gvMove(t, n)} ${fmt(100 * t.share, 1)}%</span>`).join('')
+    : (d.source === 'match' ? '<span class="sub">no policy recorded for match games</span>' : '<span class="sub">no policy target (cheap search)</span>');
+  if (gv.chart) {
+    const ds = (l) => gv.chart.data.datasets.find(x => x.label === l);
+    ds('_ply').data = [{ x: gv.ply, y: 0 }, { x: gv.ply, y: 100 }];
+    ds('_hover').data = preview ? [{ x: i, y: 0 }, { x: i, y: 100 }] : [];
+    gv.chart.update('none');
+  }
+  if (!preview) $('gvRows').querySelectorAll('tr.game.sel').forEach(tr => tr.scrollIntoView({ block: 'nearest' }));
+}
+$('gvOpen').onclick = async () => { await gvOpen(); routeWrite(); };
+$('gvClose').onclick = gvClose;
+$('gvModal').onclick = (ev) => { if (ev.target === $('gvModal')) gvClose(); };
+$('gvReload').onclick = gvLoadList;
+// Wheel over the board steps through the game (down = forward). Deltas are summed so a
+// touchpad's stream of small events moves one ply per notch-sized scroll, not dozens.
+let gvWheelSum = 0;
+$('gvBoardWrap').addEventListener('wheel', (ev) => {
+  if (!gv.game) return;
+  ev.preventDefault();
+  gvWheelSum += ev.deltaMode === 1 ? ev.deltaY * 40 : ev.deltaY;
+  const steps = Math.trunc(gvWheelSum / 100);
+  if (steps) { gvWheelSum -= steps * 100; gvShow(gv.ply + steps); }
+}, { passive: false });
+$('gvSource').onchange = () => { gv.source = $('gvSource').value; gvLoadList(); };
+$('gvWorker').onchange = () => { gv.worker = +$('gvWorker').value; gvLoadList(); };
+$('gvPickMode').onchange = () => { try { localStorage.setItem('gvPickMode', $('gvPickMode').value); } catch (e) {} gvLoadList(); };
+try { const m = localStorage.getItem('gvPickMode'); if (m) $('gvPickMode').value = m; } catch (e) {}
+$('gvSlider').oninput = () => gvShow(+$('gvSlider').value);
+$('gvPrev').onclick = () => gvShow(gv.ply - 1);
+$('gvNext').onclick = () => gvShow(gv.ply + 1);
+document.addEventListener('keydown', (ev) => {
+  if (!$('gvModal').classList.contains('open')) return;
+  if (ev.key === 'Escape') gvClose();
+  else if (ev.target.tagName === 'SELECT' || ev.target.tagName === 'INPUT' && ev.target.type !== 'range') return;
+  else if (ev.key === 'ArrowLeft') { gvShow(gv.ply - 1); ev.preventDefault(); }
+  else if (ev.key === 'ArrowRight') { gvShow(gv.ply + 1); ev.preventDefault(); }
+  else if (ev.key === 'Home') { gvShow(0); ev.preventDefault(); }
+  else if (ev.key === 'End' && gv.game) { gvShow(gv.game.plies.length - 1); ev.preventDefault(); }
+});
+window.addEventListener('resize', () => { if (gv.state && $('gvModal').classList.contains('open')) gv.state.size = gvBoardSize(); });
+
+// ─── round robin panel ───
+const rrSel = new Set(['copenhagen11x11']);
+let rrNetKey = '', rrTimer = null, rrCk = [];
+function renderRrPicker(nets) {
+  if (!nets) return;
+  rrCk = nets.ckpts;  // newest first
+  const all = [...nets.anchors, ...nets.ckpts];
+  const key = all.join(',');
+  if (key === rrNetKey) return;
+  rrNetKey = key;
+  $('rrNets').innerHTML = all.map(n => `<label><input type="checkbox" data-net="${n}" ${rrSel.has(n) ? 'checked' : ''}> ${n}</label>`).join('');
+  $('rrNets').querySelectorAll('input').forEach(i => i.onchange = () => { i.checked ? rrSel.add(i.dataset.net) : rrSel.delete(i.dataset.net); });
+}
+function setRrSel(names) {
+  rrSel.clear(); names.forEach(n => rrSel.add(n));
+  $('rrNets').querySelectorAll('input').forEach(i => i.checked = rrSel.has(i.dataset.net));
+}
+function rrCkpts() { return rrCk; }
+$('rrLatest').onclick = () => setRrSel(['copenhagen11x11', ...rrCkpts().slice(0, 4)]);
+$('rrSpread').onclick = () => { const c = rrCkpts(); const k = Math.min(6, c.length); setRrSel(['copenhagen11x11', ...Array.from({ length: k }, (_, i) => c[Math.round(i * (c.length - 1) / Math.max(1, k - 1))])]); };
+$('rrClear').onclick = () => setRrSel([]);
+const ago = t => { const s = Math.round(Date.now() / 1000 - t); return s < 60 ? s + ' s' : Math.round(s / 60) + ' min'; };
+function renderRr(st) {
+  const running = st && st.status === 'running';
+  $('rrStart').disabled = running; $('rrStop').disabled = !running;
+  $('rrHead').textContent = st ? `${st.status} · ${st.games_done}/${st.games_total} games` : 'not started';
+  if (running) $('rrBox').open = true;
+  if (!st) { $('rrLive').innerHTML = ''; return; }
+  const sgn = x => { if (x == null) return '–'; const r = Math.round(x); return (r > 0 ? '+' : '') + (r === 0 ? '0' : fmt(r, 0)); };
+  const rows = st.table.map((r, i) => `<tr><td>${i + 1}</td><td>${r.name}</td><td class="num">${sgn(r.elo)}</td><td class="num">${r.se ? '±' + fmt(1.96 * r.se, 0) : ''}</td>
+    <td class="num">${r.w}-${r.l}-${r.d}</td><td class="num">${r.score == null ? '–' : fmt(100 * r.score, 0) + '%'}</td><td class="num">${r.games}</td></tr>`).join('');
+  const cur = (st.current || []).map(c => `now: <b>${c.attackers}</b> (att) vs <b>${c.defenders}</b> (def), ${ago(c.since)}`).join('<br>');
+  const rec = (st.recent || []).slice().reverse().map(g => g.winner
+    ? `${g.winner === g.attackers ? '<b>' + g.attackers + '</b> (att) beat ' + g.defenders : '<b>' + g.defenders + '</b> (def) beat ' + g.attackers} · ${REASON[g.reason] || g.reason}, ${g.plies} plies`
+    : `${g.attackers} (att) – ${g.defenders} (def) drawn · ${REASON[g.reason] || g.reason}, ${g.plies} plies`).join('<br>');
+  $('rrLive').innerHTML = `<div class="bar"><div style="width:${st.games_total ? 100 * st.games_done / st.games_total : 0}%"></div></div>
+    <table><tr><th>#</th><th>net</th><th class="num">Elo</th><th class="num">95%</th><th class="num">W-L-D</th><th class="num">score</th><th class="num">games</th></tr>${rows}</table>
+    <div class="sub">${st.nodes} nodes, ${st.pairs} pair(s) per pairing; ${st.reference} = 0; started ${ago(st.started)} ago</div>
+    <div class="games">${cur}${cur && rec ? '<br>' : ''}${rec}</div>`;
+  clearTimeout(rrTimer);
+  if (running) rrTimer = setTimeout(pollRr, 2000);
+}
+async function pollRr() {
+  if (!selected) return;
+  const r = await api('/api/rr?name=' + encodeURIComponent(selected));
+  renderRr(r.rr);
+}
+$('rrStart').onclick = async () => {
+  const r = await api('/api/rr/start', { name: selected, nets: [...rrSel], nodes: Number($('rrNodes').value), pairs: Number($('rrPairs').value), workers: Number($('rrWorkers').value) });
+  $('rrMsg').textContent = r.error || `started (${rrSel.size} nets)`;
+  if (r.ok) setTimeout(pollRr, 1500);
+};
+$('rrStop').onclick = async () => { const r = await api('/api/rr/stop', { name: selected }); $('rrMsg').textContent = r.error || 'stopped'; pollRr(); };
+
+async function loadDetail() {
+  if (!selected) return;
+  const d = await api('/api/run?name=' + encodeURIComponent(selected));
+  if (d.error) { selected = null; $('detail').style.display = 'none'; $('empty').style.display = ''; return; }
+  $('empty').style.display = 'none'; $('detail').style.display = '';
+  lastDetail = d;
+  renderDetail(d);
+}
+
+$('startBtn').onclick = async () => {
+  const overrides = {};
+  const num = (id, key) => { const v = $(id).value; if (v !== '') overrides[key] = Number(v); };
+  num('workers', 'workers'); num('trainThreads', 'train_threads'); num('fullNodes', 'full_nodes'); num('cheapNodes', 'cheap_nodes');
+  if ($('startCkpt').value) overrides.start_checkpoint = $('startCkpt').value;
+  if ($('engineBin').value) overrides.engine_bin = $('engineBin').value;
+  $('startBtn').disabled = true;
+  const r = await api('/api/start', { name: $('runName').value.trim(), preset: $('preset').value, overrides });
+  $('startBtn').disabled = false;
+  $('startMsg').textContent = r.error || '';
+  if (r.ok) { selected = r.name; await loadRuns(); await loadDetail(); }
+};
+$('stopBtn').onclick = async () => { if (selected && confirm(`Stop ${selected}? It finishes the current step, saves a checkpoint and exits.`)) { await api('/api/stop', { name: selected }); loadDetail(); loadRuns(); } };
+$('resumeBtn').onclick = async () => { if (selected) { const r = await api('/api/resume', { name: selected }); if (r.error) alert(r.error); loadDetail(); loadRuns(); } };
+
+$('endPick').innerHTML = END_PICKS.map(e => `<option>${e[0]}</option>`).join('');
+$('endPick').value = endPick;
+$('endPick').onchange = () => {
+  endPick = $('endPick').value;
+  try { localStorage.setItem('endPick', endPick); } catch (e) {}
+  if (lastDetail) renderDetail(lastDetail);
+};
+$('eloSmooth').value = String(eloSmoothN);
+if (!$('eloSmooth').value) { eloSmoothN = 1; $('eloSmooth').value = '1'; }
+$('eloSmooth').onchange = () => {
+  eloSmoothN = Math.max(1, parseInt($('eloSmooth').value));
+  try { localStorage.setItem('eloSmooth', String(eloSmoothN)); } catch (e) {}
+  if (lastDetail) renderDetail(lastDetail);
+};
+$('smooth').value = smoothN;
+$('smooth').oninput = () => {
+  smoothN = Math.max(1, parseInt($('smooth').value));
+  try { localStorage.setItem('smooth', String(smoothN)); } catch (e) {}
+  if (lastDetail) renderDetail(lastDetail);
+};
+
+$('themeBtn').onclick = () => {
+  const dark = document.documentElement.getAttribute('data-theme') === 'dark' || (!document.documentElement.getAttribute('data-theme') && matchMedia('(prefers-color-scheme: dark)').matches);
+  const next = dark ? 'light' : 'dark';
+  try { localStorage.setItem('theme', next); } catch (e) {}
+  applyTheme(next); loadDetail();
+};
+// One refresh at a time; a failed one (server busy, file mid-write) is retried on the next tick,
+// and the clock pill shows when the page last got fresh data.
+let refreshing = false, lastOk = 0;
+async function refresh() {
+  if (refreshing) return;
+  refreshing = true;
+  try {
+    await loadRuns();
+    await loadDetail();
+    lastOk = Date.now();
+    $('clock').textContent = new Date().toLocaleTimeString();
+    $('clock').title = '';
+  } catch (e) {
+    console.error('refresh failed', e);
+    $('clock').title = 'last refresh failed: ' + e;
+  } finally {
+    refreshing = false;
+    markStale();
+  }
+}
+function markStale() {
+  const age = lastOk ? (Date.now() - lastOk) / 1000 : 0;
+  $('clock').style.opacity = age > 30 ? '0.5' : '';
+  if (age > 30) $('clock').textContent = `stale ${Math.round(age)} s`;
+}
+
+// ─── encirclements: what the attackers had locked in when they won by surrounding ───
+const enc = { data: null, key: null, pick: null, all: null, poll: null };
+try { $('encCount').value = localStorage.getItem('encCount') || '300'; } catch (e) {}
+function encShow() { $('encModal').classList.add('open'); encLoad(); }
+function encHide() { clearTimeout(enc.poll); if ($('encModal').classList.contains('open')) { $('encModal').classList.remove('open'); routeWrite(); } }
+async function encLoad(force = false) {
+  if (!selected) return;
+  const n = $('encCount').value;
+  if (n === 'all') { $('encSource').value = 'selfplay'; return encLoadAll(); }
+  $('encChartBox').style.display = 'none';
+  const src = $('encSource').value, key = `${selected}|${src}|${n}`;
+  $('encBy').style.display = src === 'match' ? '' : 'none';
+  if (!force && enc.key === key && enc.data) { encRender(); return; }
+  $('encSub').textContent = src === 'match' ? 'replaying match games…' : 'reading self-play games…';
+  const r = await api(`/api/encircle?name=${encodeURIComponent(selected)}&source=${src}&n=${n}`);
+  if (r.error) { $('encSub').textContent = r.error; return; }
+  enc.data = r; enc.key = key; enc.pick = null;
+  encRender();
+}
+// The whole run: counts from the server's background scan of every self-play game (kept
+// in data/encircle<w>.json), a chart of the shares by pieces encircled, examples on demand.
+let encSmoothN = 9;
+try { encSmoothN = Math.max(1, parseInt(localStorage.getItem('encSmooth') || '9')); } catch (e) {}
+// Linear trend of a share (counts / games per bucket) over positions, in percentage points
+// per 10M positions: weighted least squares with binomial weights at the pooled share, its
+// variance scaled up by the residual dispersion when that exceeds 1 (never down).
+function encTrend(counts, games, xs, from) {
+  const pts = [];
+  for (let i = 0; i < xs.length; i++) if (xs[i] >= from && games[i] > 0) pts.push([xs[i] / 1e7, counts[i] / games[i], games[i], counts[i]]);
+  const n = pts.reduce((a, q) => a + q[2], 0), c = pts.reduce((a, q) => a + q[3], 0);
+  if (pts.length < 3 || !n) return { n: c, share: n ? c / n : null };
+  const pbar = c / n;
+  if (pbar <= 0 || pbar >= 1) return { n: c, share: pbar };
+  const w = pts.map(q => q[2] / (pbar * (1 - pbar)));
+  const W = w.reduce((a, b) => a + b, 0);
+  const mx = pts.reduce((a, q, i) => a + w[i] * q[0], 0) / W, my = pts.reduce((a, q, i) => a + w[i] * q[1], 0) / W;
+  const sxx = pts.reduce((a, q, i) => a + w[i] * (q[0] - mx) ** 2, 0);
+  const b = pts.reduce((a, q, i) => a + w[i] * (q[0] - mx) * (q[1] - my), 0) / sxx;
+  const chi = pts.reduce((a, q, i) => a + w[i] * (q[1] - (my + b * (q[0] - mx))) ** 2, 0) / (pts.length - 2);
+  const se = Math.sqrt(Math.max(1, chi) / sxx);
+  return { n: c, share: pbar, slope: 100 * b, ci: 196 * se, z: b / se, dispersion: chi };
+}
+const ENC_GROUPS = [['1', k => k === 1], ['2', k => k === 2], ['3', k => k === 3], ['4', k => k === 4], ['5+', k => k >= 5]];
+async function encLoadAll() {
+  clearTimeout(enc.poll);
+  $('encBy').style.display = 'none';
+  $('encChartBox').style.display = '';
+  const k = enc.pick == null ? '' : String(enc.pick);
+  if (!enc.all) $('encSub').textContent = 'reading the whole run…';
+  const r = await api(`/api/encircle?name=${encodeURIComponent(selected)}&scope=all&k=${k}`);
+  if (r.error) { $('encSub').textContent = r.error; return; }
+  enc.all = r; enc.data = null; enc.key = null;
+  encRenderAll();
+  if (r.scanning != null && $('encModal').classList.contains('open') && $('encCount').value === 'all') enc.poll = setTimeout(encLoadAll, 3000);
+}
+function encRenderAll() {
+  const r = enc.all, S = SERIES();
+  const keys = Object.keys(r.stats).map(Number).sort((a, b) => a - b);
+  const total = keys.reduce((a, k) => a + r.stats[k].games, 0);
+  const row = (k, st, label) => `<tr data-k="${k}" class="${(k === 'all' ? enc.pick == null : enc.pick === k) ? 'sel' : ''}"><td>${label}</td><td class="num">${fmt(st.games)}</td><td class="num">${fmt(100 * st.games / (total || 1), 2)}%</td><td class="num">${fmt(st.region, 1)}</td><td class="num">${fmt(st.ring, 1)}</td><td class="num">${fmt(st.inside, 1)}</td><td class="num">${fmt(st.attackers, 1)}</td><td class="num">${fmt(st.plies, 1)}</td></tr>`;
+  const wavg = (c) => total ? keys.reduce((a, k) => a + r.stats[k][c] * r.stats[k].games, 0) / total : 0;
+  $('encRows').innerHTML = total
+    ? keys.map(k => row(k, r.stats[k], String(k))).join('') + row('all', { games: total, region: wavg('region'), ring: wavg('ring'), inside: wavg('inside'), attackers: wavg('attackers'), plies: wavg('plies') }, '<b>largest first</b>')
+    : '<tr><td colspan="8" class="why">no encirclements found yet</td></tr>';
+  $('encRows').querySelectorAll('tr[data-k]').forEach(tr => tr.onclick = () => { enc.pick = tr.dataset.k === 'all' ? null : +tr.dataset.k; encLoadAll(); });
+  const scan = r.scanning != null ? ` · scanning the run… ${(100 * r.scanning).toFixed(0)}%` : '';
+  $('encSub').textContent = `${fmt(r.encirclements)} encirclements in ${fmt(r.games_done)} of ${fmt(r.games_total)} games; most pieces encircled: ${r.max_defenders ?? '–'}${scan}`
+    + (r.scan_error ? ' · scan error: ' + r.scan_error : '');
+  // Share of all self-play games per bucket of positions, one line per pieces-encircled group.
+  const x = (i) => (i + 0.5) * r.bucket, g = r.games_per_bucket;
+  const sets = [];
+  const sum = (pred) => g.map((_, i) => Object.entries(r.by_k).reduce((a, [k, v]) => a + (pred(+k) ? v[i] : 0), 0));
+  // Smoothing pools neighbouring buckets (counts over games, not a mean of shares), so a
+  // sparse group is not dragged around by buckets with few games.
+  const h = Math.floor(encSmoothN / 2);
+  const pooled = (cnt) => cnt.map((_, i) => { let cs = 0, gs = 0; for (let j = Math.max(0, i - h); j <= Math.min(g.length - 1, i + h); j++) { cs += cnt[j]; gs += g[j]; } return { x: x(i), y: gs ? 100 * cs / gs : null }; });
+  const groups = [['all', () => true], ...ENC_GROUPS];
+  groups.forEach(([label, pred], i) => { if (label === 'all' || keys.some(pred)) sets.push(ds(label === 'all' ? 'all encirclements' : `${label} encircled`, S[i], pooled(sum(pred)))); });
+  $('encSmoothVal').textContent = encSmoothN <= 1 ? 'off' : `${encSmoothN} points ≈ ${fmt(encSmoothN * r.bucket / 1e6, 1)}M positions`;
+  $('encChartSub').textContent = `% of all self-play games ending by encirclement, per ${fmt(r.bucket / 1e6, 1)}M positions${encSmoothN > 1 ? ` (pooled over ${encSmoothN} points, centred)` : ''}, by pieces encircled (king included); click a legend entry to hide a line`;
+  // Log scale by default: the 1-piece line is ~30x the next one and flattens the rest on a linear axis.
+  const log = $('encLog').checked;
+  if (log) sets.forEach(d => d.data.forEach(q => { if (!(q.y > 0)) q.y = null; }));
+  lineChart('cEnc', sets, { yLabel: '% of games' + (log ? ' (log scale)' : ''), digits: 3, yType: log ? 'logarithmic' : 'linear' });
+  // Trends over the chosen window.
+  const xs = g.map((_, i) => x(i)), last = xs.length ? xs[xs.length - 1] : 0, win = $('encTrendWin').value;
+  const from = win === 'all' ? 10e6 : last - (+win) * 1e6;
+  $('encTrendRows').innerHTML = groups.filter(([label, pred]) => label === 'all' || keys.some(pred)).map(([label, pred]) => {
+    const t = encTrend(sum(pred), g, xs, from);
+    const verdict = t.slope == null || t.n < 30 ? '<span class="why">too few games</span>'
+      : Math.abs(t.z) < 2 ? 'no clear trend' : (t.slope > 0 ? '<b style="color:var(--good)">rising</b>' : '<b style="color:var(--bad)">falling</b>');
+    return `<tr><td>${label === 'all' ? '<b>all</b>' : label}</td><td class="num">${fmt(t.n)}</td><td class="num">${t.share == null ? '–' : fmt(100 * t.share, 3) + '%'}</td>`
+      + `<td class="num">${t.slope == null ? '–' : `${t.slope >= 0 ? '+' : ''}${fmt(t.slope, 3)} ± ${fmt(t.ci, 3)}`}</td><td class="num">${t.z == null ? '–' : fmt(t.z, 1)}</td><td>${verdict}</td></tr>`;
+  }).join('');
+  const shown = r.examples || [];
+  $('encGrid').innerHTML = (shown.length ? `<div class="why" style="grid-column: 1 / -1">${enc.pick == null ? 'the largest encirclements of the run' : `${shown.length} games with ${enc.pick} pieces encircled, spread over the run (oldest first)`}</div>` : '')
+    + shown.map((g, i) => `<div class="enc-card" data-i="${i}">${encBoard(g)}<div class="why">${g.defenders} encircled${g.king ? '' : ' (no king)'} · ring ${g.ring}${g.inside ? ` · ${g.inside} inside` : ''} · ${g.plies} plies<br>at ${fmtK(g.sample)} positions · game #${fmt(g.sample)}</div></div>`).join('');
+  $('encGrid').querySelectorAll('.enc-card').forEach(el => el.onclick = () => gvOpenGame(shown[+el.dataset.i]));
+}
+function encGames() {
+  const by = $('encSource').value === 'match' ? $('encBy').value : 'all';
+  return (enc.data ? enc.data.games : []).filter(g => by === 'all' || g.by === by);
+}
+function encRender() {
+  const games = encGames(), total = games.length;
+  const groups = new Map();
+  for (const g of games) { if (!groups.has(g.defenders)) groups.set(g.defenders, []); groups.get(g.defenders).push(g); }
+  const avg = (a, k) => a.length ? fmt(a.reduce((s, g) => s + (+g[k] || 0), 0) / a.length, 1) : '–';
+  const row = (k, a, label) => `<tr data-k="${k}" class="${(k === 'all' ? enc.pick == null : enc.pick === k) ? 'sel' : ''}"><td>${label}</td><td class="num">${a.length}</td><td class="num">${fmt(100 * a.length / total, 1)}%</td><td class="num">${avg(a, 'region')}</td><td class="num">${avg(a, 'ring')}</td><td class="num">${avg(a, 'inside')}</td><td class="num">${avg(a, 'attackers')}</td><td class="num">${avg(a, 'plies')}</td></tr>`;
+  const keys = [...groups.keys()].sort((a, b) => a - b);
+  $('encRows').innerHTML = total
+    ? keys.map(k => row(k, groups.get(k), String(k))).join('') + row('all', games, '<b>all</b>')
+    : '<tr><td colspan="8" class="why">no encirclements among these games</td></tr>';
+  $('encRows').querySelectorAll('tr[data-k]').forEach(tr => tr.onclick = () => { enc.pick = tr.dataset.k === 'all' ? null : +tr.dataset.k; encRender(); });
+  const shown = (enc.pick == null ? games : (groups.get(enc.pick) || [])).slice(0, 60);
+  $('encSub').textContent = `${total} games, newest first; ${shown.length} boards shown` + (enc.pick != null ? ` with ${enc.pick} pieces encircled` : '');
+  $('encGrid').innerHTML = shown.map((g, i) => `<div class="enc-card" data-i="${i}">${encBoard(g)}<div class="why">${g.defenders} encircled${g.king ? '' : ' (no king)'} · ring ${g.ring}${g.inside ? ` · ${g.inside} inside` : ''} · ${g.plies} plies`
+    + (g.by ? `<br>${g.by === 'ckpt' ? g.ckpt + ' encircled ' + alabel(g.anchor) : alabel(g.anchor) + ' encircled ' + g.ckpt}` : `<br>game #${fmt(g.sample)} (worker ${g.id.split(':')[0]})`) + '</div></div>').join('');
+  $('encGrid').querySelectorAll('.enc-card').forEach(el => el.onclick = () => gvOpenGame(shown[+el.dataset.i]));
+}
+// A small board of the final position: the defenders' region shaded, attackers inside it ringed in red.
+function encBoard(g, n = 11) {
+  const at = new Map(g.pieces.map(p => [p.sq, p.type]));
+  const nb = (sq) => { const r = Math.floor(sq / n), c = sq % n, o = []; if (r > 0) o.push(sq - n); if (r < n - 1) o.push(sq + n); if (c > 0) o.push(sq - 1); if (c < n - 1) o.push(sq + 1); return o; };
+  const region = new Set(), stack = g.pieces.filter(p => p.type !== 'attacker').map(p => p.sq);
+  stack.forEach(sq => region.add(sq));
+  while (stack.length) for (const t of nb(stack.pop())) if (!region.has(t) && at.get(t) !== 'attacker') { region.add(t); stack.push(t); }
+  const outside = new Set(), st2 = [];
+  for (let sq = 0; sq < n * n; sq++) { const r = Math.floor(sq / n), c = sq % n; if ((r === 0 || r === n - 1 || c === 0 || c === n - 1) && !region.has(sq)) { outside.add(sq); st2.push(sq); } }
+  while (st2.length) for (const t of nb(st2.pop())) if (!outside.has(t) && !region.has(t)) { outside.add(t); st2.push(t); }
+  const C = 12, special = new Set([0, n - 1, n * (n - 1), n * n - 1, Math.floor(n * n / 2)]);
+  let out = `<svg viewBox="0 0 ${n * C} ${n * C}" xmlns="http://www.w3.org/2000/svg">`;
+  for (let sq = 0; sq < n * n; sq++) {
+    const x = (sq % n) * C, y = (n - 1 - Math.floor(sq / n)) * C;  // row 0 = rank 1, drawn at the bottom
+    const fill = region.has(sq) ? '#f2c79b' : special.has(sq) ? '#bfa77d' : '#e8dcc2';
+    out += `<rect x="${x}" y="${y}" width="${C}" height="${C}" fill="${fill}" stroke="#c9b997" stroke-width="0.5"/>`;
+    const t = at.get(sq);
+    if (!t) continue;
+    const cx = x + C / 2, cy = y + C / 2;
+    if (t === 'attacker') out += `<circle cx="${cx}" cy="${cy}" r="4.2" fill="#2b2b2b"${outside.has(sq) ? '' : ' stroke="#e34948" stroke-width="1.6"'}/>`;
+    else if (t === 'defender') out += `<circle cx="${cx}" cy="${cy}" r="4.2" fill="#ffffff" stroke="#2b2b2b" stroke-width="1"/>`;
+    else out += `<circle cx="${cx}" cy="${cy}" r="4.6" fill="#e0a800" stroke="#2b2b2b" stroke-width="1"/>`;
+  }
+  return out + '</svg>';
+}
+// Opens one game in the game viewer at its last move, whether or not it is in the viewer's list.
+async function gvOpenGame(g) {
+  const src = g.id.startsWith('m:') ? 'match' : 'selfplay';
+  const w = src === 'selfplay' ? g.id.split(':')[0] : gv.worker;
+  if (gv.source !== src || String(gv.worker) !== String(w)) {
+    gv.source = src; gv.worker = w; gv.games = []; gv.game = null; gv.gameId = null;
+    $('gvSource').value = src;
+  }
+  $('encModal').classList.remove('open');
+  await gvOpen();
+  await gvPick(gv.games.find(x => x.id === g.id) || { id: g.id });
+  if (gv.game && gv.gameId === g.id) gvShow(gv.game.plies.length - 1);
+}
+$('encOpen').onclick = () => { encShow(); routeWrite(); };
+$('encClose').onclick = encHide;
+$('encSmooth').value = String(encSmoothN);
+$('encSmooth').oninput = () => { encSmoothN = Math.max(1, parseInt($('encSmooth').value)); try { localStorage.setItem('encSmooth', String(encSmoothN)); } catch (e) {} if (enc.all) encRenderAll(); };
+$('encTrendWin').onchange = () => { if (enc.all) encRenderAll(); };
+$('encLog').onchange = () => { if (enc.all) encRenderAll(); };
+$('encSource').onchange = () => { if ($('encCount').value === 'all' && $('encSource').value !== 'selfplay') $('encCount').value = '300'; enc.pick = null; encLoad(); };
+$('encCount').onchange = () => { try { localStorage.setItem('encCount', $('encCount').value); } catch (e) {} enc.pick = null; encLoad(); };
+$('encBy').onchange = () => { enc.pick = null; encRender(); };
+document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') encHide(); });
+
+// ─── self-play trends: which endings (and lengths, encirclement sizes) are moving ───
+const TR_METRICS = [
+  ['attacker wins', 'atk_wins'], ['defender wins', 'def_wins'], ['undecided (limits)', 'undecided'],
+  ['king captured', 'king_captured'], ['defenders surrounded', 'surrounded'], ['defenders without moves', 'no_moves_atk'],
+  ['repetition (attackers win)', 'threefold'], ['king in corner', 'def_corner'], ['exit fort', 'fort'], ['king on edge', 'edge'],
+  ['attackers without moves', 'no_moves_def'], ['ply limit', 'max_plies'], ['no-capture limit', 'no_capture'],
+];
+function trShow() { $('trModal').classList.add('open'); trRender(); }
+function trHide() { if ($('trModal').classList.contains('open')) { $('trModal').classList.remove('open'); routeWrite(); } }
+// Slope of a mean (not a share) against positions: weights = games, noise from the residuals.
+function trMeanTrend(vals, ws, xs, from) {
+  const pts = [];
+  for (let i = 0; i < xs.length; i++) if (xs[i] >= from && ws[i] > 0 && vals[i] != null) pts.push([xs[i] / 1e7, vals[i], ws[i]]);
+  if (pts.length < 4) return null;
+  const W = pts.reduce((a, q) => a + q[2], 0), mx = pts.reduce((a, q) => a + q[2] * q[0], 0) / W, my = pts.reduce((a, q) => a + q[2] * q[1], 0) / W;
+  const sxx = pts.reduce((a, q) => a + q[2] * (q[0] - mx) ** 2, 0);
+  const b = pts.reduce((a, q) => a + q[2] * (q[0] - mx) * (q[1] - my), 0) / sxx;
+  const s2 = pts.reduce((a, q) => a + q[2] * (q[1] - (my + b * (q[0] - mx))) ** 2, 0) / (pts.length - 2);
+  const se = Math.sqrt(s2 / sxx);
+  return { mean: my, slope: b, ci: 1.96 * se, z: b / se, w: W };
+}
+function trSpark(xs, ys, from) {
+  const pts = xs.map((x, i) => [x, ys[i]]).filter(q => q[0] >= from && q[1] != null && isFinite(q[1]));
+  if (pts.length < 2) return '';
+  const x0 = pts[0][0], x1 = pts[pts.length - 1][0], lo = Math.min(...pts.map(q => q[1])), hi = Math.max(...pts.map(q => q[1]));
+  const X = (x) => 2 + 116 * (x - x0) / ((x1 - x0) || 1), Y = (y) => 20 - 18 * (y - lo) / ((hi - lo) || 1);
+  return `<svg width="120" height="22" viewBox="0 0 120 22"><polyline fill="none" stroke="var(--s1)" stroke-width="1.5" points="${pts.map(q => `${X(q[0]).toFixed(1)},${Y(q[1]).toFixed(1)}`).join(' ')}"/></svg>`;
+}
+// Pooled share series for the sparkline: counts and games summed over `k` neighbours.
+const trPool = (cnt, games, k) => cnt.map((_, i) => { let c = 0, g = 0; for (let j = Math.max(0, i - k); j <= Math.min(cnt.length - 1, i + k); j++) { c += cnt[j]; g += games[j]; } return g ? c / g : null; });
+async function trRender() {
+  const d = lastDetail;
+  if (!d || !d.selfplay || d.selfplay.length < 3) { $('trRows').innerHTML = '<tr><td colspan="9" class="why">no self-play log yet</td></tr>'; return; }
+  // Per logging window: games and each ending's count, from the cumulative columns.
+  const rows = d.selfplay, xs = [], games = [], cols = {}, len = [];
+  TR_METRICS.forEach(([, c]) => cols[c] = []);
+  for (let i = 1; i < rows.length; i++) {
+    const a = rows[i - 1], b = rows[i], dg = +b.games - +a.games;
+    if (!(dg > 0) || +b.generated <= +a.generated) continue;
+    xs.push((+a.generated + +b.generated) / 2); games.push(dg);
+    TR_METRICS.forEach(([, c]) => cols[c].push(Math.max(0, +b[c] - +a[c])));
+    len.push(b.avg_len === '' || b.avg_len == null ? null : +b.avg_len);
+  }
+  const last = +rows[rows.length - 1].generated, W = +$('trWin').value * 1e6, from = last - W, prevFrom = from - W;
+  // Sparklines pool about ±1M positions of logging windows, enough to see a drift through the noise.
+  const spark40 = last - 40e6, step = xs.length > 1 ? (xs[xs.length - 1] - xs[0]) / (xs.length - 1) : 1e6, k = Math.max(1, Math.round(1e6 / step));
+  const share = (cnt, lo, hi) => { let c = 0, g = 0; xs.forEach((x, i) => { if (x >= lo && x < hi) { c += cnt[i]; g += games[i]; } }); return g ? c / g : null; };
+  const out = [];
+  const addShare = (label, cnt, gm, x) => {
+    const t = encTrend(cnt, gm, x, from);
+    let c = 0, g = 0, pc = 0, pg = 0;
+    x.forEach((xx, i) => { if (xx >= from) { c += cnt[i]; g += gm[i]; } else if (xx >= prevFrom) { pc += cnt[i]; pg += gm[i]; } });
+    out.push({ label, n: t.n, now: g ? 100 * c / g : null, prev: pg ? 100 * pc / pg : null, unit: '%', slope: t.slope, ci: t.ci, z: t.z,
+               spark: trSpark(x, trPool(cnt, gm, k), spark40), digits: 100 * (g ? c / g : 0) < 1 ? 3 : 2 });
+  };
+  TR_METRICS.forEach(([label, c]) => addShare(label, cols[c], games, xs));
+  const lt = trMeanTrend(len, games, xs, from);
+  if (lt) {
+    let pw = 0, ps = 0;
+    xs.forEach((x, i) => { if (x >= prevFrom && x < from && len[i] != null) { pw += games[i]; ps += games[i] * len[i]; } });
+    out.push({ label: 'game length (plies)', n: lt.w, now: lt.mean, prev: pw ? ps / pw : null, unit: '', slope: lt.slope, ci: lt.ci, z: lt.z, spark: trSpark(xs, len, spark40), digits: 1 });
+  }
+  // Encirclement sizes, from the whole-run scan (started here if the encirclement window never was opened).
+  try {
+    if (!enc.all) enc.all = await api(`/api/encircle?name=${encodeURIComponent(selected)}&scope=all`);
+    const r = enc.all;
+    if (r && r.by_k && !r.error) {
+      const g = r.games_per_bucket, ex = g.map((_, i) => (i + 0.5) * r.bucket);
+      const sum = (pred) => g.map((_, i) => Object.entries(r.by_k).reduce((a, [kk, v]) => a + (pred(+kk) ? v[i] : 0), 0));
+      [['encircled: king alone', kk => kk === 1], ['encircled: 2 pieces', kk => kk === 2], ['encircled: 3+ pieces', kk => kk >= 3]]
+        .forEach(([label, pred]) => addShare(label, sum(pred), g, ex));
+    }
+  } catch (e) {}
+  // Endings that never happen in this variant (edge escape, …) only clutter the list.
+  const shown = out.filter(o => o.n > 0 || o.prev > 0);
+  shown.sort((a, b) => Math.abs(b.z ?? 0) - Math.abs(a.z ?? 0));
+  const f = (v, dg) => v == null ? '–' : fmt(v, dg);
+  $('trRows').innerHTML = shown.map(o => {
+    const few = o.unit === '%' && o.n < 30;
+    const az = Math.abs(o.z ?? 0), up = (o.slope ?? 0) > 0;
+    const verdict = o.slope == null || few ? '<span class="why">too few games</span>'
+      : az >= 3 ? `<b style="color:${up ? 'var(--good)' : 'var(--bad)'}">${up ? 'rising' : 'falling'}</b>`
+      : az >= 2 ? `<span style="color:${up ? 'var(--good)' : 'var(--bad)'}">maybe ${up ? 'rising' : 'falling'}</span>` : '<span class="why">flat</span>';
+    const rel = o.now != null && o.prev ? (100 * (o.now - o.prev) / o.prev) : null;
+    const slope = o.slope == null ? '–' : `${o.slope >= 0 ? '+' : ''}${fmt(o.slope, o.digits)} ± ${fmt(o.ci, o.digits)}${o.unit === '%' ? ' pp' : ''}`;
+    return `<tr><td>${o.label}</td><td>${o.spark}</td><td class="num">${fmt(o.n)}</td><td class="num">${f(o.now, o.digits)}${o.unit}</td><td class="num">${f(o.prev, o.digits)}${o.unit}</td>`
+      + `<td class="num">${rel == null ? '–' : (rel >= 0 ? '+' : '') + fmt(rel, 1) + '%'}</td><td class="num">${slope}</td><td class="num">${o.z == null ? '–' : fmt(o.z, 1)}</td><td>${verdict}</td></tr>`;
+  }).join('');
+  $('trSub').textContent = `${fmtK(from)}–${fmtK(last)} positions vs the ${fmt(W / 1e6, 0)}M before`;
+}
+$('trOpen').onclick = () => { trShow(); routeWrite(); };
+$('trClose').onclick = trHide;
+$('trWin').onchange = () => { try { localStorage.setItem('trWin', $('trWin').value); } catch (e) {} trRender(); };
+try { $('trWin').value = localStorage.getItem('trWin') || '15'; } catch (e) {}
+if (!$('trWin').value) $('trWin').value = '15';
+document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') trHide(); });
+
+// ─── checkpoint ladder in detail: Ordo-style rating list and head-to-head ───
+const lad = { data: null, pick: null };
+function ladShow() { $('ladModal').classList.add('open'); ladLoad(); }
+function ladHide() { if ($('ladModal').classList.contains('open')) { $('ladModal').classList.remove('open'); routeWrite(); } }
+async function ladLoad() {
+  if (!selected) return;
+  const r = await api(`/api/ladder?name=${encodeURIComponent(selected)}`);
+  if (r.error) { $('ladSub').textContent = r.error; return; }
+  lad.data = r;
+  ladDays();
+  if (!lad.pick || !r.players.some(p => p.name === lad.pick)) {
+    const ck = r.players.filter(p => !p.anchor);
+    lad.pick = ck.length ? ck.reduce((a, b) => (b.step > a.step ? b : a)).name : null;
+  }
+  ladRender();
+}
+// Normal CDF (Abramowitz-Stegun 7.1.26 erf), for the confidence for superiority.
+function ladPhi(z) {
+  const t = 1 / (1 + 0.3275911 * Math.abs(z) / Math.SQRT2);
+  const e = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-z * z / 2);
+  return z >= 0 ? (1 + e) / 2 : (1 - e) / 2;
+}
+const ladName = (p) => p.anchor ? alabel(p.name) : p.name;
+function ladRender() {
+  const r = lad.data;
+  if (!r) return;
+  const byRating = [...r.players].sort((a, b) => b.elo - a.elo);
+  const rank = new Map(byRating.map((p, i) => [p.name, i + 1]));
+  const q = $('ladFind').value.trim().toLowerCase();
+  let list = $('ladSort').value === 'step' ? [...r.players].sort((a, b) => (b.step ?? -1) - (a.step ?? -1)) : byRating;
+  if (q) list = list.filter(p => ladName(p).toLowerCase().includes(q) || p.name.toLowerCase().includes(q));
+  $('ladRows').innerHTML = list.map(p => `<tr class="pl${p.anchor ? ' anchor' : ''}${p.name === lad.pick ? ' sel' : ''}" data-n="${p.name}">`
+    + `<td class="num">${rank.get(p.name)}</td><td class="${p.anchor ? 'anc' : ''}">${ladName(p)}${p.anchor ? ' <span class="why">anchor</span>' : ''}</td>`
+    + `<td class="num">${p.generated != null ? fmtK(p.generated) : '–'}</td><td class="num">${fmt(p.elo, 1)}</td><td class="num">${p.name === r.reference ? '–' : fmt(1.96 * p.se, 1)}</td>`
+    + `<td class="num">${fmt(p.points, 1)}</td><td class="num">${p.played}</td><td class="num">${p.played ? fmt(100 * p.points / p.played, 0) : '–'}</td></tr>`).join('');
+  $('ladRows').querySelectorAll('tr.pl').forEach(tr => tr.onclick = () => { lad.pick = tr.dataset.n; ladRender(); });
+  const games = r.players.reduce((a, p) => a + p.played, 0) / 2;
+  $('ladSub').textContent = `${r.players.length} players, ${fmt(games)} games at ${r.nodes} nodes; ${alabel(r.reference)} = 0`;
+  // Head-to-head of the chosen player, opponents from the strongest down (as Ordo lists them).
+  const me = r.players.find(p => p.name === lad.pick);
+  if (!me) { $('ladHead').textContent = 'pick a player on the left'; $('ladH2h').innerHTML = ''; return; }
+  const info = new Map(r.players.map(p => [p.name, p]));
+  const rows = [];
+  let W = 0, L = 0, D = 0;
+  for (const [a, b, w, l, d] of r.pairs) {
+    if (a !== me.name && b !== me.name) continue;
+    const opp = a === me.name ? b : a, [ww, ll] = a === me.name ? [w, l] : [l, w];
+    W += ww; L += ll; D += d;
+    const o = info.get(opp);
+    const diff = o ? me.elo - o.elo : null, sd = o ? Math.hypot(me.se, o.se) : null;
+    rows.push({ opp, o, n: ww + ll + d, w: ww, d, l: ll, diff, sd, cfs: diff != null && sd > 0 ? 100 * ladPhi(diff / sd) : null });
+  }
+  rows.sort((x, y) => (y.o ? y.o.elo : -1e9) - (x.o ? x.o.elo : -1e9));
+  const n = W + L + D;
+  $('ladHead').textContent = `${rank.get(me.name)}) ${ladName(me)}  ${fmt(me.elo, 1)} :  ${n} (+${W},=${D},-${L}),  ${n ? fmt(100 * (W + D / 2) / n, 1) : '–'} %`;
+  $('ladH2h').innerHTML = rows.map(x => `<tr class="pl${x.o && x.o.anchor ? ' anchor' : ''}" data-n="${x.opp}"><td class="${x.o && x.o.anchor ? 'anc' : ''}">${x.o ? ladName(x.o) : x.opp}</td><td class="num">${x.n}</td><td class="num">${x.w}</td><td class="num">${x.d}</td><td class="num">${x.l}</td>`
+    + `<td class="num">${fmt(100 * (x.w + x.d / 2) / x.n, 1)}</td><td class="num">${x.diff == null ? '–' : (x.diff >= 0 ? '+' : '') + fmt(x.diff, 1)}</td><td class="num">${x.sd == null ? '–' : fmt(x.sd, 1)}</td><td class="num">${x.cfs == null ? '–' : fmt(x.cfs, 1)}</td></tr>`).join('')
+    || '<tr><td colspan="9" class="why">no games</td></tr>';
+  $('ladH2h').querySelectorAll('tr.pl').forEach(tr => tr.onclick = () => { lad.pick = tr.dataset.n; ladRender(); });
+}
+$('ladOpen').onclick = () => { ladShow(); routeWrite(); };
+$('ladClose').onclick = ladHide;
+$('ladFind').oninput = ladRender;
+$('ladSort').onchange = ladRender;
+// Rating of the run at the end of each day since its first checkpoint: the mean of the
+// checkpoints around the last one made by then (centred window, cut short at the ends).
+function ladDays() {
+  const r = lad.data;
+  if (!r) return;
+  const W = +$('ladDayWin').value, ivw = $('ladDayW').value === 'ivw';
+  const ck = r.players.filter(p => !p.anchor && p.time != null).sort((a, b) => a.step - b.step);
+  if (ck.length < 2) { $('ladDays').innerHTML = '<tr><td colspan="10" class="why">no checkpoints with times</td></tr>'; return; }
+  const at = (i) => {
+    const lo = Math.max(0, i - W / 2 + 1), hi = Math.min(ck.length, i + W / 2 + 1), win = ck.slice(lo, hi);
+    let e, se;
+    if (ivw) {
+      const w = win.map(p => 1 / Math.max(p.se, 1) ** 2), sw = w.reduce((a, b) => a + b, 0);
+      e = win.reduce((a, p, j) => a + w[j] * p.elo, 0) / sw; se = 1 / Math.sqrt(sw);
+    } else {
+      e = win.reduce((a, p) => a + p.elo, 0) / win.length;
+      se = Math.sqrt(win.reduce((a, p) => a + p.se ** 2, 0)) / win.length;
+    }
+    return { e, se, partial: win.length < W, p: ck[i] };
+  };
+  const t0 = ck[0].time, tEnd = ck[ck.length - 1].time, rows = [];
+  let prev = at(0), k = 1;
+  for (let T = t0 + 86400; ; T += 86400, k++) {
+    const last = T >= tEnd;
+    let i = ck.length - 1;
+    if (!last) { while (i > 0 && ck[i].time > T) i--; }
+    const cur = at(i), made = ck.filter(p => p.time > T - 86400 && p.time <= Math.min(T, tEnd)).length;
+    const dg = cur.p.generated - prev.p.generated, dn = (cur.p.games ?? 0) - (prev.p.games ?? 0), gain = cur.e - prev.e;
+    const until = new Date(1000 * (last ? tEnd : T));
+    rows.push(`<tr class="${cur.partial ? 'partial' : ''}"><td>${k}${last ? ' (so far)' : ''}</td><td>${until.toLocaleString('en-GB', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>`
+      + `<td class="num">${made}</td><td class="num">${fmtK(cur.p.generated)}</td><td class="num">${fmtK(cur.p.games)}</td><td class="num">${fmt(cur.e, 1)}</td><td class="num">${fmt(1.96 * cur.se, 1)}</td>`
+      + `<td class="num">${(gain >= 0 ? '+' : '') + fmt(gain, 1)}</td><td class="num">${dg > 0 ? fmt(1e7 * gain / dg, 1) : '–'}</td><td class="num">${dn > 0 ? fmt(1e5 * gain / dn, 1) : '–'}</td></tr>`);
+    prev = cur;
+    if (last) break;
+  }
+  const first = at(0), now = at(ck.length - 1), days = (tEnd - t0) / 86400;
+  $('ladDays').innerHTML = rows.join('');
+  $('ladDaySub').textContent = `${fmt(days, 1)} days, ${fmt(first.e, 0)} → ${fmt(now.e, 0)} (+${fmt(now.e - first.e, 0)}, ${fmt((now.e - first.e) / days, 0)} a day on average). Grey rows: the window is cut short at the run's ends, so the value lags. Wall-clock days, downtime included; ± ignores the fit's covariances.`;
+}
+$('ladDayWin').onchange = ladDays;
+$('ladDayW').onchange = ladDays;
+document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') ladHide(); });
+
+// ─── routes: #/<run>, #/<run>/details, #/<run>/games[/<game id>] ───
+// Written on every navigation (pushState, so Back/Forward walk them), read on load and
+// on popstate. The game id is the viewer's own ("0:62107696" self-play, "m:3:17" match).
+function routeNow() {
+  if (!selected) return '';
+  let h = '#/' + encodeURIComponent(selected);
+  if ($('vsModal').classList.contains('open')) h += '/details';
+  else if ($('encModal').classList.contains('open')) h += '/encircle';
+  else if ($('trModal').classList.contains('open')) h += '/trends';
+  else if ($('ladModal').classList.contains('open')) h += '/ladder';
+  else if ($('gvModal').classList.contains('open')) h += '/games' + (gv.gameId ? '/' + encodeURIComponent(gv.gameId) : '');
+  return h;
+}
+function routeWrite() {
+  const h = routeNow();
+  if (h && h !== location.hash) history.pushState(null, '', h);
+}
+async function routeRead() {
+  const parts = location.hash.replace(/^#\/?/, '').split('/').map(decodeURIComponent).filter(Boolean);
+  const run = parts[0] && runs.some(r => r.name === parts[0]) ? parts[0] : (selected || (runs[0] && runs[0].name));
+  if (!run) return;
+  if (run !== selected) { selected = run; await loadRuns(); await refresh(); }
+  const view = parts[1] || '', gid = parts[2] || '';
+  if (view !== 'details') $('vsModal').classList.remove('open');
+  if (view !== 'encircle') $('encModal').classList.remove('open');
+  if (view !== 'trends') $('trModal').classList.remove('open');
+  if (view !== 'ladder') $('ladModal').classList.remove('open');
+  if (view === 'ladder') ladShow();
+  if (view === 'trends') trShow();
+  if (view === 'encircle') encShow();
+  if (view !== 'games') { $('gvModal').classList.remove('open'); clearTimeout(gv.poll); }
+  if (view === 'details') vsShow();
+  if (view === 'games') {
+    if (gid) {
+      const src = gid.startsWith('m:') ? 'match' : 'selfplay';
+      const w = src === 'selfplay' ? gid.split(':')[0] : gv.worker;
+      if (gv.source !== src || String(gv.worker) !== String(w)) {
+        gv.source = src; gv.worker = w; gv.games = []; gv.game = null; gv.gameId = null;
+        $('gvSource').value = src;
+      }
+    }
+    await gvOpen();
+    if (gid && gid !== gv.gameId) {
+      const g = gv.games.find(x => x.id === gid);
+      if (g) await gvPick(g); else $('gvInfo').textContent = `game ${gid} is not among the listed games`;
+    }
+  }
+  history.replaceState(null, '', routeNow());
+}
+window.addEventListener('popstate', routeRead);
+
+(async () => {
+  applyTheme(savedTheme);
+  await loadPresets(); await loadRuns();
+  if (runs.length) { selected = runs[0].name; await routeRead(); if (!location.hash) await refresh(); }
+  setInterval(refresh, 10000);
+  setInterval(markStale, 5000);
+  // Background tabs get their timers throttled to about once a minute: catch up as soon as the tab is shown again.
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+})();
+</script>
+</body>
+</html>

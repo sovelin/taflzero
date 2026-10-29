@@ -12,7 +12,7 @@ use crate::search::search_data::SearchData;
 use crate::search::search_root::{
     SearchIterationResponse, SearchResponse, search_root, search_root_nodes,
 };
-use crate::terminal::check_terminal;
+use crate::terminal::{check_terminal, get_terminal};
 
 #[wasm_bindgen]
 pub struct Engine {
@@ -104,6 +104,11 @@ impl Engine {
             MCTSConfig::default_play().batch_size,
         )?;
         Ok(())
+    }
+
+    /// Input planes per square of the loaded net (11 for nets without `planes` metadata).
+    pub fn nn_num_planes(&self) -> usize {
+        self.nn.planes().len()
     }
 
     pub fn set_multi_pv(&mut self, multi_pv: usize) {
@@ -212,6 +217,38 @@ impl Engine {
 
     pub fn check_terminal(&mut self) -> Option<Side> {
         check_terminal(&mut self.board)
+    }
+
+    /// The winner, counting a side with no legal move as having lost (as datagen
+    /// does); `check_terminal` alone does not cover the immobilised side.
+    pub fn winner(&mut self) -> Option<Side> {
+        self.result_reason().map(|(side, _)| side)
+    }
+
+    /// The winner and how the game ended, named as in the self-play gamelog
+    /// (`atk_capture`, `def_fort`, ..., `atk_no_moves` / `def_no_moves`).
+    pub fn result_reason(&mut self) -> Option<(Side, &'static str)> {
+        if let Some(side) = self.check_terminal() {
+            let reason = get_terminal(&mut self.board).map_or("terminal", |t| t.name());
+            return Some((side, reason));
+        }
+        if self.legal_moves().is_empty() {
+            let side = Side::opposite(self.board.side_to_move);
+            let reason = if side == Side::ATTACKERS {
+                "atk_no_moves"
+            } else {
+                "def_no_moves"
+            };
+            return Some((side, reason));
+        }
+        None
+    }
+
+    /// Legal moves in the current position.
+    pub fn legal_moves(&self) -> Vec<Move> {
+        let mut mg = crate::movegen::MoveGen::new();
+        mg.generate_moves(&self.board);
+        mg.moves[..mg.count].to_vec()
     }
 
     pub fn get_board_mutable(&mut self) -> &mut Board {

@@ -12,7 +12,8 @@ Sample binary format v2 (variable-length):
     PolicyTarget*N  N*4 bytes  (move_index u16 + visits u16 each)
     value           i8         (1 byte, final game result z from stm perspective)
     root_q          i8         (1 byte, MCTS root Q x 127 from stm perspective)
-    flags           u8         (bit0 policy_valid, bit1 last_of_game)
+    flags           u8         (bit0 policy_valid, bit1 last_of_game,
+                                bit2 result_unknown)
     king_corner     u8         (0-3 escape corner index, 255 none)
 
 The v1 format (T1 runs) lacks the trailing flags/king_corner bytes - pass
@@ -21,7 +22,14 @@ legacy=True to read those files.
 Value target = z_lambda * z + (1 - z_lambda) * root_q  (bootstrapped, lower
 variance).  For cheap-search samples (policy_valid=0, playout cap
 randomization) root_q comes from a low-node search, so the target falls back
-to pure z.
+to pure z.  When the game outcome is unknown (FLAG_RESULT_UNKNOWN) there is
+no z; the target is root_q, and compute_batch_loss masks the sample out of the
+value loss (result_known doubles as moves_left_valid in the batch).
+
+The pure-bytes decoder (`parse_samples`, `decode_sample`) is the single place
+that knows the layout; `_read_sample_at` and `SelfPlayDataset` are built on it,
+as are the continuous-training ingest (`ingest.py`) and replay buffer
+(`replay.py`).
 
 Network input planes (11 x N x N) - the plane count is fixed at 11 and is
 unrelated to the board side:
@@ -40,8 +48,10 @@ unrelated to the board side:
 
 from __future__ import annotations
 
+import copy
 import struct
 from collections import deque
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -58,12 +68,20 @@ TAIL_BYTES_V1 = 2  # value + root_q
 
 FLAG_POLICY_VALID = 1 << 0
 FLAG_LAST_OF_GAME = 1 << 1
+# 1 = the game never reached a decided terminal (ply / no-capture limit); the
+# value byte is 0 and the value target falls back to root_q.  Old files have
+# the bit clear, so they read as "result known" without migration.
+FLAG_RESULT_UNKNOWN = 1 << 2
 
 KING_CORNER_NONE_RAW = 255
 CORNER_CLASS_NONE = 4  # class index for "game did not end with a corner escape"
 
 # Directions in the policy encoding: Up=0, Down=1, Left=2, Right=3
 DIRS = 4
+
+# The moves-left head regresses plies-remaining / MOVES_LEFT_SCALE, keeping the
+# target O(1). The engine must interpret its moves-left output in the same unit.
+MOVES_LEFT_SCALE = 100.0
 
 _SYM_POS = [
     lambda r, c, n: (r, c),
@@ -231,98 +249,204 @@ def _unpack_bits(data: bytes, num_bits: int) -> np.ndarray:
     return bits.astype(np.float32)
 
 
-def _build_offset_index(path: Path, geom: BoardGeometry, tail_bytes: int = TAIL_BYTES_V2) -> np.ndarray:
+def _build_offset_index(path: Path, geom: BoardGeometry, tail_bytes: int = TAIL_BYTES_V2,
+                        limit: int = 0) -> np.ndarray:
     """Scan the binary file and return an array of byte offsets for each sample.
 
     Only reads the minimum needed (policy_len field) to compute sample sizes.
+    `limit` > 0 stops after that many samples.
     """
     file_size = path.stat().st_size
     offsets: list[int] = []
     pos = 0
     with open(path, "rb") as f:
-        while pos < file_size:
-            offsets.append(pos)
+        while pos < file_size and (limit <= 0 or len(offsets) < limit):
             # Skip fixed header to reach policy_len
             f.seek(pos + BIT_POSITION_BYTES + geom.legal_mask_bytes)
             raw = f.read(2)
             if len(raw) < 2:
                 break
             policy_len = struct.unpack("<H", raw)[0]
+            offsets.append(pos)
             # Advance past policy entries + tail
             pos += geom.fixed_header + policy_len * 4 + tail_bytes
     return np.array(offsets, dtype=np.int64)
 
 
+def _read_last_of_game_flags(path: Path, offsets: np.ndarray, geom: BoardGeometry) -> np.ndarray:
+    """Read just the FLAG_LAST_OF_GAME bit for each given sample offset (v2 only).
+
+    Called on the windowed slice, not the whole file — so we pay two small seeks
+    per *used* sample instead of per sample in a 90M-record file.
+    """
+    last_flags = np.zeros(len(offsets), dtype=bool)
+    with open(path, "rb") as f:
+        for i, off in enumerate(offsets):
+            off = int(off)
+            f.seek(off + BIT_POSITION_BYTES + geom.legal_mask_bytes)
+            raw = f.read(2)
+            if len(raw) < 2:
+                last_flags[i] = True
+                continue
+            policy_len = struct.unpack("<H", raw)[0]
+            f.seek(off + geom.fixed_header + policy_len * 4 + 2)  # past value + root_q
+            fb = f.read(1)
+            last_flags[i] = bool(fb[0] & FLAG_LAST_OF_GAME) if len(fb) == 1 else True
+    return last_flags
+
+
 def _decode_policy(policy_raw: bytes, policy_len: int, geom: BoardGeometry) -> np.ndarray:
     """Sparse policy entries → dense normalized distribution (or zeros)."""
     policy_visits = np.zeros(geom.policy_size, dtype=np.float32)
-    for i in range(policy_len):
-        off = i * 4
-        move_index = struct.unpack_from("<H", policy_raw, off)[0]
-        visits = struct.unpack_from("<H", policy_raw, off + 2)[0]
-        policy_visits[move_index] = float(visits)
+    if policy_len > 0:
+        entries = np.frombuffer(policy_raw, dtype="<u2", count=policy_len * 2).reshape(policy_len, 2)
+        policy_visits[entries[:, 0]] = entries[:, 1].astype(np.float32)
     visit_sum = policy_visits.sum()
     if visit_sum > 0:
         policy_visits /= visit_sum
     return policy_visits
 
 
-def _read_aux_policy_at(f, offset: int, geom: BoardGeometry) -> tuple[np.ndarray, np.ndarray, bool]:
-    """Light v2 read of a sample's policy + legal mask (for the opponent-reply
-    auxiliary target).  Skips plane/BFS decoding entirely."""
-    f.seek(offset + 48 + 2)  # skip planes + stm + rep
-    legal_mask_bytes = f.read(geom.legal_mask_bytes)
-    policy_len = struct.unpack("<H", f.read(2))[0]
-    policy_raw = f.read(policy_len * 4)
-    f.seek(2, 1)  # skip value + root_q
-    flags = f.read(1)[0]
-
-    policy = _decode_policy(policy_raw, policy_len, geom)
-    legal_mask = _unpack_bits(legal_mask_bytes, geom.policy_size)
-    valid = bool(flags & FLAG_POLICY_VALID) and policy.sum() > 0
-    return policy, legal_mask, valid
+# ─── Pure-bytes sample decoder ───────────────────────────────────────────────
+#
+# Everything below works on `bytes`, not file handles, so the same code serves
+# the offline SelfPlayDataset (via _read_sample_at) and the continuous trainer's
+# ingest/replay path, which keeps samples as raw bytes until batch assembly.
 
 
-def _read_sample_at(
-    f, offset: int, geom: BoardGeometry, z_lambda: float = 0.5, legacy: bool = False,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, bool, bool, int, int]:
-    """Read and decode a single sample from an open file handle at the given offset.
+@dataclass
+class RawSample:
+    """One undecoded sample: its bytes plus the cheap-to-read scalar fields."""
 
-    Returns (planes, legal_mask, policy, value_target,
-             policy_valid, last_of_game, corner_class, next_offset).
+    raw: bytes
+    flags: int
+    value: int        # i8, final result z from the side-to-move perspective (0 if unknown)
+    root_q: int       # i8, MCTS root Q x 127
+    policy_len: int
+    stm: int          # 0 = attackers to move, 1 = defenders
+
+    @property
+    def policy_valid(self) -> bool:
+        return bool(self.flags & FLAG_POLICY_VALID)
+
+    @property
+    def last_of_game(self) -> bool:
+        return bool(self.flags & FLAG_LAST_OF_GAME)
+
+    @property
+    def result_known(self) -> bool:
+        return not (self.flags & FLAG_RESULT_UNKNOWN)
+
+
+def sample_size_at(buf, offset: int, geom: BoardGeometry, legacy: bool = False) -> int | None:
+    """Total byte size of the sample starting at `offset`, or None if `buf`
+    ends before the sample is complete (truncated tail)."""
+    tail = TAIL_BYTES_V1 if legacy else TAIL_BYTES_V2
+    if offset + geom.fixed_header > len(buf):
+        return None
+    policy_len = struct.unpack_from("<H", buf, offset + BIT_POSITION_BYTES + geom.legal_mask_bytes)[0]
+    size = geom.fixed_header + policy_len * 4 + tail
+    if offset + size > len(buf):
+        return None
+    return size
+
+
+def _raw_sample(raw: bytes, geom: BoardGeometry, legacy: bool) -> RawSample:
+    policy_len = struct.unpack_from("<H", raw, BIT_POSITION_BYTES + geom.legal_mask_bytes)[0]
+    tail_at = geom.fixed_header + policy_len * 4
+    value = struct.unpack_from("<b", raw, tail_at)[0]
+    root_q = struct.unpack_from("<b", raw, tail_at + 1)[0]
+    # v1 has no flags: treat as a full-search sample closing its own game.
+    flags = (FLAG_POLICY_VALID | FLAG_LAST_OF_GAME) if legacy else raw[tail_at + 2]
+    return RawSample(raw=raw, flags=flags, value=value, root_q=root_q,
+                     policy_len=policy_len, stm=raw[48])
+
+
+def parse_samples(buf: bytes, geom: BoardGeometry, legacy: bool = False) -> tuple[list[RawSample], int]:
+    """Split `buf` into whole samples.
+
+    Returns (samples, consumed): `consumed` is the byte offset just past the
+    last complete sample, i.e. the start of a truncated trailing sample (or
+    len(buf) if the buffer ends on a sample boundary).  Re-reading the file
+    from `offset + consumed` later yields that sample intact.
     """
-    f.seek(offset)
+    view = memoryview(buf)
+    samples: list[RawSample] = []
+    pos = 0
+    while True:
+        size = sample_size_at(view, pos, geom, legacy)
+        if size is None:
+            break
+        samples.append(_raw_sample(view[pos:pos + size].tobytes(), geom, legacy))
+        pos += size
+    return samples, pos
 
-    # BitPosition: 50 bytes (48 planes + 1 stm + 1 rep)
-    planes_bytes = f.read(48)
-    stm = f.read(1)[0]
-    rep = f.read(1)[0]
 
-    # LegalMask: geom.legal_mask_bytes
-    legal_mask_bytes = f.read(geom.legal_mask_bytes)
+@dataclass
+class DecodedSample:
+    planes: np.ndarray        # (NUM_PLANES, N, N) float32
+    legal_mask: np.ndarray    # (policy_size,) bool
+    policy: np.ndarray        # (policy_size,) float32, normalized (zeros if empty)
+    value_target: float
+    policy_valid: bool
+    last_of_game: bool
+    result_known: bool
+    corner_class: int
+    root_q: float             # [-1, 1]
+    size: int                 # bytes occupied by this sample
 
-    # policy_len: u16
-    policy_len = struct.unpack("<H", f.read(2))[0]
 
-    # PolicyTarget × N: each 4 bytes (move_index u16, visits u16)
-    policy_raw = f.read(policy_len * 4)
+def value_target_for(value: int, root_q: float, policy_valid: bool, result_known: bool,
+                     z_lambda: float, value_gamma: float = 1.0, plies_remaining: int = 0) -> float:
+    """The value-head target.
 
-    # value: i8 (final result z), root_q: i8 (MCTS root Q × 127)
-    value = struct.unpack("<b", f.read(1))[0]
-    root_q = struct.unpack("<b", f.read(1))[0] / 127.0
+    known outcome:    z_lambda * z + (1 - z_lambda) * root_q; cheap-search samples
+                      (policy_valid = 0) have a low-node root_q, so pure z.
+    unknown outcome:  root_q (there is no z); masked out of the value loss by
+                      compute_batch_loss, kept only as a decidedness signal.
+    `value_gamma` < 1 discounts z by gamma ** plies_remaining (see _read_sample_at).
+    """
+    if not result_known:
+        return float(root_q)
+    z = float(value)
+    if value_gamma != 1.0:
+        z *= value_gamma ** plies_remaining
+    if policy_valid:
+        return z_lambda * z + (1.0 - z_lambda) * root_q
+    return z
+
+
+def decode_sample(
+    raw: bytes, geom: BoardGeometry, z_lambda: float = 0.5, legacy: bool = False,
+    value_gamma: float = 1.0, plies_remaining: int = 0,
+) -> DecodedSample:
+    """Decode one complete sample from its bytes (see module docstring for the
+    layout).  Pure numpy; the torch wrapping happens in the callers."""
+    planes_bytes = raw[0:48]
+    stm = raw[48]
+    rep = raw[49]
+    lm_start = BIT_POSITION_BYTES
+    legal_mask_bytes = raw[lm_start:lm_start + geom.legal_mask_bytes]
+    policy_len = struct.unpack_from("<H", raw, lm_start + geom.legal_mask_bytes)[0]
+    policy_raw = raw[geom.fixed_header:geom.fixed_header + policy_len * 4]
+    tail_at = geom.fixed_header + policy_len * 4
+    value = struct.unpack_from("<b", raw, tail_at)[0]
+    root_q = struct.unpack_from("<b", raw, tail_at + 1)[0] / 127.0
 
     if legacy:
         policy_valid = True
         last_of_game = True  # unknown in v1 — disables the aux opponent target
+        result_known = True
         corner_class = CORNER_CLASS_NONE
-        next_offset = offset + geom.fixed_header + policy_len * 4 + TAIL_BYTES_V1
+        size = tail_at + TAIL_BYTES_V1
     else:
-        flags = f.read(1)[0]
-        corner_raw = f.read(1)[0]
+        flags = raw[tail_at + 2]
+        corner_raw = raw[tail_at + 3]
         policy_valid = bool(flags & FLAG_POLICY_VALID)
         last_of_game = bool(flags & FLAG_LAST_OF_GAME)
+        result_known = not (flags & FLAG_RESULT_UNKNOWN)
         corner_class = CORNER_CLASS_NONE if corner_raw == KING_CORNER_NONE_RAW else int(corner_raw)
-        next_offset = offset + geom.fixed_header + policy_len * 4 + TAIL_BYTES_V2
+        size = tail_at + TAIL_BYTES_V2
 
     # -- Decode piece planes --
     attackers = _unpack_bits(planes_bytes[0:16], geom.sqs)
@@ -337,13 +461,11 @@ def _read_sample_at(
 
     # Group BFS: seeds = king + defenders, passable = non-attacker
     group_seeds = list(np.where(king_mask | def_mask)[0])
-    passable_group = ~atk_mask
-    group_bfs = _bfs_reach(group_seeds, passable_group, geom)
+    group_bfs = _bfs_reach(group_seeds, ~atk_mask, geom)
 
     # King BFS: seeds = king, passable = king's own square or empty (not atk, not def)
     king_seeds = list(np.where(king_mask)[0])
-    passable_king = ~atk_mask & ~def_mask
-    king_bfs = _bfs_reach(king_seeds, passable_king, geom)
+    king_bfs = _bfs_reach(king_seeds, ~atk_mask & ~def_mask, geom)
 
     # -- Repetition planes --
     rep1_plane = np.full(geom.sqs, 1.0 if rep >= 2 else 0.0, dtype=np.float32)
@@ -356,30 +478,295 @@ def _read_sample_at(
         rep1_plane, rep2_plane,
     ]).reshape(NUM_PLANES, geom.board_size, geom.board_size)
 
-    # -- Legal mask --
-    legal_mask = _unpack_bits(legal_mask_bytes, geom.policy_size)
-
-    # -- Policy target: sparse → dense, then normalize --
+    legal_mask = _unpack_bits(legal_mask_bytes, geom.policy_size).astype(bool)
     policy_visits = _decode_policy(policy_raw, policy_len, geom)
+    value_target = value_target_for(value, root_q, policy_valid, result_known,
+                                    z_lambda, value_gamma, plies_remaining)
 
-    # Bootstrapped value target: mix final result with search estimate.
-    # Cheap-search samples (PCR) have a low-node root_q — use pure z for them.
-    if policy_valid:
-        value_target = z_lambda * float(value) + (1.0 - z_lambda) * root_q
-    else:
-        value_target = float(value)
-
-    return (
-        torch.from_numpy(board_planes),
-        torch.from_numpy(legal_mask).bool(),
-        torch.from_numpy(policy_visits),
-        torch.tensor(np.float32(value_target)),
-        policy_valid,
-        last_of_game,
-        corner_class,
-        next_offset,
-        root_q,  # search's assessment of THIS position (decidedness signal)
+    return DecodedSample(
+        planes=board_planes, legal_mask=legal_mask, policy=policy_visits,
+        value_target=value_target, policy_valid=policy_valid, last_of_game=last_of_game,
+        result_known=result_known, corner_class=corner_class, root_q=root_q, size=size,
     )
+
+
+def decode_aux_policy(raw: bytes, geom: BoardGeometry) -> tuple[np.ndarray, np.ndarray, bool]:
+    """Light decode of a sample's policy + legal mask (for the opponent-reply
+    auxiliary target).  Skips plane/BFS decoding entirely.  v2 only."""
+    lm_start = BIT_POSITION_BYTES
+    legal_mask_bytes = raw[lm_start:lm_start + geom.legal_mask_bytes]
+    policy_len = struct.unpack_from("<H", raw, lm_start + geom.legal_mask_bytes)[0]
+    policy_raw = raw[geom.fixed_header:geom.fixed_header + policy_len * 4]
+    flags = raw[geom.fixed_header + policy_len * 4 + 2]
+
+    policy = _decode_policy(policy_raw, policy_len, geom)
+    legal_mask = _unpack_bits(legal_mask_bytes, geom.policy_size)
+    valid = bool(flags & FLAG_POLICY_VALID) and policy.sum() > 0
+    return policy, legal_mask, valid
+
+
+def _read_raw_at(f, offset: int, geom: BoardGeometry, legacy: bool = False) -> bytes:
+    """Read the complete bytes of the sample at `offset` from an open file."""
+    tail = TAIL_BYTES_V1 if legacy else TAIL_BYTES_V2
+    f.seek(offset)
+    head = f.read(geom.fixed_header)
+    policy_len = struct.unpack_from("<H", head, BIT_POSITION_BYTES + geom.legal_mask_bytes)[0]
+    return head + f.read(policy_len * 4 + tail)
+
+
+def _read_aux_policy_at(f, offset: int, geom: BoardGeometry) -> tuple[np.ndarray, np.ndarray, bool]:
+    return decode_aux_policy(_read_raw_at(f, offset, geom), geom)
+
+
+def _read_sample_at(
+    f, offset: int, geom: BoardGeometry, z_lambda: float = 0.5, legacy: bool = False,
+    value_gamma: float = 1.0, plies_remaining: int = 0,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, bool, bool, int, int, float, bool]:
+    """Read and decode a single sample from an open file handle at the given offset.
+
+    `value_gamma` < 1 discounts the final-result z by gamma**plies_remaining, so
+    a win close to mate keeps ~±1 while a far-off (shuffled) win decays toward 0.
+    This gives the value head a gradient to CONVERT won positions instead of
+    treating a mate-in-3 and a 200-ply repetition-win as equally +1.  gamma=1
+    reproduces the original flat targets exactly.
+
+    Returns (planes, legal_mask, policy, value_target,
+             policy_valid, last_of_game, corner_class, next_offset, root_q, result_known).
+    """
+    raw = _read_raw_at(f, offset, geom, legacy)
+    d = decode_sample(raw, geom, z_lambda, legacy, value_gamma, plies_remaining)
+    return (
+        torch.from_numpy(d.planes),
+        torch.from_numpy(d.legal_mask),
+        torch.from_numpy(d.policy),
+        torch.tensor(np.float32(d.value_target)),
+        d.policy_valid,
+        d.last_of_game,
+        d.corner_class,
+        offset + d.size,
+        d.root_q,  # search's assessment of THIS position (decidedness signal)
+        d.result_known,
+    )
+
+
+# ─── Plane lists and the feature side file (input-plane probe) ───────────────
+#
+# docs/probe-input-planes.md: a network can be trained on a different input stack
+# without touching the sample format.  The extra planes that need the game's history
+# come from a side file written by `taflzero --features` (src/search/feature_dump.rs),
+# one fixed-size record per sample in sample order.
+
+FEAT_MAGIC = b"TZFEAT01"
+FEAT_HEADER_BYTES = 16
+FEAT_RECORD_BYTES = 144
+
+# Record layout (offsets in bytes); masks pack square i as bit i%8 of byte i/8.
+FEAT_HIST = 0            # 4 x (from u8, to u8), most recent ply first, 255 = none
+FEAT_REP3 = 8            # destinations whose position would occur a third time
+FEAT_REP2 = 24           # destinations whose position would occur a second time
+FEAT_KING1 = 40          # king destinations in one move
+FEAT_KING2 = 56          # king squares in exactly two moves
+FEAT_PLY = 72            # u16, 0 for the first sample of a game
+FEAT_PLIES_TO_END = 74   # u16, 1 for the last sample of a game
+FEAT_FLAGS = 76          # FEAT_FLAG_* bits of the move played from this position
+FEAT_CAP_NOW = 80        # opponent pieces a move of the side to move captures
+FEAT_CAP_NEXT = 96       # own pieces the opponent could capture after a null move
+FEAT_ATK_MOB = 112       # squares an attacker can move to
+FEAT_DEF_MOB = 128       # squares a defender or the king can move to
+
+FEAT_FLAG_KING_MOVE = 1 << 0
+FEAT_FLAG_CAPTURE = 1 << 1
+FEAT_FLAG_LAST_PLY = 1 << 2
+FEAT_FLAG_THREEFOLD = 1 << 3
+
+FEAT_NO_SQUARE = 255
+
+# Byte 77: how the game ended, on its last sample (0 on every other sample). Codes are
+# the engine's (src/search/features.rs, TERMINAL_CODES); names are the gamelog's
+# terminal strings, which the dashboard's REASON table keys on. 9 = cut off by the ply
+# or no-capture limit, 255 = decided but the replay could not tell how.
+FEAT_TERMINAL = 77
+FEAT_TERMINAL_NAMES = {
+    1: "atk_capture", 2: "atk_surrounded", 3: "atk_no_moves", 4: "atk_threefold",
+    5: "def_corner", 6: "def_edge", 7: "def_fort", 8: "def_no_moves", 9: "max_plies",
+}
+FEAT_TERMINAL_UNKNOWN = 255
+PLY_PLANE_SCALE = 400.0
+
+# The 11 planes of decode_sample, in their order.
+BASE_PLANES = ("attackers", "defenders", "king", "stm", "throne", "corners", "edges",
+               "group_bfs", "king_bfs", "rep1", "rep2")
+_REMOVALS = {
+    "-throne": ("throne",), "-corners": ("corners",), "-edges": ("edges",), "-stm": ("stm",),
+    "-group_bfs": ("group_bfs",), "-king_bfs": ("king_bfs",), "-rep": ("rep1", "rep2"),
+}
+# Extra plane names -> (plane count, needs the side file).
+EXTRA_PLANES = {
+    "last1": (2, True), "last2": (4, True), "last4": (8, True), "rep_dst": (2, True),
+    "king12": (2, True), "ply": (1, True), "cap": (2, True), "mob": (2, True), "ones": (1, False),
+}
+_HISTORY = ("last1", "last2", "last4")
+
+
+@dataclass(frozen=True)
+class PlaneSpec:
+    """A parsed plane list: which base planes are kept (indices into the 11, in their
+    order) and which extra plane groups follow them (in the listed order)."""
+
+    base: tuple[int, ...]
+    extras: tuple[str, ...]
+
+    @property
+    def num_planes(self) -> int:
+        return len(self.base) + sum(EXTRA_PLANES[e][0] for e in self.extras)
+
+    @property
+    def needs_features(self) -> bool:
+        return any(EXTRA_PLANES[e][1] for e in self.extras)
+
+    @property
+    def is_base(self) -> bool:
+        return self.base == tuple(range(NUM_PLANES)) and not self.extras
+
+    def index_of(self, name: str) -> int | None:
+        """Channel of a base plane in the stack, or None if it was removed."""
+        i = BASE_PLANES.index(name)
+        return self.base.index(i) if i in self.base else None
+
+    @property
+    def canonical(self) -> str:
+        """The form the ONNX `planes` metadata carries and the engine's PlaneSet prints:
+        `base` for the 11 of today; otherwise `base` (if any base plane is kept) and its
+        removals in fixed order, then the extras in the listed order."""
+        parts: list[str] = []
+        if self.base:
+            parts.append("base")
+            for name, removed in _REMOVALS.items():
+                if all(BASE_PLANES.index(p) not in self.base for p in removed):
+                    parts.append(name)
+        parts += list(self.extras)
+        return ",".join(parts)
+
+    def channel_names(self) -> list[str]:
+        """One name per input channel, in order (shared with the Rust PlaneSet)."""
+        out = [BASE_PLANES[i] for i in self.base]
+        per_extra = {
+            "rep_dst": ["rep3", "rep2"], "king12": ["king1", "king2"], "ply": ["ply"],
+            "cap": ["cap_now", "cap_next"], "mob": ["atk_mob", "def_mob"], "ones": ["ones"],
+        }
+        for e in self.extras:
+            if e in _HISTORY:
+                for k in range({"last1": 1, "last2": 2, "last4": 4}[e]):
+                    out += [f"hist{k}_from", f"hist{k}_to"]
+            else:
+                out += per_extra[e]
+        return out
+
+
+def parse_planes(spec: str) -> PlaneSpec:
+    """`base,-throne,last2` -> PlaneSpec.  `base` is the 11 planes of today, `-x`
+    removes base planes, the other names append planes (docs/probe-input-planes.md).
+    Unknown names, a name given twice, overlapping history groups and a removal of a
+    plane that is not there are errors."""
+    names = [n.strip() for n in spec.split(",")]
+    if not spec.strip() or any(not n for n in names):
+        raise ValueError(f"empty plane name in {spec!r}")
+    seen: set[str] = set()
+    for n in names:
+        if n in seen:
+            raise ValueError(f"plane {n!r} given twice in {spec!r}")
+        seen.add(n)
+        if n != "base" and n not in _REMOVALS and n not in EXTRA_PLANES:
+            raise ValueError(f"unknown plane {n!r} (known: base, {', '.join(_REMOVALS)}, "
+                             f"{', '.join(EXTRA_PLANES)})")
+    history = [n for n in names if n in _HISTORY]
+    if len(history) > 1:
+        raise ValueError(f"{' and '.join(history)} overlap: pick one of {', '.join(_HISTORY)}")
+    kept = set(BASE_PLANES) if "base" in seen else set()
+    for n in names:
+        if n in _REMOVALS:
+            for p in _REMOVALS[n]:
+                if p not in kept:
+                    raise ValueError(f"{n} removes a plane that is not in {spec!r}")
+                kept.discard(p)
+    base = tuple(i for i, p in enumerate(BASE_PLANES) if p in kept)
+    extras = tuple(n for n in names if n in EXTRA_PLANES)
+    if not base and not extras:
+        raise ValueError(f"no planes left in {spec!r}")
+    return PlaneSpec(base=base, extras=extras)
+
+
+def _mask_plane(record, at: int, geom: BoardGeometry) -> np.ndarray:
+    return _unpack_bits(bytes(record[at:at + 16]), geom.sqs)
+
+
+def extra_planes(record, names: tuple[str, ...] | list[str], geom: BoardGeometry) -> np.ndarray:
+    """The extra planes of `names` for one sample, (k, N, N) float32.  `record` is the
+    sample's 144-byte side-file record (unused, may be None, for `ones` alone)."""
+    out: list[np.ndarray] = []
+    for name in names:
+        if name in _HISTORY:
+            plies = {"last1": 1, "last2": 2, "last4": 4}[name]
+            for k in range(plies):
+                for sq in (record[FEAT_HIST + 2 * k], record[FEAT_HIST + 2 * k + 1]):
+                    plane = np.zeros(geom.sqs, dtype=np.float32)
+                    if sq != FEAT_NO_SQUARE:
+                        plane[sq] = 1.0
+                    out.append(plane)
+        elif name == "rep_dst":
+            out += [_mask_plane(record, FEAT_REP3, geom), _mask_plane(record, FEAT_REP2, geom)]
+        elif name == "king12":
+            out += [_mask_plane(record, FEAT_KING1, geom), _mask_plane(record, FEAT_KING2, geom)]
+        elif name == "ply":
+            ply = int(record[FEAT_PLY]) | (int(record[FEAT_PLY + 1]) << 8)
+            out.append(np.full(geom.sqs, min(ply, PLY_PLANE_SCALE) / PLY_PLANE_SCALE, dtype=np.float32))
+        elif name == "cap":
+            out += [_mask_plane(record, FEAT_CAP_NOW, geom), _mask_plane(record, FEAT_CAP_NEXT, geom)]
+        elif name == "mob":
+            out += [_mask_plane(record, FEAT_ATK_MOB, geom), _mask_plane(record, FEAT_DEF_MOB, geom)]
+        elif name == "ones":
+            out.append(np.ones(geom.sqs, dtype=np.float32))
+        else:
+            raise ValueError(f"unknown extra plane {name!r}")
+    n = geom.board_size
+    if not out:
+        return np.zeros((0, n, n), dtype=np.float32)
+    return np.stack(out).reshape(len(out), n, n)
+
+
+def open_features(path: Path | str) -> np.ndarray:
+    """Memory-map a side file as a (count, FEAT_RECORD_BYTES) uint8 array."""
+    path = Path(path)
+    with open(path, "rb") as f:
+        header = f.read(FEAT_HEADER_BYTES)
+    if len(header) < FEAT_HEADER_BYTES or header[:8] != FEAT_MAGIC:
+        raise ValueError(f"{path}: not a feature file (magic {header[:8]!r})")
+    record = struct.unpack_from("<I", header, 8)[0]
+    if record != FEAT_RECORD_BYTES:
+        raise ValueError(f"{path}: record size {record}, this reader knows {FEAT_RECORD_BYTES}")
+    body = path.stat().st_size - FEAT_HEADER_BYTES
+    if body % FEAT_RECORD_BYTES:
+        raise ValueError(f"{path}: {body} bytes after the header is not a whole number of records")
+    count = body // FEAT_RECORD_BYTES
+    if count == 0:
+        return np.zeros((0, FEAT_RECORD_BYTES), dtype=np.uint8)
+    return np.memmap(path, dtype=np.uint8, mode="r", offset=FEAT_HEADER_BYTES,
+                     shape=(count, FEAT_RECORD_BYTES))
+
+
+def feature_count(path: Path | str) -> int:
+    """Records in a side file (the samples `taflzero --features` replayed)."""
+    return (Path(path).stat().st_size - FEAT_HEADER_BYTES) // FEAT_RECORD_BYTES
+
+
+def stack_planes(base_planes: np.ndarray, spec: PlaneSpec, record, geom: BoardGeometry) -> np.ndarray:
+    """decode_sample's 11 planes -> the stack `spec` asks for."""
+    if spec.is_base:
+        return base_planes
+    parts = [base_planes[list(spec.base)]] if spec.base else []
+    if spec.extras:
+        parts.append(extra_planes(record, spec.extras, geom))
+    return np.ascontiguousarray(np.concatenate(parts, axis=0))
 
 
 class SelfPlayDataset(Dataset):
@@ -400,9 +787,13 @@ class SelfPlayDataset(Dataset):
         z_lambda: weight of the final game result z in the value target;
             (1 - z_lambda) goes to the MCTS root Q (bootstrapping).
         legacy: read the v1 format (T1 runs, no flags/king_corner tail).
+        planes: plane list (`parse_planes`); "base" is the 11 planes of decode_sample.
+        features: side file from `taflzero --features` for the planes that need it.
+        limit: if > 0, only the first `limit` samples of the file exist for this
+            dataset (a side file made with --limit, or from a file still growing).
 
     __getitem__ returns:
-        planes        (11, 11, 11) float32
+        planes        (P, 11, 11) float32, P = 11 for "base"
         legal_mask    (4840,) bool
         policy        (4840,) float32 — normalized visit distribution
         value         () float32 — bootstrapped value target
@@ -415,25 +806,79 @@ class SelfPlayDataset(Dataset):
 
     def __init__(self, path: Path | str, window_size: int = 0, augment: bool = True,
                  z_lambda: float = 0.5, legacy: bool = False,
-                 board_size: int = 11) -> None:
+                 board_size: int = 11,
+                 value_gamma: float = 1.0, need_moves_left: bool = False,
+                 planes: str = "base", features: Path | str | None = None,
+                 limit: int = 0) -> None:
+        self._fh = None  # set first: __del__ runs even when the checks below raise
         self._path = Path(path)
         self._legacy = legacy
         self._geom = geometry(board_size)
+        self._spec = parse_planes(planes)
+        if self._spec.needs_features and features is None:
+            raise ValueError(f"planes {planes!r} need a feature side file (features=...)")
         tail = TAIL_BYTES_V1 if legacy else TAIL_BYTES_V2
-        offsets = _build_offset_index(self._path, self._geom, tail)
+        offsets = _build_offset_index(self._path, self._geom, tail, limit=limit)
 
+        # The side file must describe exactly these samples; checked before the
+        # window, which then cuts both the same way.
+        self._features_path = Path(features) if features is not None else None
+        self._feat = None
+        feat_index = np.zeros(0, dtype=np.int64)
+        if self._features_path is not None:
+            count = feature_count(self._features_path)
+            if count != len(offsets):
+                raise ValueError(
+                    f"{self._features_path} has {count} records but {self._path} has "
+                    f"{len(offsets)} samples" + (f" (limit {limit})" if limit > 0 else ""))
+            feat_index = np.arange(count, dtype=np.int64)
+
+        # Apply the sliding window FIRST, then read game boundaries only for the
+        # samples we keep — reading last-of-game for all 90M records (2 seeks
+        # each) would dwarf the training itself.  The last window includes the
+        # final game in full, so forward-looking plies-remaining stays exact.
         if window_size > 0 and len(offsets) > window_size:
             offsets = offsets[-window_size:]
+            if len(feat_index):
+                feat_index = feat_index[-window_size:]
+        self._feat_index = feat_index
+
+        # Plies-remaining feeds both the value discount and the moves-left head;
+        # reconstruct it from game boundaries whenever either needs it.
+        self._moves_left_valid = (not legacy)
+        if (value_gamma != 1.0 or need_moves_left) and not legacy:
+            last_flags = _read_last_of_game_flags(self._path, offsets, self._geom)
+            plies = np.zeros(len(offsets), dtype=np.int32)
+            running = 0
+            for i in range(len(offsets) - 1, -1, -1):
+                if last_flags[i]:
+                    running = 0
+                plies[i] = running
+                running += 1
+        else:
+            # Neither discount nor MLH needs plies (or legacy has no boundaries).
+            plies = np.zeros(len(offsets), dtype=np.int32)
+            self._moves_left_valid = False
 
         self._offsets = offsets
+        self._plies_remaining = plies
         self._file_size = self._path.stat().st_size
         self._augment = augment
         self._z_lambda = z_lambda
+        self._value_gamma = value_gamma
         # File handle opened lazily per worker process
         self._fh = None
 
     def __len__(self) -> int:
         return len(self._offsets)
+
+    @property
+    def num_planes(self) -> int:
+        return self._spec.num_planes
+
+    @property
+    def plane_spec(self) -> PlaneSpec:
+        return self._spec
 
     def _get_fh(self):
         """Return an open file handle, creating one if needed (per-worker)."""
@@ -441,10 +886,40 @@ class SelfPlayDataset(Dataset):
             self._fh = open(self._path, "rb")
         return self._fh
 
+    def feature_record(self, idx: int):
+        """The side-file record of sample `idx` (memory-mapped per worker)."""
+        if self._feat is None:
+            self._feat = open_features(self._features_path)
+        return self._feat[int(self._feat_index[idx])]
+
+    def with_planes(self, planes: str, augment: bool | None = None) -> "SelfPlayDataset":
+        """The same samples with another plane list (and augmentation switch).  The
+        offset index, minutes of seeks on a large file, is shared, not rebuilt."""
+        spec = parse_planes(planes)
+        if spec.needs_features and self._features_path is None:
+            raise ValueError(f"planes {planes!r} need a feature side file (features=...)")
+        other = copy.copy(self)
+        other._spec = spec
+        if augment is not None:
+            other._augment = augment
+        return other
+
+    def __getstate__(self):
+        # DataLoader workers reopen the sample file and the side file themselves.
+        state = self.__dict__.copy()
+        state["_fh"] = None
+        state["_feat"] = None
+        return state
+
     def __getitem__(self, idx: int):
         fh = self._get_fh()
-        planes, legal_mask, policy, value, policy_valid, last_of_game, corner, next_offset, root_q = \
-            _read_sample_at(fh, int(self._offsets[idx]), self._geom, self._z_lambda, self._legacy)
+        (planes, legal_mask, policy, value, policy_valid, last_of_game, corner, next_offset,
+         root_q, result_known) = _read_sample_at(
+            fh, int(self._offsets[idx]), self._geom, self._z_lambda, self._legacy,
+            self._value_gamma, int(self._plies_remaining[idx]))
+        if not self._spec.is_base:
+            record = self.feature_record(idx) if self._spec.needs_features else None
+            planes = torch.from_numpy(stack_planes(planes.numpy(), self._spec, record, self._geom))
 
         # Opponent-reply auxiliary target: the next sample of the same game.
         # FLAG_LAST_OF_GAME guards the game boundary; the file-size check
@@ -471,6 +946,10 @@ class SelfPlayDataset(Dataset):
                 aux_legal = aux_legal[perm]
                 corner = self._geom.corner_perms[sym][corner]
 
+        moves_left_target = float(self._plies_remaining[idx]) / MOVES_LEFT_SCALE
+        # An undecided game has no real end, so its plies-left is not a target.
+        moves_left_valid = 1.0 if (self._moves_left_valid and result_known) else 0.0
+
         return (
             planes,
             legal_mask,
@@ -482,6 +961,8 @@ class SelfPlayDataset(Dataset):
             torch.tensor(1.0 if aux_valid else 0.0),
             torch.tensor(corner, dtype=torch.long),
             torch.tensor(np.float32(root_q)),
+            torch.tensor(np.float32(moves_left_target)),
+            torch.tensor(np.float32(moves_left_valid)),
         )
 
     def __del__(self) -> None:

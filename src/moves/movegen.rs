@@ -141,6 +141,13 @@ impl MoveGen {
         }
     }
 
+    /// Moves of the piece on `from` alone, whoever is to move (the feature dump asks
+    /// for the king's reach on the attackers' turn too).
+    pub fn generate_moves_from(&mut self, board: &Board, from: Square) {
+        self.count = 0;
+        self.generate_moves_for_piece(board, from);
+    }
+
     pub fn count(&self) -> usize {
         self.count
     }

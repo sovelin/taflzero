@@ -79,6 +79,10 @@ struct PolicyTarget {
 pub const FLAG_POLICY_VALID: u8 = 1 << 0;
 /// flags bit 1: this sample is the last move of its game
 pub const FLAG_LAST_OF_GAME: u8 = 1 << 1;
+/// flags bit 2: the game's outcome is unknown (ply or no-capture limit); `value` is 0
+/// and must not be used as a target. Old files have the bit clear, which reads as
+/// "known" — every game written before this flag existed was decisive.
+pub const FLAG_RESULT_UNKNOWN: u8 = 1 << 2;
 
 /// king_corner value when the game did not end with a corner escape
 pub const KING_CORNER_NONE: u8 = 255;
@@ -166,6 +170,19 @@ impl PendingSample {
             Side::DEFENDERS
         };
         self.value = compute_value(stm_side, result);
+        if result.is_some() {
+            self.flags &= !FLAG_RESULT_UNKNOWN;
+        } else {
+            self.flags |= FLAG_RESULT_UNKNOWN;
+        }
+    }
+
+    pub fn flags(&self) -> u8 {
+        self.flags
+    }
+
+    pub fn value(&self) -> i8 {
+        self.value
     }
 
     pub fn set_policy_valid(&mut self, valid: bool) {
@@ -189,7 +206,64 @@ impl PendingSample {
     }
 }
 
+/// KL(target || prior) in nats over (target weight, prior) pairs; both sides are
+/// normalized here, prior probabilities are floored at 1e-6. 0 for an empty or all-zero side.
+pub fn kl_divergence(pairs: &[(f32, f32)]) -> f32 {
+    let t_sum: f32 = pairs.iter().map(|(t, _)| *t).sum();
+    let p_sum: f32 = pairs.iter().map(|(_, p)| *p).sum();
+    if t_sum <= 0.0 || p_sum <= 0.0 {
+        return 0.0;
+    }
+    let mut kl = 0.0f32;
+    for &(t, p) in pairs {
+        let t = t / t_sum;
+        if t > 0.0 {
+            let p = (p / p_sum).max(1e-6);
+            kl += t * (t / p).ln();
+        }
+    }
+    kl.max(0.0)
+}
+
+#[cfg(test)]
+mod kl_tests {
+    use super::kl_divergence;
+
+    #[test]
+    fn kl_divergence_known_values() {
+        // identical distributions (any scale): 0
+        assert!(kl_divergence(&[(2.0, 0.2), (8.0, 0.8)]).abs() < 1e-6);
+        // all target mass on a move of prior 0.25: ln 4
+        let kl = kl_divergence(&[(1.0, 0.25), (0.0, 0.75)]);
+        assert!((kl - 4f32.ln()).abs() < 1e-5, "{kl}");
+        // 0.5/0.5 against 0.9/0.1
+        let want = 0.5 * (0.5f32 / 0.9).ln() + 0.5 * (0.5f32 / 0.1).ln();
+        assert!((kl_divergence(&[(0.5, 0.9), (0.5, 0.1)]) - want).abs() < 1e-5);
+        assert_eq!(kl_divergence(&[]), 0.0);
+        assert_eq!(kl_divergence(&[(0.0, 0.5), (0.0, 0.5)]), 0.0);
+    }
+}
+
 impl MCTSTree {
+    /// KL(search policy target || net prior) at the root, in nats: how much the search
+    /// disagreed with the raw net (KataGo's policy surprise). The target is the Gumbel
+    /// improved policy, else the visit distribution; priors are the root children's.
+    pub fn policy_surprise(&self) -> f32 {
+        let root = self.get_root();
+        let mut target: Vec<(f32, f32)> = Vec::with_capacity(root.children().len());
+        if let Some(improved) = self.gumbel_policy_target() {
+            for (&c, (_, p)) in root.children().iter().zip(improved.iter()) {
+                target.push((*p, self.get_node(c).prior()));
+            }
+        } else {
+            for &c in root.children() {
+                let n = self.get_node(c);
+                target.push((n.visits(), n.prior()));
+            }
+        }
+        kl_divergence(&target)
+    }
+
     fn build_legal_mask_from_board(&mut self, board: &Board) -> LegalMask {
         let mut legal_mask = LegalMask::new(board.board_size());
         self.move_gen.generate_moves(board);
@@ -296,15 +370,28 @@ impl MCTSTree {
             }
         }
 
-        let policy: Vec<PolicyTarget> = entries
-            .iter()
-            .filter(|(_, v, _, _)| *v >= 1.0)
-            .map(|&(move_index, v, _, _)| PolicyTarget {
-                move_index,
-                visits: v.round().min(u16::MAX as f32) as u16,
-            })
-            .filter(|t| t.visits > 0)
-            .collect();
+        // Gumbel: the improved policy over every legal move, quantized to u16 (the
+        // trainer normalizes by the sum, so the scale is immaterial). PUCT: visits.
+        let policy: Vec<PolicyTarget> = if let Some(improved) = self.gumbel_policy_target() {
+            improved
+                .iter()
+                .map(|&(mv, p)| PolicyTarget {
+                    move_index: move_to_policy_index(mv, board.board_size()),
+                    visits: (p * 65535.0).round().min(u16::MAX as f32) as u16,
+                })
+                .filter(|t| t.visits > 0)
+                .collect()
+        } else {
+            entries
+                .iter()
+                .filter(|(_, v, _, _)| *v >= 1.0)
+                .map(|&(move_index, v, _, _)| PolicyTarget {
+                    move_index,
+                    visits: v.round().min(u16::MAX as f32) as u16,
+                })
+                .filter(|t| t.visits > 0)
+                .collect()
+        };
 
         let rep = board.rep_table.get(&board.zobrist).copied().unwrap_or(1);
 

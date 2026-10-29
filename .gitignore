@@ -6,6 +6,7 @@ node_modules
 zero-trainer/weights
 *.onnx
 !/copenhagen11x11.onnx
+!/copenhagen-T9-10x128-step620381.onnx
 !/tablut9x9.onnx
 *.onxx
 
@@ -13,3 +14,10 @@ zero-trainer/weights
 .idea
 .playwright-mcp
 dedup
+__pycache__/
+zero-trainer/runs/
+# taflground's built bundle (27 MB, private package): copied in by hand, see docs/plan-game-viewer.md
+zero-trainer/dashboard/vendor/taflground/dist/index.umd.cjs
+
+# input-plane probe output (side files, json, report)
+zero-trainer/probe_planes/

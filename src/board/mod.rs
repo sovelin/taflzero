@@ -18,6 +18,7 @@ use crate::board::rules::{Rules, RulesEnum};
 use crate::board::types::{OptionalSquare, Piece, Side, Square, ZobristHash};
 use crate::board::utils::{get_sq_algebraic, get_square, get_square_from_algebraic};
 use crate::board::zobrist::ZobristData;
+use crate::moves::mv::Move;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 use std::sync::Arc;
@@ -40,6 +41,12 @@ pub struct Board {
     pub halfmove_clock: u32,
     pub halfmove_count: u32,
     pub rules: RulesEnum,
+    /// The last four moves played on this board, most recent first. Nets with
+    /// history planes read them; `make_move`/`unmake_move` keep them, a new position
+    /// (`set_fen`, `setup_initial_position`, `clear`) starts with none.
+    pub last_moves: [Option<Move>; 4],
+    /// Plies played since the position was set up.
+    pub ply: u16,
     precomputed: Arc<Precomputed>,
     zobrist_data: ZobristData,
 }
@@ -77,6 +84,8 @@ impl Board {
             halfmove_clock: 0,
             halfmove_count: 0,
             rules,
+            last_moves: [None; 4],
+            ply: 0,
             precomputed: Arc::new(Precomputed::new(board_size)),
             zobrist_data: ZobristData::new(board_size),
         }

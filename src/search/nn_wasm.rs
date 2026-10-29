@@ -13,9 +13,8 @@
 //! bumps REQ + notifies, then `Atomics.wait`s (this runs in a Web Worker, so
 //! blocking is allowed) until the NN worker sets RESP and notifies back.
 
-use super::nn_common::{NnOutput, build_input_data};
+use super::nn_common::{NnInput, NnOutput, PlaneSet, build_input_data, onnx_planes};
 use crate::board::Precomputed;
-use crate::board::position_export::BitPosition;
 use crate::get_policy_size;
 use js_sys::{Atomics, Float32Array, Int32Array};
 use std::cell::RefCell;
@@ -44,36 +43,62 @@ pub fn set_nn_buffers(control: Int32Array, input: Float32Array, output: Float32A
 
 pub struct NeuralNet {
     board_size: usize,
+    /// No model runs in Rust here (the JS worker owns it): the plane set is read from
+    /// the model bytes given to `from_bytes`, the 11 base planes until then.
+    planes: PlaneSet,
 }
 
 impl NeuralNet {
     /// No model is loaded in Rust anymore — the JS NN worker owns it, so there is no
     /// shape to validate here; the board size is recorded for symmetry with native.
     pub fn new(_path: &str, board_size: usize, _batch_size: usize) -> Result<Self, String> {
-        Ok(NeuralNet { board_size })
+        Ok(NeuralNet {
+            board_size,
+            planes: PlaneSet::base(),
+        })
     }
 
-    pub fn from_bytes(_data: &[u8], board_size: usize, _batch_size: usize) -> Result<Self, String> {
-        Ok(NeuralNet { board_size })
+    /// The plane set comes from the model's `planes` metadata (as the native loader
+    /// reads it), so the input the engine builds matches the net the JS worker runs.
+    pub fn from_bytes(data: &[u8], board_size: usize, _batch_size: usize) -> Result<Self, String> {
+        let mut nn = Self::new("", board_size, 0)?;
+        if !data.is_empty() {
+            nn.planes = onnx_planes(data, "neural net from bytes")?;
+        }
+        Ok(nn)
+    }
+
+    /// The plane set of the net the JS worker runs (its ONNX `planes` metadata).
+    pub fn set_planes(&mut self, planes: PlaneSet) {
+        self.planes = planes;
+    }
+
+    pub fn planes(&self) -> &PlaneSet {
+        &self.planes
     }
 
     /// Board side this net can evaluate.
+    pub fn path(&self) -> &str {
+        ""
+    }
+
+    /// No file system in the browser: the net never changes underneath us.
+    pub fn reload_if_changed(&mut self) -> Result<bool, String> {
+        Ok(false)
+    }
+
     pub fn board_size(&self) -> usize {
         self.board_size
     }
 
-    pub fn evaluate_position(&mut self, pos: &BitPosition, geom: &Precomputed) -> NnOutput {
+    pub fn evaluate_position(&mut self, pos: &NnInput, geom: &Precomputed) -> NnOutput {
         self.evaluate_batch(&[pos], geom).pop().unwrap()
     }
 
-    pub fn evaluate_batch(
-        &mut self,
-        positions: &[&BitPosition],
-        geom: &Precomputed,
-    ) -> Vec<NnOutput> {
+    pub fn evaluate_batch(&mut self, positions: &[&NnInput], geom: &Precomputed) -> Vec<NnOutput> {
         let batch = positions.len();
         let policy_size = get_policy_size(geom.board_size);
-        let input = build_input_data(positions, geom); // batch * SAMPLE_SIZE, NCHW
+        let input = build_input_data(positions, &self.planes, geom); // batch * sample size, NCHW
 
         // 1. write input into the shared input buffer
         NN_INPUT.with(|b| {
@@ -124,6 +149,8 @@ impl NeuralNet {
                 results.push(NnOutput {
                     policy,
                     value: value_all[i],
+                    // WASM path (web client) does not use the moves-left utility.
+                    moves_left: None,
                 });
             }
         });

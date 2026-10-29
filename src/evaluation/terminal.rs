@@ -51,7 +51,7 @@ pub fn check_terminal(board: &mut Board) -> Option<Side> {
     None
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum TerminalType {
     KingCaptured = 1,
     ThreefoldRepetition = 2,
@@ -59,6 +59,20 @@ pub enum TerminalType {
     DefendersSurrounded = 4,
     FortCheck = 5,
     KingOnEdge = 6,
+}
+
+impl TerminalType {
+    /// The name the self-play gamelog and match reports use for this ending.
+    pub fn name(&self) -> &'static str {
+        match self {
+            TerminalType::KingCaptured => "atk_capture",
+            TerminalType::ThreefoldRepetition => "atk_threefold",
+            TerminalType::KingOnCorner => "def_corner",
+            TerminalType::DefendersSurrounded => "atk_surrounded",
+            TerminalType::FortCheck => "def_fort",
+            TerminalType::KingOnEdge => "def_edge",
+        }
+    }
 }
 
 /// Must agree with `check_terminal` on *whether* a position is terminal — the datagen

@@ -156,3 +156,110 @@ pub fn expect_king_not_exists(board: &Board) {
 pub fn expect_side_to_be(board: &Board, side: Side) {
     assert_eq!(board.side_to_move, side);
 }
+
+// Exact tactics at expansion: with the king one step from a corner, the escape is
+// found when the root is expanded, before a single child has been visited.
+#[test]
+fn corner_escape_in_one_is_proven_at_expansion() {
+    let mut client = Engine::new("copenhagen11x11.onnx".to_string());
+    client.set_position_and_moves("11/11/5a5/11/11/11/11/11/11/11/1k9 - d 0 0", vec![]);
+
+    let res = client.make_search_nodes(1, None);
+
+    assert_eq!(client.board().move_to_algebraic(res.best_move), "b1a1");
+}
+
+// Game-length shaping: a win 100 plies away loses alpha/2 of its value, one 400 plies
+// away loses the full alpha, and a net without the head (or alpha 0) changes nothing.
+#[test]
+fn moves_left_shaping_scales_with_predicted_length() {
+    use crate::mcts::shaped_value;
+    assert_eq!(shaped_value(0.8, Some(1.0), 0.15), 0.8 * (1.0 - 0.075));
+    assert_eq!(shaped_value(-0.8, Some(4.0), 0.15), -0.8 * 0.85);
+    assert_eq!(shaped_value(0.8, None, 0.15), 0.8);
+    assert_eq!(shaped_value(0.8, Some(1.0), 0.0), 0.8);
+}
+
+// `result` reports the winner of the current UCI position without a search, so a
+// match driver can stop a game on the engine's own rules.
+#[test]
+fn uci_result_reports_terminal_winner() {
+    use crate::uci::{UciController, UciOutput};
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Clone)]
+    struct Sink(Arc<Mutex<Vec<String>>>);
+    impl UciOutput for Sink {
+        fn send(&self, message: &str) {
+            self.0.lock().unwrap().push(message.to_string());
+        }
+    }
+
+    let out = Sink(Arc::new(Mutex::new(vec![])));
+    let mut uci = UciController::new(out.clone(), "copenhagen11x11.onnx".to_string());
+    let last = |out: &Sink| out.0.lock().unwrap().last().cloned().unwrap();
+
+    uci.run("position startpos");
+    uci.run("result");
+    assert_eq!(last(&out), "result none");
+
+    // King already on a corner: defenders have won.
+    uci.run("position fen 11/11/5a5/11/11/11/11/11/11/11/k10 - a 0 0");
+    uci.run("result");
+    assert_eq!(last(&out), "result defenders def_corner");
+
+    // No king on the board: attackers have won.
+    uci.run("position fen 11/11/5a5/11/11/5d5/11/11/11/11/11 - d 0 0");
+    uci.run("result");
+    assert_eq!(last(&out), "result attackers atk_capture");
+
+    // Defenders to move with only a boxed-in king (no legal move): attackers have
+    // won, and `go` must not answer with a null move (it used to say `bestmove a1a1`).
+    uci.run("position fen 2a2aka3/1a2aaa1a2/1aa3a4/a1a8/a8a1/a10/a10/a10/a10/1a8a/4aaa4 - d 0 0");
+    uci.run("result");
+    assert_eq!(last(&out), "result attackers atk_no_moves");
+    uci.run("go nodes 10");
+    assert_eq!(last(&out), "bestmove (none)");
+}
+
+// `randommove` returns a legal move that the engine then accepts.
+#[test]
+fn uci_randommove_is_legal() {
+    use crate::uci::{UciController, UciOutput};
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Clone)]
+    struct Sink(Arc<Mutex<Vec<String>>>);
+    impl UciOutput for Sink {
+        fn send(&self, message: &str) {
+            self.0.lock().unwrap().push(message.to_string());
+        }
+    }
+
+    let out = Sink(Arc::new(Mutex::new(vec![])));
+    let mut uci = UciController::new(out.clone(), "copenhagen11x11.onnx".to_string());
+    uci.run("position startpos");
+    let mut seen = std::collections::HashSet::new();
+    for _ in 0..20 {
+        uci.run("randommove");
+        let line = out.0.lock().unwrap().last().cloned().unwrap();
+        let mv = line.split_whitespace().nth(1).unwrap().to_string();
+        assert_ne!(mv, "(none)");
+        let legal: Vec<String> = uci
+            .engine()
+            .legal_moves()
+            .iter()
+            .map(|m| uci.engine().board().move_to_algebraic(*m))
+            .collect();
+        assert!(legal.contains(&mv), "{mv} not legal");
+        seen.insert(mv);
+    }
+    assert!(seen.len() > 3, "random moves never vary");
+
+    uci.run("position fen 11/11/5a5/11/11/11/11/11/11/11/k10 - a 0 0");
+    uci.run("randommove");
+    // Terminal position: the king is already on a corner, but attackers still have
+    // moves; whatever is returned must parse.
+    let line = out.0.lock().unwrap().last().cloned().unwrap();
+    assert!(line.starts_with("randommove "));
+}

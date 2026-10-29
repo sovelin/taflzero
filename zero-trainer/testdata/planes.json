@@ -1,0 +1,367 @@
+{
+ "specs": [
+  {
+   "spec": "base",
+   "canonical": "base",
+   "channels": [
+    "attackers",
+    "defenders",
+    "king",
+    "stm",
+    "throne",
+    "corners",
+    "edges",
+    "group_bfs",
+    "king_bfs",
+    "rep1",
+    "rep2"
+   ]
+  },
+  {
+   "spec": "base,-throne,-corners,-edges",
+   "canonical": "base,-throne,-corners,-edges",
+   "channels": [
+    "attackers",
+    "defenders",
+    "king",
+    "stm",
+    "group_bfs",
+    "king_bfs",
+    "rep1",
+    "rep2"
+   ]
+  },
+  {
+   "spec": "base,last2",
+   "canonical": "base,last2",
+   "channels": [
+    "attackers",
+    "defenders",
+    "king",
+    "stm",
+    "throne",
+    "corners",
+    "edges",
+    "group_bfs",
+    "king_bfs",
+    "rep1",
+    "rep2",
+    "hist0_from",
+    "hist0_to",
+    "hist1_from",
+    "hist1_to"
+   ]
+  },
+  {
+   "spec": "base,rep_dst",
+   "canonical": "base,rep_dst",
+   "channels": [
+    "attackers",
+    "defenders",
+    "king",
+    "stm",
+    "throne",
+    "corners",
+    "edges",
+    "group_bfs",
+    "king_bfs",
+    "rep1",
+    "rep2",
+    "rep3",
+    "rep2"
+   ]
+  },
+  {
+   "spec": "base,king12",
+   "canonical": "base,king12",
+   "channels": [
+    "attackers",
+    "defenders",
+    "king",
+    "stm",
+    "throne",
+    "corners",
+    "edges",
+    "group_bfs",
+    "king_bfs",
+    "rep1",
+    "rep2",
+    "king1",
+    "king2"
+   ]
+  },
+  {
+   "spec": "base,last2,rep_dst,king12,ply",
+   "canonical": "base,last2,rep_dst,king12,ply",
+   "channels": [
+    "attackers",
+    "defenders",
+    "king",
+    "stm",
+    "throne",
+    "corners",
+    "edges",
+    "group_bfs",
+    "king_bfs",
+    "rep1",
+    "rep2",
+    "hist0_from",
+    "hist0_to",
+    "hist1_from",
+    "hist1_to",
+    "rep3",
+    "rep2",
+    "king1",
+    "king2",
+    "ply"
+   ]
+  },
+  {
+   "spec": "base,-throne,-corners,-edges,last2,rep_dst,king12,ply",
+   "canonical": "base,-throne,-corners,-edges,last2,rep_dst,king12,ply",
+   "channels": [
+    "attackers",
+    "defenders",
+    "king",
+    "stm",
+    "group_bfs",
+    "king_bfs",
+    "rep1",
+    "rep2",
+    "hist0_from",
+    "hist0_to",
+    "hist1_from",
+    "hist1_to",
+    "rep3",
+    "rep2",
+    "king1",
+    "king2",
+    "ply"
+   ]
+  },
+  {
+   "spec": "base,cap,mob",
+   "canonical": "base,cap,mob",
+   "channels": [
+    "attackers",
+    "defenders",
+    "king",
+    "stm",
+    "throne",
+    "corners",
+    "edges",
+    "group_bfs",
+    "king_bfs",
+    "rep1",
+    "rep2",
+    "cap_now",
+    "cap_next",
+    "atk_mob",
+    "def_mob"
+   ]
+  },
+  {
+   "spec": "base,last2,rep_dst,king12,ply,cap,mob",
+   "canonical": "base,last2,rep_dst,king12,ply,cap,mob",
+   "channels": [
+    "attackers",
+    "defenders",
+    "king",
+    "stm",
+    "throne",
+    "corners",
+    "edges",
+    "group_bfs",
+    "king_bfs",
+    "rep1",
+    "rep2",
+    "hist0_from",
+    "hist0_to",
+    "hist1_from",
+    "hist1_to",
+    "rep3",
+    "rep2",
+    "king1",
+    "king2",
+    "ply",
+    "cap_now",
+    "cap_next",
+    "atk_mob",
+    "def_mob"
+   ]
+  },
+  {
+   "spec": "base,-throne,-corners,-edges,last2,rep_dst,king12,ply,cap,mob",
+   "canonical": "base,-throne,-corners,-edges,last2,rep_dst,king12,ply,cap,mob",
+   "channels": [
+    "attackers",
+    "defenders",
+    "king",
+    "stm",
+    "group_bfs",
+    "king_bfs",
+    "rep1",
+    "rep2",
+    "hist0_from",
+    "hist0_to",
+    "hist1_from",
+    "hist1_to",
+    "rep3",
+    "rep2",
+    "king1",
+    "king2",
+    "ply",
+    "cap_now",
+    "cap_next",
+    "atk_mob",
+    "def_mob"
+   ]
+  },
+  {
+   "spec": "base,last1",
+   "canonical": "base,last1",
+   "channels": [
+    "attackers",
+    "defenders",
+    "king",
+    "stm",
+    "throne",
+    "corners",
+    "edges",
+    "group_bfs",
+    "king_bfs",
+    "rep1",
+    "rep2",
+    "hist0_from",
+    "hist0_to"
+   ]
+  },
+  {
+   "spec": "base,last4",
+   "canonical": "base,last4",
+   "channels": [
+    "attackers",
+    "defenders",
+    "king",
+    "stm",
+    "throne",
+    "corners",
+    "edges",
+    "group_bfs",
+    "king_bfs",
+    "rep1",
+    "rep2",
+    "hist0_from",
+    "hist0_to",
+    "hist1_from",
+    "hist1_to",
+    "hist2_from",
+    "hist2_to",
+    "hist3_from",
+    "hist3_to"
+   ]
+  },
+  {
+   "spec": "base,last2,-rep,-throne",
+   "canonical": "base,-throne,-rep,last2",
+   "channels": [
+    "attackers",
+    "defenders",
+    "king",
+    "stm",
+    "corners",
+    "edges",
+    "group_bfs",
+    "king_bfs",
+    "hist0_from",
+    "hist0_to",
+    "hist1_from",
+    "hist1_to"
+   ]
+  },
+  {
+   "spec": "base,-stm,-group_bfs,-king_bfs",
+   "canonical": "base,-stm,-group_bfs,-king_bfs",
+   "channels": [
+    "attackers",
+    "defenders",
+    "king",
+    "throne",
+    "corners",
+    "edges",
+    "rep1",
+    "rep2"
+   ]
+  },
+  {
+   "spec": "last1,ply",
+   "canonical": "last1,ply",
+   "channels": [
+    "hist0_from",
+    "hist0_to",
+    "ply"
+   ]
+  },
+  {
+   "spec": "ones",
+   "canonical": "ones",
+   "channels": [
+    "ones"
+   ]
+  },
+  {
+   "spec": "base,ones,mob,cap",
+   "canonical": "base,ones,mob,cap",
+   "channels": [
+    "attackers",
+    "defenders",
+    "king",
+    "stm",
+    "throne",
+    "corners",
+    "edges",
+    "group_bfs",
+    "king_bfs",
+    "rep1",
+    "rep2",
+    "ones",
+    "atk_mob",
+    "def_mob",
+    "cap_now",
+    "cap_next"
+   ]
+  },
+  {
+   "spec": "rep_dst,base,-edges",
+   "canonical": "base,-edges,rep_dst",
+   "channels": [
+    "attackers",
+    "defenders",
+    "king",
+    "stm",
+    "throne",
+    "corners",
+    "group_bfs",
+    "king_bfs",
+    "rep1",
+    "rep2",
+    "rep3",
+    "rep2"
+   ]
+  }
+ ],
+ "inputs": [
+  {
+   "spec": "base,last2,rep_dst,king12,ply,cap,mob",
+   "file": "inputs_0.f32"
+  },
+  {
+   "spec": "base,-throne,-rep,last4,ones",
+   "file": "inputs_1.f32"
+  },
+  {
+   "spec": "last1,ply,king12",
+   "file": "inputs_2.f32"
+  }
+ ]
+}

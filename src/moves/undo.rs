@@ -29,6 +29,9 @@ pub struct UndoMove {
     pub last_move_to: OptionalSquare,
     pub was_capture: bool,
     pub halfmove_clock: u32,
+    /// The board's move history before the move, restored by `unmake_move`.
+    pub last_moves: [Option<Move>; 4],
+    pub ply: u16,
 }
 
 impl Default for UndoMove {
@@ -50,6 +53,8 @@ impl UndoMove {
             moved_piece: Piece::EMPTY,
             was_capture: false,
             halfmove_clock: 0,
+            last_moves: [None; 4],
+            ply: 0,
         }
     }
 

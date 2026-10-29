@@ -109,6 +109,12 @@ export class WasmClient {
     free(): void;
     [Symbol.dispose](): void;
     constructor(event_name: string);
+    /**
+     * Input planes per square of the net given to `set_nn`, read from its `planes`
+     * metadata: 11 for older nets. The NN worker shapes its input tensor
+     * [batch, num_planes, side, side] and the input buffer with it.
+     */
+    num_planes(): number;
     print_board(): void;
     run(cmd: string): void;
     set_nn(data: Uint8Array): void;
@@ -117,7 +123,7 @@ export class WasmClient {
      * by the onnxruntime-web worker.  Call once after construction, before any
      * search.  See `nn_wasm::set_nn_buffers` for the buffer layout.
      *   control: Int32Array [REQ, RESP, BATCH]
-     *   input:   Float32Array  max_batch * 1331   (SAMPLE_SIZE)
+     *   input:   Float32Array  max_batch * num_planes() * side * side
      *   output:  Float32Array  max_batch * 4841   (POLICY_SIZE then value)
      */
     set_nn_buffers(control: Int32Array, input: Float32Array, output: Float32Array): void;
@@ -217,6 +223,7 @@ export interface InitOutput {
     readonly timer_new: () => number;
     readonly timer_start: (a: number) => void;
     readonly wasmclient_new: (a: number, b: number) => number;
+    readonly wasmclient_num_planes: (a: number) => number;
     readonly wasmclient_print_board: (a: number) => void;
     readonly wasmclient_run: (a: number, b: number, c: number) => void;
     readonly wasmclient_set_nn: (a: number, b: number, c: number, d: number) => void;

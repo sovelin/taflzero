@@ -188,9 +188,12 @@ impl<O: UciOutput> UciController<O> {
             "uci" => {
                 self.send(&format!(
                     "id name {}\nid author Oleg Smirnov\nuciok",
-                    env!("CARGO_PKG_NAME")
+                    crate::engine_version()
                 ));
-                self.send("option name NNFile type string default ./copenhagen11x11.onnx");
+                self.send(&format!(
+                    "option name NNFile type string default {}",
+                    crate::DEFAULT_NET_PATH
+                ));
                 self.send("option name MultiPV type spin default 1 min 1 max 1000");
                 self.send("option name Variant type combo default copenhagen11x11 var copenhagen11x11 var historical11x11 var tablut9x9");
                 self.send("option name MemoryLimit type string default None");
@@ -283,8 +286,50 @@ impl<O: UciOutput> UciController<O> {
                 self.send(&format!("{:?}", self.engine().board()));
                 UciRunState::Continue
             }
+            // Who has won in the current position and how, if anyone:
+            // `result attackers atk_capture`, `result defenders def_fort`, ... or
+            // `result none`. Lets a match driver detect the end of a game without
+            // re-implementing the rules.
+            "result" => {
+                #[cfg(not(target_arch = "wasm32"))]
+                self.collect_search(false);
+                let reply = match self.engine_mut().result_reason() {
+                    Some((side, reason)) => {
+                        let who = if side == crate::board::types::Side::ATTACKERS {
+                            "attackers"
+                        } else {
+                            "defenders"
+                        };
+                        format!("result {who} {reason}")
+                    }
+                    None => "result none".to_string(),
+                };
+                self.send(&reply);
+                UciRunState::Continue
+            }
             "go" => {
                 self.handle_go(&tokens[1..]);
+                UciRunState::Continue
+            }
+            // A uniformly random legal move (`randommove e5e2`, or `randommove (none)`),
+            // for building match openings without a second rules implementation.
+            "randommove" => {
+                #[cfg(not(target_arch = "wasm32"))]
+                self.collect_search(false);
+                let engine = self.engine_mut();
+                let moves = engine.legal_moves();
+                let reply = if moves.is_empty() {
+                    "randommove (none)".to_string()
+                } else {
+                    use std::hash::{BuildHasher, Hasher};
+                    let pick = (std::hash::RandomState::new().build_hasher().finish()
+                        % moves.len() as u64) as usize;
+                    format!(
+                        "randommove {}",
+                        engine.board().move_to_algebraic(moves[pick])
+                    )
+                };
+                self.send(&reply);
                 UciRunState::Continue
             }
             "perft" => {
@@ -428,11 +473,16 @@ impl<O: UciOutput> UciController<O> {
         }
     }
 
-    /// Refuses to start a search when the loaded net does not fit the current board,
-    /// answering in the protocol instead of letting the search thread panic.
+    /// Refuses to start a search when the loaded net does not fit the current board
+    /// or the game is already over (no legal move: the search would answer with a
+    /// null move), answering in the protocol instead of letting a thread panic.
     fn reject_if_nn_mismatched(&mut self) -> bool {
         if let Err(err) = self.engine().check_nn_matches_board() {
             self.send(&format!("cannot search: {err}"));
+            self.send("bestmove (none)");
+            return true;
+        }
+        if self.engine_mut().winner().is_some() {
             self.send("bestmove (none)");
             return true;
         }
@@ -677,6 +727,13 @@ impl WasmClient {
             .map_err(|e| JsValue::from_str(&e))
     }
 
+    /// Input planes per square of the net given to `set_nn`, read from its `planes`
+    /// metadata: 11 for older nets. The NN worker shapes its input tensor
+    /// [batch, num_planes, side, side] and the input buffer with it.
+    pub fn num_planes(&self) -> usize {
+        self.controller.engine().nn_num_planes()
+    }
+
     /// Register a SharedArrayBuffer-backed Int32Array as the stop signal.
     /// The main thread can stop an ongoing `go infinite` by calling:
     ///   `Atomics.store(buffer, 0, 1)`
@@ -689,7 +746,7 @@ impl WasmClient {
     /// by the onnxruntime-web worker.  Call once after construction, before any
     /// search.  See `nn_wasm::set_nn_buffers` for the buffer layout.
     ///   control: Int32Array [REQ, RESP, BATCH]
-    ///   input:   Float32Array  max_batch * 1331   (SAMPLE_SIZE)
+    ///   input:   Float32Array  max_batch * num_planes() * side * side
     ///   output:  Float32Array  max_batch * 4841   (POLICY_SIZE then value)
     pub fn set_nn_buffers(
         &mut self,
