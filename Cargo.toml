@@ -1,6 +1,6 @@
 [package]
 name = "taflzero"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.91"
 description = "Artificial intelligence that plays Copenhagen and Historical Hnefatafl (11x11) and Tablut (9x9)"
@@ -8,7 +8,7 @@ license = "GPL-3.0-or-later"
 repository = "https://github.com/sovelin/taflzero"
 keywords = ["ai", "hnefatafl"]
 categories = ["artificial-intelligence", "game-engines"]
-include = ["src/**/*", "/LICENSE", "/README.md"]
+include = ["src/**/*", "/build.rs", "/LICENSE", "/README.md"]
 
 [lints.clippy]
 cargo = "deny"
@@ -39,7 +39,10 @@ sysinfo = "0.38"
 [features]
 default = ["cuda", "directml"]
 cuda = ["ort/cuda"]
-directml = ["ort/directml"]
+# DirectML exists on Windows only: there ort is always built with it (below) and this
+# feature lets the engine use it (build.rs turns it into cfg `dml`); elsewhere it does
+# nothing, so the default build also links on Linux and macOS.
+directml = []
 openvino = [ "ort/openvino" ]
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -49,6 +52,9 @@ ndarray = "0.17"
 # thousands of threads; the system heap fragments and page-faults ~250k times a
 # second under that, and the process slows down by half within two hours.
 mimalloc = { version = "0.1", default-features = false }
+
+[target.'cfg(windows)'.dependencies]
+ort = { version = "=2.0.0-rc.15", features = ["directml"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.4", features = ["wasm_js"] }

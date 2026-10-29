@@ -38,13 +38,14 @@ Key findings from training:
 ### Native (GPU/CPU)
 
 ```bash
-# CUDA + DirectML (auto-select, default)
+# Default: CUDA, falling back to DirectML on Windows (DirectML exists on Windows only;
+# on Linux and macOS the default build is CUDA)
 cargo build --release
 
 # CUDA only
 cargo build --release --no-default-features --features cuda
 
-# DirectML only
+# DirectML only (Windows)
 cargo build --release --no-default-features --features directml
 
 # CPU only
@@ -94,9 +95,17 @@ TaflZero speaks a UCI-based protocol. Run the binary and communicate via stdin/s
 
 | Variant | File |
 |---|---|
-| Copenhagen / Historical 11×11 (default) | [copenhagen-T9-10x128-step620381.onnx](https://github.com/sovelin/taflzero/raw/main/copenhagen-T9-10x128-step620381.onnx) (T9, 10×128, 24 input planes, fp16) |
+| Copenhagen / Historical 11×11 (default) | [copenhagen-T9-10x128-step620381.onnx](https://github.com/sovelin/taflzero/raw/v0.3.0/copenhagen-T9-10x128-step620381.onnx) (T9, 10×128, 24 input planes, fp16) |
 | Copenhagen / Historical 11×11 (previous net) | [copenhagen11x11.onnx](https://github.com/sovelin/taflzero/raw/v0.2.0/copenhagen11x11.onnx) |
-| Tablut 9×9 | [tablut9x9.onnx](https://github.com/sovelin/taflzero/raw/v0.2.0/tablut9x9.onnx) |
+| Tablut 9×9 | [tablut9x9.onnx](https://github.com/sovelin/taflzero/raw/v0.3.0/tablut9x9.onnx) |
+
+The T9 net (finished on 2026-10-28) is about +400 Elo stronger than the previous default,
+the T2 net `copenhagen11x11.onnx` (generation 225, trained in August 2026, the default since v0.2.0): +382 Elo (95% CI +270…+493) in 100
+paired games at 100 nodes a move (89 wins, 9 losses, 2 draws), and +419 ± 54 on the training
+run's checkpoint ladder at 20 nodes.
+
+T9 trained from scratch in 4.75 days of wall-clock time (2026-10-24 to 2026-10-28) on one RTX 5080: 870,379 self-play
+games, 158.9 million positions, 620,381 training steps of 1,024 positions.
 
 **Command-line arguments:**
 
@@ -147,3 +156,15 @@ node .\orchestrate-zero.mjs --iterations 1000 --games-per-gen 1000000 --window 5
 - `src/` — Rust engine (MCTS, self-play, game logic)
 - `zero-trainer/` — Python training scripts
 - `orchestrator/` — Node.js training loop orchestration
+
+## Acknowledgements
+
+TaflZero builds on a lot of public work:
+
+- [AlphaZero](https://arxiv.org/abs/1712.01815) (Silver et al.): self-play with MCTS and a residual network.
+- [Leela Chess Zero](https://lczero.org): an open, continuously trained AlphaZero, and many details of its search.
+- [KataGo](https://github.com/lightvector/KataGo) (David Wu): the growing replay window, auxiliary heads and short-term value targets.
+- [Gumbel AlphaZero](https://openreview.net/forum?id=bERaNdoegnO) (Danihelka et al.): the root search used in self-play.
+- [ONNX Runtime](https://onnxruntime.ai), [tract](https://github.com/sonos/tract) and [PyTorch](https://pytorch.org).
+- [Learning Hnefatafl](https://github.com/devinokeefe/hnefatafl) by Devin O'Keefe: an engine trained to beat TaflZero; its training history and the matches against it helped shape TaflZero's later training runs.
+- The hnefatafl community, and the players who tested earlier nets and found their weaknesses.

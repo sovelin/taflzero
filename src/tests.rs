@@ -263,3 +263,65 @@ fn uci_randommove_is_legal() {
     let line = out.0.lock().unwrap().last().cloned().unwrap();
     assert!(line.starts_with("randommove "));
 }
+
+/// Runs a short search, waits for its `bestmove`, then sends `cmd` and returns what
+/// the controller answered to it. A native `go` hands the engine to a search thread
+/// and gets it back only when a later command collects the finished search.
+fn uci_reply_after_a_search(cmd: &str) -> Vec<String> {
+    use crate::uci::{UciController, UciOutput};
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Clone)]
+    struct Sink(Arc<Mutex<Vec<String>>>);
+    impl UciOutput for Sink {
+        fn send(&self, message: &str) {
+            self.0.lock().unwrap().push(message.to_string());
+        }
+    }
+
+    let out = Sink(Arc::new(Mutex::new(vec![])));
+    let mut uci = UciController::new(out.clone(), "copenhagen11x11.onnx".to_string());
+    uci.run("position startpos");
+    uci.run("go nodes 30");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    while !out
+        .0
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|l| l.starts_with("bestmove"))
+    {
+        assert!(std::time::Instant::now() < deadline, "no bestmove");
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let before = out.0.lock().unwrap().len();
+    uci.run(cmd);
+    out.0.lock().unwrap()[before..].to_vec()
+}
+
+#[test]
+fn uci_board_after_a_search() {
+    let reply = uci_reply_after_a_search("board");
+    assert!(reply.iter().any(|l| l.contains("FEN:")), "{reply:?}");
+}
+
+#[test]
+fn uci_multipv_after_a_search() {
+    let reply = uci_reply_after_a_search("setoption name MultiPV value 2");
+    assert_eq!(reply, ["MultiPV set to 2"]);
+}
+
+#[test]
+fn uci_variant_after_a_search() {
+    let reply = uci_reply_after_a_search("setoption name Variant value historical11x11");
+    assert_eq!(
+        reply.first().map(String::as_str),
+        Some("variant set to historical11x11")
+    );
+}
+
+#[test]
+fn uci_memory_limit_after_a_search() {
+    let reply = uci_reply_after_a_search("setoption name MemoryLimit value 0.5");
+    assert_eq!(reply, ["MemoryLimit set to 0.5"]);
+}
