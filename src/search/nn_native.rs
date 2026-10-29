@@ -191,8 +191,6 @@ impl NeuralNet {
         board_size: usize,
         batch_size: usize,
     ) -> Result<(Session, usize, PlaneSet), String> {
-        #[cfg(all(feature = "cuda", not(dml)))]
-        println!("[NN] Backend: CUDA");
         #[cfg(all(dml, not(feature = "cuda")))]
         println!("[NN] Backend: DirectML");
         #[cfg(feature = "openvino")]
@@ -235,9 +233,21 @@ impl NeuralNet {
         }
         #[cfg(all(feature = "cuda", not(dml)))]
         {
-            builder = builder
-                .with_execution_providers([CUDA::default().build()])
-                .unwrap();
+            // A CUDA provider that fails to load (no CUDA 13 libraries, no GPU) is
+            // skipped silently and the session runs on the CPU; say which one it is.
+            match builder.with_execution_providers([CUDA::default().build().error_on_failure()]) {
+                Ok(b) => {
+                    println!("[NN] Backend: CUDA");
+                    builder = b;
+                }
+                Err(err) => {
+                    println!("[NN] Backend: CPU (CUDA unavailable: {err})");
+                    builder = Session::builder(ort_env()?)
+                        .unwrap()
+                        .with_intra_threads(intra_threads)
+                        .unwrap();
+                }
+            }
         }
         #[cfg(all(dml, not(feature = "cuda")))]
         {
