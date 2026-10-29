@@ -98,6 +98,11 @@ TaflZero speaks a UCI-based protocol. Run the binary and communicate via stdin/s
 | Copenhagen / Historical 11×11 (previous net) | [copenhagen11x11.onnx](https://github.com/sovelin/taflzero/raw/v0.2.0/copenhagen11x11.onnx) |
 | Tablut 9×9 | [tablut9x9.onnx](https://github.com/sovelin/taflzero/raw/v0.2.0/tablut9x9.onnx) |
 
+The T9 net (finished on 2026-10-28) is about +400 Elo stronger than the previous default,
+the T2 net `copenhagen11x11.onnx` of v0.2.0 (2026-10-17): +382 Elo (95% CI +270…+493) in 100
+paired games at 100 nodes a move (89 wins, 9 losses, 2 draws), and +419 ± 54 on the training
+run's checkpoint ladder at 20 nodes.
+
 **Command-line arguments:**
 
 ```
@@ -157,5 +162,5 @@ TaflZero builds on a lot of public work:
 - [KataGo](https://github.com/lightvector/KataGo) (David Wu): the growing replay window, auxiliary heads and short-term value targets.
 - [Gumbel AlphaZero](https://openreview.net/forum?id=bERaNdoegnO) (Danihelka et al.): the root search used in self-play.
 - [ONNX Runtime](https://onnxruntime.ai), [tract](https://github.com/sonos/tract) and [PyTorch](https://pytorch.org).
-- [Learning Hnefatafl](https://github.com/devinokeefe/hnefatafl) by Devin O'Keefe, another AlphaZero-style Copenhagen engine.
+- [Learning Hnefatafl](https://github.com/devinokeefe/hnefatafl) by Devin O'Keefe: an engine trained to beat TaflZero; its training history and the matches against it helped shape TaflZero's later training runs.
 - The hnefatafl community, and the players who tested earlier nets and found their weaknesses.
