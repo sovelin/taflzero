@@ -858,6 +858,7 @@ fn select_leaf(
 }
 
 /// Expand a node using pre-computed NN output, legal moves, and child zobrists.
+#[allow(clippy::too_many_arguments)]
 fn expand_with_nn_output(
     tree: &mut MCTSTree,
     node_id: NodeId,

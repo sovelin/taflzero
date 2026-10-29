@@ -243,7 +243,7 @@ pub fn play_match(
                     if g >= games {
                         break;
                     }
-                    let (pair, a_attacks) = (g / 2, g % 2 == 0);
+                    let (pair, a_attacks) = (g / 2, g.is_multiple_of(2));
                     let opening = make_opening(cfg.variant, cfg.opening_moves, seed, pair);
                     let game = if a_attacks {
                         play_game(&mut nn_a, &mut nn_b, &opening, cfg)

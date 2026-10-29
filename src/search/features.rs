@@ -38,7 +38,7 @@ pub const FEAT2_REDUCTION: u8 = 1 << 7;
 
 /// FLAGS2 byte for a reduction proportion in [0, 1]: 0 when there is none.
 pub fn reduction_byte(prop: f32) -> u8 {
-    if !(prop > 0.0) {
+    if prop.is_nan() || prop <= 0.0 {
         return 0;
     }
     FEAT2_REDUCTION | ((prop.min(1.0) * 127.0).round() as u8).max(1)
