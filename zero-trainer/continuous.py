@@ -95,7 +95,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="run dir whose newest --seed-samples positions open the replay window (a run that "
                         "continues another, e.g. a bigger net distilled from it); only read")
     p.add_argument("--seed-samples", type=int, default=0,
-                   help="positions taken from --seed-run; the window counts them as generated")
+                   help="positions taken from --seed-run; the window is sized as if this run went on from "
+                        "everything the seed run generated")
     p.add_argument("--smoke", action="store_true", help="Small preset for the integration test (plan §3.10)")
     p.add_argument("--device", type=str, default="cpu")
     p.add_argument("--amp", choices=["none", "bf16"], default="none",
@@ -593,6 +594,12 @@ class ContinuousRun:
         self._bytes_warned = False
         self.rng = np.random.default_rng(args.seed)
         self.ingester = Ingester(self.data_dir, self.geom)
+        # --seed-run: this run continues that run's data, so its window grows from where
+        # that run's ended (window of seed run's generated + this run's generated).
+        self.seed_generated = 0
+        if args.seed_run is not None and args.seed_samples > 0:
+            seed_state = json.loads((Path(args.seed_run) / "state.json").read_text(encoding="utf-8"))
+            self.seed_generated = int(seed_state.get("generated", 0))
 
         if args.resume is not None and self.state_path.exists():
             # A crash after the last checkpoint leaves log rows the resume will write again.
@@ -793,8 +800,7 @@ class ContinuousRun:
 
     def current_window(self) -> int:
         a = self.args
-        seeded = a.seed_samples if a.seed_run is not None else 0
-        return replay_window(self.stats.generated + seeded, a.window_base, a.window_alpha, a.window_beta, a.window_cap)
+        return replay_window(self.stats.generated + self.seed_generated, a.window_base, a.window_alpha, a.window_beta, a.window_cap)
 
     def stop_requested(self) -> bool:
         return self._stop_event.is_set() or self.stop_file.exists()
