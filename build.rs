@@ -22,6 +22,14 @@ fn main() {
     };
     println!("cargo:rustc-env=TAFLZERO_GIT={rev}");
 
+    // `dml`: the `directml` feature on Windows, the only platform ONNX Runtime has
+    // DirectML for. Elsewhere the feature is a no-op and the engine never names it.
+    println!("cargo::rustc-check-cfg=cfg(dml)");
+    let windows = std::env::var("CARGO_CFG_TARGET_OS").is_ok_and(|os| os == "windows");
+    if windows && std::env::var_os("CARGO_FEATURE_DIRECTML").is_some() {
+        println!("cargo:rustc-cfg=dml");
+    }
+
     // Rebuild when the sources change (dirty state) or HEAD moves (a commit, a checkout).
     println!("cargo:rerun-if-changed=src");
     println!("cargo:rerun-if-changed=Cargo.toml");

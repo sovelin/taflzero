@@ -5,7 +5,7 @@ use ndarray::{Array, ArrayView, IxDyn};
 use ort::environment::Environment;
 #[cfg(feature = "cuda")]
 use ort::ep::CUDA;
-#[cfg(feature = "directml")]
+#[cfg(dml)]
 use ort::ep::DirectML;
 #[cfg(feature = "openvino")]
 use ort::ep::OpenVINO;
@@ -191,13 +191,13 @@ impl NeuralNet {
         board_size: usize,
         batch_size: usize,
     ) -> Result<(Session, usize, PlaneSet), String> {
-        #[cfg(all(feature = "cuda", not(feature = "directml")))]
+        #[cfg(all(feature = "cuda", not(dml)))]
         println!("[NN] Backend: CUDA");
-        #[cfg(all(feature = "directml", not(feature = "cuda")))]
+        #[cfg(all(dml, not(feature = "cuda")))]
         println!("[NN] Backend: DirectML");
         #[cfg(feature = "openvino")]
         println!("[NN] Backend: OpenVINO");
-        #[cfg(not(any(feature = "cuda", feature = "directml", feature = "openvino")))]
+        #[cfg(not(any(feature = "cuda", dml, feature = "openvino")))]
         println!("[NN] Backend: CPU");
 
         let mut builder = Session::builder(ort_env()?).unwrap();
@@ -211,7 +211,7 @@ impl NeuralNet {
             .unwrap_or(1);
         builder = builder.with_intra_threads(intra_threads).unwrap();
 
-        #[cfg(all(feature = "cuda", feature = "directml"))]
+        #[cfg(all(feature = "cuda", dml))]
         {
             // ORT refuses CUDA and DirectML in one session ("DML EP can only be used
             // with CPU EPs"), and a CUDA provider that fails to load is skipped
@@ -233,13 +233,13 @@ impl NeuralNet {
                 }
             }
         }
-        #[cfg(all(feature = "cuda", not(feature = "directml")))]
+        #[cfg(all(feature = "cuda", not(dml)))]
         {
             builder = builder
                 .with_execution_providers([CUDA::default().build()])
                 .unwrap();
         }
-        #[cfg(all(feature = "directml", not(feature = "cuda")))]
+        #[cfg(all(dml, not(feature = "cuda")))]
         {
             builder = builder
                 .with_execution_providers([DirectML::default().build()])

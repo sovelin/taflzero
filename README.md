@@ -38,13 +38,14 @@ Key findings from training:
 ### Native (GPU/CPU)
 
 ```bash
-# CUDA + DirectML (auto-select, default)
+# Default: CUDA, falling back to DirectML on Windows (DirectML exists on Windows only;
+# on Linux and macOS the default build is CUDA)
 cargo build --release
 
 # CUDA only
 cargo build --release --no-default-features --features cuda
 
-# DirectML only
+# DirectML only (Windows)
 cargo build --release --no-default-features --features directml
 
 # CPU only
