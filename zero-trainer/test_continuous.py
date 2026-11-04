@@ -759,3 +759,20 @@ def test_resume_after_a_crash_uses_the_saved_step_weights_and_cuts_the_tail(tmp_
     assert (data / "worker0.bin").stat().st_size == size
     log = (run_dir / "log.txt").read_text(encoding="utf-8")
     assert "torn tail cut" in log and "weights from step000003.qnxx" in log
+
+
+def test_dashboard_runs_the_eval_and_the_ladder_in_the_run_variant(tmp_path: Path, monkeypatch) -> None:
+    import dashboard
+    spawned: list[list[str]] = []
+    monkeypatch.setattr(dashboard, "spawn_detached", lambda cmd, log, cwd: spawned.append(cmd) or len(spawned))
+    monkeypatch.setattr(dashboard, "load_presets", lambda: {"hist": {
+        "trainer": {"variant": "historical11x11"},
+        "eval": {"anchors": ["copenhagen11x11.onnx"], "ladder": {"nodes": 20}}}})
+    engine = tmp_path / "taflzero.exe"
+    engine.write_bytes(b"")
+    res = dashboard.Dashboard(tmp_path / "runs", engine).start("H", "hist", {})
+    assert res.get("ok"), res
+    sidecars = [c for c in spawned if any(s in " ".join(c) for s in ("eval_anchor.py", "eval_ladder.py"))]
+    assert len(sidecars) == 2
+    for c in sidecars:
+        assert c[c.index("--variant") + 1] == "historical11x11"

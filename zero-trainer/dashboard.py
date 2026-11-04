@@ -423,6 +423,9 @@ class Dashboard:
             (run_dir / "dashboard.eval.json").write_text(json.dumps(eval_cfg, indent=2), encoding="utf-8")
 
         pids = {"trainer": spawn_detached(cmd, run_dir / "dashboard-trainer.log", REPO), "started": time.time()}
+        # The side-cars default to Copenhagen: a run in another variant must be judged in its own game.
+        run_cfg = (read_json(run_dir / "config.json") or {}) if resume else trainer_cfg
+        variant = str(run_cfg.get("variant") or "copenhagen11x11")
         anchors = [str((REPO / a).resolve()) for a in eval_cfg.get("anchors", [])]
         anchors = [a for a in anchors if Path(a).exists()]
         # "retired_anchors": stems the anchor eval no longer plays (the ladder still does).
@@ -434,7 +437,7 @@ class Dashboard:
                     "--nodes", str(eval_cfg.get("nodes", 400)), "--workers", str(eval_cfg.get("workers", 2)),
                     "--playout-every", str(eval_cfg.get("playout_every", 5)),
                     "--max-plies", str(eval_cfg.get("max_plies", 400)),
-                    "--min-gap", str(eval_cfg.get("min_gap", 0))]
+                    "--min-gap", str(eval_cfg.get("min_gap", 0)), "--variant", variant]
             if eval_cfg.get("blind", False):
                 ecmd.append("--blind")
             pids["eval"] = spawn_detached(ecmd, run_dir / "dashboard-eval.log", REPO)
@@ -443,7 +446,8 @@ class Dashboard:
         if ladder:
             lcmd = [sys.executable, str(HERE / "eval_ladder.py"), "--run-dir", str(run_dir), "--engine-bin", str(engine),
                     "--nodes", str(ladder.get("nodes", 20)), "--pairs", str(ladder.get("pairs", 4)),
-                    "--opponents", str(ladder.get("opponents", 8)), "--workers", str(ladder.get("workers", 1))]
+                    "--opponents", str(ladder.get("opponents", 8)), "--workers", str(ladder.get("workers", 1)),
+                    "--variant", variant]
             if anchors:
                 lcmd += ["--anchors", ",".join(anchors)]
             pids["ladder"] = spawn_detached(lcmd, run_dir / "dashboard-ladder.log", REPO)
