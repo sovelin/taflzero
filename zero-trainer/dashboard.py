@@ -827,7 +827,7 @@ def game_reason(feat: Path, last_sample: int, result: str) -> str:
 
 
 def selfplay_game(run_dir: Path, worker: int, first: int) -> dict:
-    n = run_geometry(run_dir)[0]
+    n, variant = run_geometry(run_dir)
     idx = game_index(run_dir, worker)
     with idx.lock:
         # games are in file order, so first_sample is ascending: binary search.
@@ -862,7 +862,7 @@ def selfplay_game(run_dir: Path, worker: int, first: int) -> dict:
     last = sample_fields(raws[-1], n)
     result = game_result(last["stm"], last["value"], last["flags"])
     reason = game_reason(bin_path.with_suffix(".feat"), first + samples - 1, result)
-    return {"source": "selfplay", "id": f"{worker}:{first}", "board_size": n, "plies": plies,
+    return {"source": "selfplay", "id": f"{worker}:{first}", "board_size": n, "variant": variant, "plies": plies,
             "result": result, "reason": reason}
 
 
@@ -935,7 +935,7 @@ def match_game(run_dir: Path, engine: Path, gid: str) -> dict:
                       "opening": i < opening, "top": []})
     score = g.get("score")
     result = "draw" if score == "d" else ("atk" if (score == "w") == a_attacks else "def")
-    return {"source": "match", "id": gid, "board_size": n, "plies": plies, "result": result,
+    return {"source": "match", "id": gid, "board_size": n, "variant": variant, "plies": plies, "result": result,
             "reason": g.get("reason") or "unknown", "ckpt": ck, "anchor": anchor, "a_side": g.get("a_side"),
             "opening": opening}
 

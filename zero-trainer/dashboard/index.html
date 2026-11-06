@@ -930,18 +930,25 @@ function gvEnsureBoard() {
     catch (e) { throw new Error('taflground bundle missing: copy dist/index.umd.cjs of the taflground package into zero-trainer/dashboard/vendor/taflground/dist/ (27 MB, kept out of git)'); }
     const { createApp, reactive, h } = Vue, TG = window.TaflGround;
     // Board and piece themes: taflground's enums, the choice kept per viewer in localStorage.
-    const themeKeys = (en) => Object.keys(en).filter(k => typeof en[k] !== 'function');
-    const pick = (store, en, fallback) => { let v = null; try { v = localStorage.getItem(store); } catch (e) {} return v && en[v] !== undefined ? v : fallback; };
-    gv.state = reactive({ pieces: [], highlight: null, size: 480,
-      boardTheme: pick('gvBoardTheme', TG.BoardTheme, 'CLASSIC_BROWN'), pieceTheme: pick('gvPieceTheme', TG.PieceTheme, 'ALPHA') });
+    // Only the themes this taflground draws by itself: the vector boards (any size) and its
+    // built-in Classic pieces; the others need images the app would pass in.
+    const vector = TG.VECTOR_THEMES;
+    const allowed = {
+      boardTheme: Object.keys(TG.BoardTheme).filter(k => typeof TG.BoardTheme[k] !== 'function' && (!vector || vector[TG.BoardTheme[k]])),
+      pieceTheme: Object.keys(TG.PieceTheme).filter(k => typeof TG.PieceTheme[k] !== 'function' && (!vector || k === 'CLASSIC')),
+    };
+    const pick = (store, key, fallback) => { let v = null; try { v = localStorage.getItem(store); } catch (e) {} return v && allowed[key].includes(v) ? v : fallback; };
+    gv.state = reactive({ pieces: [], highlight: null, size: 480, cells: 11, marking: 'corners',
+      boardTheme: pick('gvBoardTheme', 'boardTheme', 'CLASSIC_BROWN'), pieceTheme: pick('gvPieceTheme', 'pieceTheme', vector ? 'CLASSIC' : 'ALPHA') });
     for (const [id, en, key] of [['gvBoardTheme', TG.BoardTheme, 'boardTheme'], ['gvPieceTheme', TG.PieceTheme, 'pieceTheme']]) {
       const sel = $(id);
-      sel.innerHTML = themeKeys(en).map(k => `<option value="${k}">${k.toLowerCase().replace(/_/g, ' ')}</option>`).join('');
+      sel.innerHTML = allowed[key].map(k => `<option value="${k}">${k.toLowerCase().replace(/_/g, ' ')}</option>`).join('');
       sel.value = gv.state[key];
       sel.onchange = () => { gv.state[key] = sel.value; try { localStorage.setItem(id, sel.value); } catch (e) {} };
     }
     const none = new Set();
     createApp({ render: () => h(TG.TaflBoard, { piecesList: gv.state.pieces, selectableSquares: none, size: gv.state.size,
+      cells: gv.state.cells, marking: gv.state.marking,
       boardTheme: TG.BoardTheme[gv.state.boardTheme], pieceTheme: TG.PieceTheme[gv.state.pieceTheme], highlightMove: gv.state.highlight,
       preMove: null, possibleMoves: [] }) }).mount('#gvBoard');
     await gvSelfTest();
@@ -1132,7 +1139,11 @@ function gvShow(i, preview = false) {
   gv.preview = preview ? i : null;
   if (!preview) gv.ply = i;
   const p = d.plies[i], n = d.board_size, pl = gvPlayers(d);
-  if (gv.state) { gv.state.pieces = p.pieces; gv.state.highlight = p.move; }
+  if (gv.state) {
+    gv.state.cells = n || 11;
+    gv.state.marking = !d.variant || d.variant === 'copenhagen11x11' ? 'corners' : 'edges';  // Historical and Tablut win on the edge
+    gv.state.pieces = p.pieces; gv.state.highlight = p.move;
+  }
   $('gvSlider').value = gv.ply;
   $('gvPly').textContent = preview ? `preview ply ${i} · at ply ${gv.ply} / ${d.plies.length - 1}` : `ply ${i} / ${d.plies.length - 1}`;
   const last = i === d.plies.length - 1;
