@@ -38,13 +38,14 @@ Key findings from training:
 ### Native (GPU/CPU)
 
 ```bash
-# CUDA + DirectML (auto-select, default)
+# Default: CUDA, falling back to DirectML on Windows (DirectML exists on Windows only;
+# on Linux and macOS the default build is CUDA)
 cargo build --release
 
 # CUDA only
 cargo build --release --no-default-features --features cuda
 
-# DirectML only
+# DirectML only (Windows)
 cargo build --release --no-default-features --features directml
 
 # CPU only
@@ -94,9 +95,10 @@ TaflZero speaks a UCI-based protocol. Run the binary and communicate via stdin/s
 
 | Variant | File |
 |---|---|
-| Copenhagen / Historical 11×11 (default) | [copenhagen-T9-10x128-step620381.onnx](https://github.com/sovelin/taflzero/raw/main/copenhagen-T9-10x128-step620381.onnx) (T9, 10×128, 24 input planes, fp16) |
+| Copenhagen / Historical 11×11 (default) | [copenhagen-T9-10x128-step620381.onnx](https://github.com/sovelin/taflzero/raw/v0.3.0/copenhagen-T9-10x128-step620381.onnx) (T9, 10×128, 24 input planes, fp16) |
+| Copenhagen / Historical 11×11 (bigger net) | [copenhagen-T10-15x192-step673949.onnx](https://github.com/sovelin/taflzero/raw/main/copenhagen-T10-15x192-step673949.onnx) (T10, 15×192, 24 input planes, fp16) |
 | Copenhagen / Historical 11×11 (previous net) | [copenhagen11x11.onnx](https://github.com/sovelin/taflzero/raw/v0.2.0/copenhagen11x11.onnx) |
-| Tablut 9×9 | [tablut9x9.onnx](https://github.com/sovelin/taflzero/raw/v0.2.0/tablut9x9.onnx) |
+| Tablut 9×9 | [tablut9x9.onnx](https://github.com/sovelin/taflzero/raw/v0.3.0/tablut9x9.onnx) |
 
 The T9 net (finished on 2026-10-28) is about +400 Elo stronger than the previous default,
 the T2 net `copenhagen11x11.onnx` (generation 225, trained in August 2026, the default since v0.2.0): +382 Elo (95% CI +270…+493) in 100
@@ -105,6 +107,14 @@ run's checkpoint ladder at 20 nodes.
 
 T9 trained from scratch in 4.75 days of wall-clock time (2026-10-24 to 2026-10-28) on one RTX 5080: 870,379 self-play
 games, 158.9 million positions, 620,381 training steps of 1,024 positions.
+
+The T10 net is an alternative for Copenhagen: a bigger network, 15 residual blocks × 192 channels
+(10.4M parameters against T9's 3.2M), with the same inputs and outputs, so it loads with `--net` in place of T9.
+It is about +125 Elo stronger than the final T9 net at 100 nodes a move: +125 (95% CI +104…+148) over 1000
+games (637 wins, 291 losses, 72 draws), pooled from the ten checkpoints 654,000–672,000 played against T9.
+
+T10 started on 2026-10-29 from a 15×192 net distilled on T9 data and trained until 2026-11-04 on one RTX 5080:
+828,789 self-play games, 172.7 million positions, 673,949 training steps of 1,024 positions.
 
 **Command-line arguments:**
 
