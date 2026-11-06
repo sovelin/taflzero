@@ -1435,6 +1435,8 @@ def make_handler(dash: Dashboard):
                         res = encirclements(run_dir, dash.engine_bin, q.get("source", ["selfplay"])[0], n)
                 except (ValueError, OSError) as e:
                     res = {"error": f"{type(e).__name__}: {e}"}
+                if isinstance(res, dict) and "error" not in res:
+                    res["board_size"] = run_geometry(run_dir)[0]  # the page draws boards of this size
                 self._json(res)
             elif url.path in ("/api/games", "/api/game"):
                 # Game viewer. Not under LOCK: the first index of a big file runs in its

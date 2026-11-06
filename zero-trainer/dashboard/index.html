@@ -1413,7 +1413,7 @@ function encRenderAll() {
   }).join('');
   const shown = r.examples || [];
   $('encGrid').innerHTML = (shown.length ? `<div class="why" style="grid-column: 1 / -1">${enc.pick == null ? 'the largest encirclements of the run' : `${shown.length} games with ${enc.pick} pieces encircled, spread over the run (oldest first)`}</div>` : '')
-    + shown.map((g, i) => `<div class="enc-card" data-i="${i}">${encBoard(g)}<div class="why">${g.defenders} encircled${g.king ? '' : ' (no king)'} · ring ${g.ring}${g.inside ? ` · ${g.inside} inside` : ''} · ${g.plies} plies<br>at ${fmtK(g.sample)} positions · game #${fmt(g.sample)}</div></div>`).join('');
+    + shown.map((g, i) => `<div class="enc-card" data-i="${i}">${encBoard(g, encN())}<div class="why">${g.defenders} encircled${g.king ? '' : ' (no king)'} · ring ${g.ring}${g.inside ? ` · ${g.inside} inside` : ''} · ${g.plies} plies<br>at ${fmtK(g.sample)} positions · game #${fmt(g.sample)}</div></div>`).join('');
   $('encGrid').querySelectorAll('.enc-card').forEach(el => el.onclick = () => gvOpenGame(shown[+el.dataset.i]));
 }
 function encGames() {
@@ -1433,10 +1433,12 @@ function encRender() {
   $('encRows').querySelectorAll('tr[data-k]').forEach(tr => tr.onclick = () => { enc.pick = tr.dataset.k === 'all' ? null : +tr.dataset.k; encRender(); });
   const shown = (enc.pick == null ? games : (groups.get(enc.pick) || [])).slice(0, 60);
   $('encSub').textContent = `${total} games, newest first; ${shown.length} boards shown` + (enc.pick != null ? ` with ${enc.pick} pieces encircled` : '');
-  $('encGrid').innerHTML = shown.map((g, i) => `<div class="enc-card" data-i="${i}">${encBoard(g)}<div class="why">${g.defenders} encircled${g.king ? '' : ' (no king)'} · ring ${g.ring}${g.inside ? ` · ${g.inside} inside` : ''} · ${g.plies} plies`
+  $('encGrid').innerHTML = shown.map((g, i) => `<div class="enc-card" data-i="${i}">${encBoard(g, encN())}<div class="why">${g.defenders} encircled${g.king ? '' : ' (no king)'} · ring ${g.ring}${g.inside ? ` · ${g.inside} inside` : ''} · ${g.plies} plies`
     + (g.by ? `<br>${g.by === 'ckpt' ? g.ckpt + ' encircled ' + alabel(g.anchor) : alabel(g.anchor) + ' encircled ' + g.ckpt}` : `<br>game #${fmt(g.sample)} (worker ${g.id.split(':')[0]})`) + '</div></div>').join('');
   $('encGrid').querySelectorAll('.enc-card').forEach(el => el.onclick = () => gvOpenGame(shown[+el.dataset.i]));
 }
+// Board side of the run the encirclement boards come from (11 for runs before the API said).
+const encN = () => (enc.data && enc.data.board_size) || (enc.all && enc.all.board_size) || 11;
 // A small board of the final position: the defenders' region shaded, attackers inside it ringed in red.
 function encBoard(g, n = 11) {
   const at = new Map(g.pieces.map(p => [p.sq, p.type]));
