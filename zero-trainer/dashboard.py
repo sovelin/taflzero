@@ -423,6 +423,9 @@ class Dashboard:
             (run_dir / "dashboard.eval.json").write_text(json.dumps(eval_cfg, indent=2), encoding="utf-8")
 
         pids = {"trainer": spawn_detached(cmd, run_dir / "dashboard-trainer.log", REPO), "started": time.time()}
+        # The side-cars default to Copenhagen: a run in another variant must be judged in its own game.
+        run_cfg = (read_json(run_dir / "config.json") or {}) if resume else trainer_cfg
+        variant = str(run_cfg.get("variant") or "copenhagen11x11")
         anchors = [str((REPO / a).resolve()) for a in eval_cfg.get("anchors", [])]
         anchors = [a for a in anchors if Path(a).exists()]
         # "retired_anchors": stems the anchor eval no longer plays (the ladder still does).
@@ -434,7 +437,7 @@ class Dashboard:
                     "--nodes", str(eval_cfg.get("nodes", 400)), "--workers", str(eval_cfg.get("workers", 2)),
                     "--playout-every", str(eval_cfg.get("playout_every", 5)),
                     "--max-plies", str(eval_cfg.get("max_plies", 400)),
-                    "--min-gap", str(eval_cfg.get("min_gap", 0))]
+                    "--min-gap", str(eval_cfg.get("min_gap", 0)), "--variant", variant]
             if eval_cfg.get("blind", False):
                 ecmd.append("--blind")
             pids["eval"] = spawn_detached(ecmd, run_dir / "dashboard-eval.log", REPO)
@@ -443,7 +446,8 @@ class Dashboard:
         if ladder:
             lcmd = [sys.executable, str(HERE / "eval_ladder.py"), "--run-dir", str(run_dir), "--engine-bin", str(engine),
                     "--nodes", str(ladder.get("nodes", 20)), "--pairs", str(ladder.get("pairs", 4)),
-                    "--opponents", str(ladder.get("opponents", 8)), "--workers", str(ladder.get("workers", 1))]
+                    "--opponents", str(ladder.get("opponents", 8)), "--workers", str(ladder.get("workers", 1)),
+                    "--variant", variant]
             if anchors:
                 lcmd += ["--anchors", ",".join(anchors)]
             pids["ladder"] = spawn_detached(lcmd, run_dir / "dashboard-ladder.log", REPO)
@@ -823,7 +827,7 @@ def game_reason(feat: Path, last_sample: int, result: str) -> str:
 
 
 def selfplay_game(run_dir: Path, worker: int, first: int) -> dict:
-    n = run_geometry(run_dir)[0]
+    n, variant = run_geometry(run_dir)
     idx = game_index(run_dir, worker)
     with idx.lock:
         # games are in file order, so first_sample is ascending: binary search.
@@ -858,7 +862,7 @@ def selfplay_game(run_dir: Path, worker: int, first: int) -> dict:
     last = sample_fields(raws[-1], n)
     result = game_result(last["stm"], last["value"], last["flags"])
     reason = game_reason(bin_path.with_suffix(".feat"), first + samples - 1, result)
-    return {"source": "selfplay", "id": f"{worker}:{first}", "board_size": n, "plies": plies,
+    return {"source": "selfplay", "id": f"{worker}:{first}", "board_size": n, "variant": variant, "plies": plies,
             "result": result, "reason": reason}
 
 
@@ -931,7 +935,7 @@ def match_game(run_dir: Path, engine: Path, gid: str) -> dict:
                       "opening": i < opening, "top": []})
     score = g.get("score")
     result = "draw" if score == "d" else ("atk" if (score == "w") == a_attacks else "def")
-    return {"source": "match", "id": gid, "board_size": n, "plies": plies, "result": result,
+    return {"source": "match", "id": gid, "board_size": n, "variant": variant, "plies": plies, "result": result,
             "reason": g.get("reason") or "unknown", "ckpt": ck, "anchor": anchor, "a_side": g.get("a_side"),
             "opening": opening}
 
@@ -1431,6 +1435,8 @@ def make_handler(dash: Dashboard):
                         res = encirclements(run_dir, dash.engine_bin, q.get("source", ["selfplay"])[0], n)
                 except (ValueError, OSError) as e:
                     res = {"error": f"{type(e).__name__}: {e}"}
+                if isinstance(res, dict) and "error" not in res:
+                    res["board_size"] = run_geometry(run_dir)[0]  # the page draws boards of this size
                 self._json(res)
             elif url.path in ("/api/games", "/api/game"):
                 # Game viewer. Not under LOCK: the first index of a big file runs in its

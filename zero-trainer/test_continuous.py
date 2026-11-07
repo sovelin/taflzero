@@ -623,14 +623,15 @@ def test_seed_run_opens_the_window_with_its_newest_games(tmp_path: Path) -> None
     write_games(seed_dir / "data" / "worker0.bin", games)
     size = (seed_dir / "data" / "worker0.bin").stat().st_size
     (seed_dir / "state.json").write_text(json.dumps(
-        {"offsets": {"worker0.bin": size}, "sample_offsets": {"worker0.bin": sum(lengths)}}))
+        {"offsets": {"worker0.bin": size}, "sample_offsets": {"worker0.bin": sum(lengths)}, "generated": 5000}))
     # The newest 15 positions start inside game 6 (6 + 7 = 13 < 15 <= 18): the games
     # from the first one starting at or after that point, 6 and 7, are taken.
     run_dir = tmp_path / "run"
     args = parse_config(_tiny_args(run_dir, **{"seed-run": str(seed_dir), "seed-samples": 15, "min-samples": 10}))
     run = ContinuousRun(args)
     assert len(run.buffer) == 6 + 7
-    assert run.current_window() == replay_window(15, 1000, args.window_alpha, args.window_beta, args.window_cap)
+    # The window continues the seed run's: it is sized by all the seed run generated.
+    assert run.current_window() == replay_window(5000, 1000, args.window_alpha, args.window_beta, args.window_cap)
     assert all(c.source == "seed:worker0.bin" for c in run.buffer._chunks)
 
     # Own games come after the seed ones; the window bookkeeping of the run's own file
@@ -758,3 +759,20 @@ def test_resume_after_a_crash_uses_the_saved_step_weights_and_cuts_the_tail(tmp_
     assert (data / "worker0.bin").stat().st_size == size
     log = (run_dir / "log.txt").read_text(encoding="utf-8")
     assert "torn tail cut" in log and "weights from step000003.qnxx" in log
+
+
+def test_dashboard_runs_the_eval_and_the_ladder_in_the_run_variant(tmp_path: Path, monkeypatch) -> None:
+    import dashboard
+    spawned: list[list[str]] = []
+    monkeypatch.setattr(dashboard, "spawn_detached", lambda cmd, log, cwd: spawned.append(cmd) or len(spawned))
+    monkeypatch.setattr(dashboard, "load_presets", lambda: {"hist": {
+        "trainer": {"variant": "historical11x11"},
+        "eval": {"anchors": ["copenhagen11x11.onnx"], "ladder": {"nodes": 20}}}})
+    engine = tmp_path / "taflzero.exe"
+    engine.write_bytes(b"")
+    res = dashboard.Dashboard(tmp_path / "runs", engine).start("H", "hist", {})
+    assert res.get("ok"), res
+    sidecars = [c for c in spawned if any(s in " ".join(c) for s in ("eval_anchor.py", "eval_ladder.py"))]
+    assert len(sidecars) == 2
+    for c in sidecars:
+        assert c[c.index("--variant") + 1] == "historical11x11"
