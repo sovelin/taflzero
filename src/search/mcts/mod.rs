@@ -54,6 +54,12 @@ pub struct MCTSConfig {
     pub fpu_reduction: f32,
     /// Select a child with a proven result by that exact value (+-1) instead of its mean.
     pub proven_q: bool,
+    /// Give the net the game's ply count (its `ply` input plane). Self-play games end
+    /// undecided at a ply limit, so a net with that plane learns that a position close
+    /// to it is drawn; real games have no such limit, and with the real count such a net
+    /// sees a won position at ply ~390 as dead equal until the search proves the win.
+    /// Off in play: the plane reads 0, as at the start of a game.
+    pub ply_input: bool,
 }
 
 /// A play-time override from the environment (`TAFLZERO_SEARCH_BATCH`, `TAFLZERO_CPUCT`,
@@ -80,6 +86,7 @@ impl MCTSConfig {
             c_puct: play_env("TAFLZERO_CPUCT", C_PUCT),
             fpu_reduction: play_env("TAFLZERO_FPU", PLAY_FPU_REDUCTION),
             proven_q: play_env("TAFLZERO_PROVEN_Q", 1u8) != 0,
+            ply_input: play_env("TAFLZERO_PLY_INPUT", 0u8) != 0,
         }
     }
 
@@ -94,6 +101,7 @@ impl MCTSConfig {
             c_puct: C_PUCT,
             fpu_reduction: 0.0,
             proven_q: false,
+            ply_input: true,
         }
     }
 }
@@ -566,8 +574,9 @@ fn expand_node(
     node_id: NodeId,
     nn: &mut NeuralNet,
     move_gen: &mut MoveGen,
+    ply_input: bool,
 ) -> f32 {
-    let position = NnInput::from_board(board, move_gen, nn.planes());
+    let position = NnInput::from_board_for(board, move_gen, nn.planes(), ply_input);
     let nn_out = nn.evaluate_position(&position, board.precomputed());
 
     let moves = get_left_moves(board, move_gen);
@@ -871,7 +880,7 @@ fn select_leaf(
         }
     } else {
         // Need NN evaluation — collect position and legal moves
-        let position = NnInput::from_board(board, move_gen, nn_planes);
+        let position = NnInput::from_board_for(board, move_gen, nn_planes, config.ply_input);
         let moves = get_left_moves(board, move_gen);
 
         let mut child_zobrists = Vec::with_capacity(moves.len());
@@ -1029,7 +1038,14 @@ pub fn mcts_search(
     // value so the first PUCT selection has sqrt(parent) > 0 and a correct
     // FPU baseline — otherwise sim #1 always lands on children[0].
     if tree.get_root().is_leaf() {
-        let root_value = expand_node(board, tree, root_id, nn, &mut mv_generator);
+        let root_value = expand_node(
+            board,
+            tree,
+            root_id,
+            nn,
+            &mut mv_generator,
+            config.ply_input,
+        );
         backpropagate(tree, &[root_id], root_value);
     }
 
@@ -1317,6 +1333,31 @@ mod puct_tests {
             (t.c_puct, t.fpu_reduction, t.proven_q),
             (C_PUCT, 0.0, false)
         );
+    }
+
+    // Play leaves the ply plane at 0 (no ply limit in real games), self-play keeps it.
+    #[test]
+    fn ply_input_off_in_play_on_in_training() {
+        if std::env::var("TAFLZERO_PLY_INPUT").is_err() {
+            assert!(!MCTSConfig::default_play().ply_input);
+        }
+        assert!(MCTSConfig::default_train().ply_input);
+
+        let planes = PlaneSet::parse("base,ply").expect("plane set");
+        let mut board = Board::new();
+        board.setup_initial_position().expect("initial position");
+        let mut mg = MoveGen::new();
+        // A few moves in, so the real count is not 0.
+        for _ in 0..4 {
+            let mv = get_left_moves(&mut board, &mut mg)[0];
+            let mut undo = UndoMove::new();
+            board.make_move(mv, &mut undo).expect("move");
+        }
+        let real = NnInput::from_board_for(&mut board, &mut mg, &planes, true);
+        let play = NnInput::from_board_for(&mut board, &mut mg, &planes, false);
+        assert_eq!(real.extra.as_ref().map(|x| x.ply), Some(4));
+        assert_eq!(play.extra.as_ref().map(|x| x.ply), Some(0));
+        assert_eq!(real.bp.as_bytes(), play.bp.as_bytes());
     }
 
     // The well-liked move A (prior 0.81) is visited at Q 0; B (0.19) is untried. Without
