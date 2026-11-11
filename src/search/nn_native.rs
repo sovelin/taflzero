@@ -582,6 +582,8 @@ impl NeuralNet {
         batch_size: usize,
         trt: bool,
     ) -> Result<(Session, usize, PlaneSet), String> {
+        // Read only by the GPU providers' branches below; a CPU-only build has none.
+        let _ = trt;
         #[cfg(all(dml, not(feature = "cuda")))]
         println!("[NN] Backend: DirectML");
         #[cfg(feature = "openvino")]
