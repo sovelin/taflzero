@@ -39,6 +39,8 @@ sysinfo = "0.38"
 [features]
 default = ["cuda", "directml"]
 cuda = ["ort/cuda"]
+# TensorRT provider (needs nvinfer_10.dll & co. on PATH); only --bench-nn --trt uses it.
+tensorrt = ["cuda", "ort/tensorrt"]
 # DirectML exists on Windows only: there ort is always built with it (below) and this
 # feature lets the engine use it (build.rs turns it into cfg `dml`); elsewhere it does
 # nothing, so the default build also links on Linux and macOS.

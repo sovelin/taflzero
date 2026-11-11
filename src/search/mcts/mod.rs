@@ -26,6 +26,10 @@ type NodeId = usize;
 /// PUCT exploration constant, shared by selection and policy target pruning.
 pub const C_PUCT: f32 = 1.4;
 
+/// FPU of play (UCI, WASM, matches). With 8-leaf batches it measured +42 Elo
+/// [-7, +90] at 100 nodes together with `proven_q`; at 1 leaf it is neutral.
+pub const PLAY_FPU_REDUCTION: f32 = 0.25;
+
 pub struct MCTSConfig {
     /// Dirichlet noise alpha (0.0 = no noise). Typical: 0.03 for large boards, 0.3 for small.
     pub dirichlet_alpha: f32,
@@ -41,6 +45,27 @@ pub struct MCTSConfig {
     /// Gumbel AlphaZero selection at the root and inside the tree. `None` = PUCT.
     /// With Gumbel on, Dirichlet noise, forced playouts and temperature are ignored.
     pub gumbel: Option<GumbelConfig>,
+    /// PUCT exploration constant of in-tree selection (Gumbel's root ignores it).
+    pub c_puct: f32,
+    /// First-play urgency: an unvisited child counts as the parent's Q minus this times
+    /// sqrt(prior mass of the children already visited or pending), as lc0 does. With
+    /// leaf batches the pending ones count, so a batch stays among the moves the policy
+    /// likes instead of spreading over every untried move. 0 = parent's Q.
+    pub fpu_reduction: f32,
+    /// Select a child with a proven result by that exact value (+-1) instead of its mean.
+    pub proven_q: bool,
+}
+
+/// A play-time override from the environment (`TAFLZERO_SEARCH_BATCH`, `TAFLZERO_CPUCT`,
+/// `TAFLZERO_FPU`), so a UCI engine started by an outside harness that passes no flags
+/// can be given other search settings. Unset or unparsable: the built-in value.
+fn play_env<T: std::str::FromStr>(name: &str, default: T) -> T {
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(v) = std::env::var(name).ok().and_then(|v| v.parse().ok()) {
+        return v;
+    }
+    let _ = name;
+    default
 }
 
 impl MCTSConfig {
@@ -49,9 +74,12 @@ impl MCTSConfig {
             dirichlet_alpha: 0.0,
             dirichlet_epsilon: 0.0,
             temperature: 0.0,
-            batch_size: 8,
+            batch_size: play_env("TAFLZERO_SEARCH_BATCH", 8usize).max(1),
             forced_playouts_k: 0.0,
             gumbel: None,
+            c_puct: play_env("TAFLZERO_CPUCT", C_PUCT),
+            fpu_reduction: play_env("TAFLZERO_FPU", PLAY_FPU_REDUCTION),
+            proven_q: play_env("TAFLZERO_PROVEN_Q", 1u8) != 0,
         }
     }
 
@@ -63,6 +91,9 @@ impl MCTSConfig {
             batch_size: 8,
             forced_playouts_k: 2.0,
             gumbel: None,
+            c_puct: C_PUCT,
+            fpu_reduction: 0.0,
+            proven_q: false,
         }
     }
 }
@@ -421,14 +452,14 @@ fn seal_proven_children(tree: &mut MCTSTree, node_id: NodeId, proofs: &[i8]) {
 /// playouts: a child whose visits are below sqrt(k * prior * parent_visits) is
 /// selected unconditionally (largest deficit first), so root Dirichlet noise
 /// reliably translates into exploration.
-fn puct_select(tree: &MCTSTree, from_id: NodeId, forced_k: f32) -> NodeId {
+fn puct_select(tree: &MCTSTree, from_id: NodeId, forced_k: f32, config: &MCTSConfig) -> NodeId {
     let from = tree.get_node(from_id);
     let mut best_score = f32::NEG_INFINITY;
     let mut best_child: Option<NodeId> = None;
 
     let parent_effective = from.visits + from.virtual_loss;
     let sqrt_parent = parent_effective.sqrt();
-    let c = C_PUCT;
+    let c = config.c_puct;
 
     if forced_k > 0.0 && from.visits > 0.0 {
         let mut best_deficit = 0.0f32;
@@ -452,19 +483,32 @@ fn puct_select(tree: &MCTSTree, from_id: NodeId, forced_k: f32) -> NodeId {
     }
 
     // FPU reduction: unvisited children are assumed worse than parent average
-    const FPU_REDUCTION: f32 = 0.0;
     let parent_q = if from.visits > 0.0 {
         -(from.wins / from.visits)
     } else {
         0.0
     };
-    let fpu_value = parent_q - FPU_REDUCTION;
+    let fpu_value = if config.fpu_reduction > 0.0 {
+        let visited_prior: f32 = from
+            .children
+            .iter()
+            .map(|id| tree.get_node(*id))
+            .filter(|c| c.visits + c.virtual_loss > 0.0)
+            .map(|c| c.prior)
+            .sum();
+        parent_q - config.fpu_reduction * visited_prior.sqrt()
+    } else {
+        parent_q
+    };
 
     for id in from.children.iter() {
         let child = tree.get_node(*id);
 
         let effective_visits = child.visits + child.virtual_loss;
-        let q = if effective_visits > 0.0 {
+        // `proven` is from the child's side to move; the parent picks by its own view.
+        let q = if config.proven_q && child.proven != 0 {
+            -(child.proven as f32)
+        } else if effective_visits > 0.0 {
             (child.wins - child.virtual_loss) / effective_visits
         } else {
             fpu_value
@@ -773,7 +817,7 @@ fn select_leaf(
                 } else {
                     0.0
                 };
-                puct_select(tree, cur, forced_k)
+                puct_select(tree, cur, forced_k, config)
             }
         };
         path.push(cur);
@@ -1233,5 +1277,69 @@ fn report_iteration(
         }
     } else if let Some(best_id) = get_best_child(tree, 0.0) {
         response_from_move(best_id, tree, elapsed, callback, iteration, None);
+    }
+}
+
+#[cfg(test)]
+mod puct_tests {
+    use super::*;
+
+    /// A root with `visits` visits at Q 0 and one child per `(prior, visits, wins,
+    /// virtual_loss, proven)`.
+    fn tree(visits: f32, children: &[(f32, f32, f32, f32, i8)]) -> MCTSTree {
+        let mut t = MCTSTree::new();
+        let mut root = MCTSNode::new_root(0);
+        root.expanded = true;
+        root.visits = visits;
+        t.nodes.push(root);
+        for (i, &(prior, v, w, vl, proven)) in children.iter().enumerate() {
+            let mut c = MCTSNode::new_child(Move::default(), ROOT_ID, prior, 0.0, i as u64 + 1);
+            (c.visits, c.wins, c.virtual_loss, c.proven) = (v, w, vl, proven);
+            t.nodes.push(c);
+            t.nodes[ROOT_ID].append_child(i + 1);
+        }
+        t
+    }
+
+    #[test]
+    fn play_and_train_defaults() {
+        if std::env::var("TAFLZERO_FPU").is_ok() || std::env::var("TAFLZERO_PROVEN_Q").is_ok() {
+            return;
+        }
+        let c = MCTSConfig::default_play();
+        assert_eq!(
+            (c.c_puct, c.fpu_reduction, c.proven_q),
+            (C_PUCT, PLAY_FPU_REDUCTION, true)
+        );
+        // Self-play keeps the old PUCT settings (T9 and later search with Gumbel anyway).
+        let t = MCTSConfig::default_train();
+        assert_eq!(
+            (t.c_puct, t.fpu_reduction, t.proven_q),
+            (C_PUCT, 0.0, false)
+        );
+    }
+
+    // The well-liked move A (prior 0.81) is visited at Q 0; B (0.19) is untried. Without
+    // FPU, B's optimistic first-play value wins; with it, B pays 0.25 * sqrt(0.81).
+    #[test]
+    fn fpu_scales_with_the_visited_prior() {
+        let t = tree(4.0, &[(0.81, 4.0, 0.0, 0.0, 0), (0.19, 0.0, 0.0, 0.0, 0)]);
+        let mut cfg = MCTSConfig::default_play();
+        cfg.fpu_reduction = 0.0;
+        assert_eq!(puct_select(&t, ROOT_ID, 0.0, &cfg), 2);
+        cfg.fpu_reduction = 0.25;
+        assert_eq!(puct_select(&t, ROOT_ID, 0.0, &cfg), 1);
+    }
+
+    // A has the better mean, but its position is a proven win for the side to move
+    // there, so a loss for the root: with `proven_q` the root takes B.
+    #[test]
+    fn proven_q_avoids_a_proven_loss() {
+        let t = tree(5.0, &[(0.9, 4.0, 2.0, 0.0, 1), (0.1, 1.0, 0.0, 0.0, 0)]);
+        let mut cfg = MCTSConfig::default_play();
+        cfg.proven_q = false;
+        assert_eq!(puct_select(&t, ROOT_ID, 0.0, &cfg), 1);
+        cfg.proven_q = true;
+        assert_eq!(puct_select(&t, ROOT_ID, 0.0, &cfg), 2);
     }
 }
