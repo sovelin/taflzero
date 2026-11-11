@@ -185,6 +185,75 @@ class Chunk:
         )
 
 
+@dataclass(frozen=True)
+class DecodeSettings:
+    """A buffer's decoding options: all a worker process needs to decode its samples."""
+    board_size: int
+    planes: str
+    z_lambda: float
+    value_gamma: float
+    extended: bool
+
+
+def sample_payload(chunk: Chunk, i: int) -> tuple:
+    """Everything of sample i that decoding reads: its record, the next one of the game
+    (the opponent-reply target), its side-file record, plies left, result and td row.
+    Small and picklable: a worker decodes it without the buffer."""
+    return (
+        chunk.raw[i],
+        chunk.raw[i + 1] if i + 1 < len(chunk) else None,
+        chunk.feat[i] if chunk.feat is not None else None,
+        int(chunk.plies_left[i]),
+        bool(chunk.result_known[i]),
+        float(chunk.value[i]),
+        chunk.td[i] if chunk.td is not None else None,
+    )
+
+
+def decode_record(geom: BoardGeometry, spec, s: DecodeSettings, payload: tuple, sym: int):
+    """Decode one sample (a `sample_payload`) with D4 symmetry `sym` into numpy pieces."""
+    raw, raw_next, record, plies_left, known, value, td_row = payload
+    d = decode_sample(raw, geom, s.z_lambda, False, s.value_gamma, plies_left)
+
+    # Opponent-reply target: the next sample of the same game (chunks are
+    # whole games, so i+1 is always the opponent's position).
+    aux_valid = False
+    if raw_next is not None:
+        aux_policy, aux_legal, aux_valid = decode_aux_policy(raw_next, geom)
+    else:
+        aux_policy = np.zeros(geom.policy_size, dtype=np.float32)
+        aux_legal = np.zeros(geom.policy_size, dtype=np.float32)
+
+    planes = d.planes
+    if not spec.is_base:
+        planes = stack_planes(planes, spec, record, geom)
+    legal = d.legal_mask
+    policy = d.policy
+    corner = d.corner_class
+    if sym > 0:
+        planes = _apply_board_sym(planes, sym)
+        perm = geom.policy_perms[sym].numpy()
+        policy = policy[perm]
+        legal = legal[perm]
+        aux_policy = aux_policy[perm]
+        aux_legal = aux_legal[perm]
+        corner = geom.corner_perms[sym][corner]
+
+    row = (
+        planes, legal, policy, np.float32(d.value_target),
+        np.float32(1.0 if d.policy_valid else 0.0),
+        aux_policy, aux_legal.astype(bool), np.float32(1.0 if aux_valid else 0.0),
+        np.int64(corner), np.float32(d.root_q),
+        np.float32(plies_left / MOVES_LEFT_SCALE),
+        np.float32(1.0 if known else 0.0),
+    )
+    if not s.extended:
+        return row
+    z = np.float32(value if known else 0.0)
+    td = td_row if td_row is not None else np.zeros(0, dtype=np.float32)
+    return row + (z, td)
+
+
 class ReplayBuffer:
     """Game chunks in arrival order; uniform sampling over the last `window`
     positions.
@@ -381,51 +450,13 @@ class ReplayBuffer:
 
     # ─── decoding ───────────────────────────────────────────────────────────
 
+    def decode_settings(self) -> "DecodeSettings":
+        """What decoding a sample needs besides its data (picklable, for worker processes)."""
+        return DecodeSettings(self._geom.board_size, self._spec.canonical, self._z_lambda, self._value_gamma, self._extended)
+
     def decode_one(self, chunk: Chunk, i: int, sym: int):
         """Decode sample i of a chunk with D4 symmetry `sym` into numpy pieces."""
-        geom = self._geom
-        d = decode_sample(chunk.raw[i], geom, self._z_lambda, False,
-                          self._value_gamma, int(chunk.plies_left[i]))
-
-        # Opponent-reply target: the next sample of the same game (chunks are
-        # whole games, so i+1 is always the opponent's position).
-        aux_valid = False
-        if i + 1 < len(chunk):
-            aux_policy, aux_legal, aux_valid = decode_aux_policy(chunk.raw[i + 1], geom)
-        else:
-            aux_policy = np.zeros(geom.policy_size, dtype=np.float32)
-            aux_legal = np.zeros(geom.policy_size, dtype=np.float32)
-
-        planes = d.planes
-        if not self._spec.is_base:
-            record = chunk.feat[i] if chunk.feat is not None else None
-            planes = stack_planes(planes, self._spec, record, geom)
-        legal = d.legal_mask
-        policy = d.policy
-        corner = d.corner_class
-        if sym > 0:
-            planes = _apply_board_sym(planes, sym)
-            perm = geom.policy_perms[sym].numpy()
-            policy = policy[perm]
-            legal = legal[perm]
-            aux_policy = aux_policy[perm]
-            aux_legal = aux_legal[perm]
-            corner = geom.corner_perms[sym][corner]
-
-        known = bool(chunk.result_known[i])
-        row = (
-            planes, legal, policy, np.float32(d.value_target),
-            np.float32(1.0 if d.policy_valid else 0.0),
-            aux_policy, aux_legal.astype(bool), np.float32(1.0 if aux_valid else 0.0),
-            np.int64(corner), np.float32(d.root_q),
-            np.float32(chunk.plies_left[i] / MOVES_LEFT_SCALE),
-            np.float32(1.0 if known else 0.0),
-        )
-        if not self._extended:
-            return row
-        z = np.float32(chunk.value[i] if known else 0.0)
-        td = chunk.td[i] if chunk.td is not None else np.zeros(0, dtype=np.float32)
-        return row + (z, td)
+        return decode_record(self._geom, self._spec, self.decode_settings(), sample_payload(chunk, i), sym)
 
     def sample(self, batch_size: int, window: int, rng: np.random.Generator):
         """A training batch in `compute_batch_loss` layout:
