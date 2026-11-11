@@ -253,6 +253,21 @@ impl NnInput {
             .then(|| Box::new(ExtraFeatures::from_board(board, mg)));
         Self { bp, extra }
     }
+
+    /// `from_board`, with the ply count left at 0 unless `ply_input` (see
+    /// `MCTSConfig::ply_input`).
+    pub fn from_board_for(
+        board: &mut Board,
+        mg: &mut MoveGen,
+        planes: &PlaneSet,
+        ply_input: bool,
+    ) -> Self {
+        let mut input = Self::from_board(board, mg, planes);
+        if !ply_input && let Some(extra) = input.extra.as_mut() {
+            extra.ply = 0;
+        }
+        input
+    }
 }
 
 /// Fills one sample's input planes (`planes.sample_size` floats, zeroed by the caller).

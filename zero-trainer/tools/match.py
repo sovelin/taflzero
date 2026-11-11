@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import math
 import os
 import random
@@ -181,6 +182,8 @@ def main() -> None:
     ap.add_argument("--json", default=None)
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--engine-args", default="",
+                    help="extra flags for the engine, e.g. per-side search settings: '--a-cpuct 2.0 --b-fpu 0.25'")
     ap.add_argument("--progress", default=None, help="JSON file rewritten after every pair (live score for a dashboard)")
     ap.add_argument("--games-log", default=None,
                     help="append one line per match with every game's ending (default: eval.games.jsonl next to --progress)")
@@ -232,6 +235,7 @@ def main() -> None:
            "--search-batch", str(args.search_batch)]
     if args.seed is not None:
         cmd += ["--seed", str(args.seed)]
+    cmd += shlex.split(args.engine_args)
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1, env=env,
                             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
 
