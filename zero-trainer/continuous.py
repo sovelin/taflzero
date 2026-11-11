@@ -120,6 +120,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--workers", type=int, default=None, help="engine processes (default cpu_count - train_threads - 1, max 8); 0 = trainer only")
     p.add_argument("--train-threads", type=int, default=2)
     p.add_argument("--decode-threads", type=int, default=1)
+    p.add_argument("--prefetch-workers", type=int, default=0,
+                   help="processes decoding batches ahead while the GPU trains (prefetch.py); 0 = in the trainer thread")
     p.add_argument("--batch", type=int, default=512)
     p.add_argument("--lr", type=float, default=None, help="default: sgd 0.02*batch/1024, adamw 5e-4")
     p.add_argument("--optimizer", choices=["sgd", "adamw"], default="sgd")
@@ -575,6 +577,7 @@ class ContinuousRun:
         torch.set_num_threads(args.train_threads)
 
         self.lock = threading.Lock()
+        self._prefetch = None  # BatchPrefetcher, made on the first batch with --prefetch-workers
         self.buffer = ReplayBuffer(
             self.geom, z_lambda=args.value_lambda, augment=True, value_gamma=args.value_gamma,
             max_bytes=args.buffer_max_bytes, decode_threads=args.decode_threads,
@@ -935,6 +938,22 @@ class ContinuousRun:
         return StepStats(loss, float(p_loss.item()), float(v_loss.item()), float(ap_loss.item()),
                          float(c_loss.item()), float(ml_loss.item()), grad_norm, unknown_frac, lr, extra)
 
+    def next_batch(self, window: int):
+        """The next training batch: decoded ahead by worker processes with
+        --prefetch-workers (the same batches, in the same order), else here."""
+        if self.args.prefetch_workers <= 0:
+            return self.sample_batch(window)
+        if self._prefetch is None:
+            from prefetch import BatchPrefetcher
+            self._prefetch = BatchPrefetcher(self.buffer, self.lock, self.rng, self.args.batch, self.args.prefetch_workers)
+            self.log(f"[train] batches decoded ahead by {self.args.prefetch_workers} worker processes")
+        return self._prefetch.next(window)
+
+    def close_prefetch(self) -> None:
+        if self._prefetch is not None:
+            self._prefetch.close()
+            self._prefetch = None
+
     def sample_batch(self, window: int):
         with self.lock:
             idx = self.buffer.draw_indices(self.args.batch, window, self.rng)
@@ -959,7 +978,7 @@ class ContinuousRun:
                 time.sleep(0.05)
                 continue
             window = self.current_window()
-            batch = self.sample_batch(window)
+            batch = self.next_batch(window)
             st = self.train_step(batch)
             if st is None:
                 bad += 1
@@ -1204,6 +1223,7 @@ class ContinuousRun:
         self.ingest_once()
         self.save_state()
         self.pause_file.unlink(missing_ok=True)
+        self.close_prefetch()
         self.buffer.close()
         rc = 1 if self.error else 0
         self.log(f"[exit] step={self.step} generated={self.stats.generated} games={self.stats.games} rc={rc}")
