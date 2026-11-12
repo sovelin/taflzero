@@ -171,6 +171,12 @@ def build_parser() -> argparse.ArgumentParser:
                    help="share of the sampling weight given by value surprise (z vs root_q); 0 = off")
     p.add_argument("--reduced-weight", type=float, default=1.0,
                    help="sampling weight of samples searched after soft resignation; 1 = as any other")
+    p.add_argument("--no-ply-input", dest="ply_input", action="store_false",
+                   help="the net never sees the ply count: the `ply` plane reads 0 in training and the "
+                        "workers' searches (engine --no-ply-input), as in play; the plane list is unchanged")
+    p.add_argument("--mask-unknown-value", action="store_true",
+                   help="games cut at the ply / no-capture limit get no value or td target (a WDL head "
+                        "otherwise learns them as draws); policy still trains on them")
 
     # engine
     p.add_argument("--full-nodes", type=int, default=160)
@@ -530,6 +536,8 @@ def worker_command(args: argparse.Namespace, run_dir: Path, worker_id: int, net_
         cmd += ["--ramp-seconds", str(args.worker_ramp_seconds)]
     if getattr(args, "soft_resign", 0.0) > 0:
         cmd += ["--soft-resign", str(args.soft_resign), "--soft-resign-plies", str(args.soft_resign_plies)]
+    if not getattr(args, "ply_input", True):
+        cmd += ["--no-ply-input"]
     return cmd
 
 
@@ -582,10 +590,12 @@ class ContinuousRun:
             self.geom, z_lambda=args.value_lambda, augment=True, value_gamma=args.value_gamma,
             max_bytes=args.buffer_max_bytes, decode_threads=args.decode_threads,
             planes=args.planes,
-            td_horizons=parse_td_horizons(args.td_horizons), unknown_as_draw=args.value_wdl,
+            td_horizons=parse_td_horizons(args.td_horizons),
+            unknown_as_draw=args.value_wdl and not args.mask_unknown_value,
             surprise_policy=args.surprise_policy, surprise_value=args.surprise_value,
             reduced_weight=args.reduced_weight,
             extended_batch=bool(parse_td_horizons(args.td_horizons)) or args.value_wdl,
+            ply_input=args.ply_input,
         )
         self.stats = SelfplayStats()
         self.step = 0
@@ -923,6 +933,7 @@ class ContinuousRun:
             amp_dtype=self.amp_dtype, cheap_value_weight=a.cheap_value_weight,
             value_weight=a.value_weight, td_weight=a.td_weight,
             soft_policy_weight=a.soft_policy_weight, extra=extra,
+            mask_unknown_value=a.mask_unknown_value,
         )
         loss = float(total.item())
         if not math.isfinite(loss):

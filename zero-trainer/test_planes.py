@@ -231,6 +231,16 @@ def test_ply_plane_is_a_scaled_constant() -> None:
     assert p.shape == (1, 11, 11) and np.allclose(p, 2 / 400)
 
 
+def test_ply_plane_reads_zero_without_ply_input() -> None:
+    feat = open_features(FIX_FEAT)
+    off = extra_planes(feat[5], ["last2", "ply", "cap"], GEOM, ply_input=False)
+    on = extra_planes(feat[5], ["last2", "ply", "cap"], GEOM)
+    assert not off[4].any() and on[4].any()                 # the ply plane alone changes
+    assert np.array_equal(np.delete(off, 4, 0), np.delete(on, 4, 0))
+    spec = parse_planes("base,last2,rep_dst,king12,ply", ply_input=False)
+    assert not spec.ply_input and spec.canonical == parse_planes("base,last2,rep_dst,king12,ply").canonical
+
+
 # ─── model and trainer ───────────────────────────────────────────────────────
 
 

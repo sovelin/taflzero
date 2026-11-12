@@ -42,6 +42,7 @@ struct CliArgs {
     gumbel: Option<usize>,
     soft_resign: Option<f32>,
     soft_resign_plies: usize,
+    ply_input: bool,
     daemon: DaemonConfig,
     /// Game threads per datagen process, all served by one batching net.
     threads: usize,
@@ -94,6 +95,7 @@ fn parse_args() -> CliArgs {
     let mut gumbel: Option<usize> = None;
     let mut soft_resign: Option<f32> = None;
     let mut soft_resign_plies = 3usize;
+    let mut ply_input = true;
     let mut daemon = DaemonConfig::default();
     let mut threads = 1usize;
     // Datagen and UCI play both default to 8; `--match` follows play.
@@ -334,6 +336,7 @@ fn parse_args() -> CliArgs {
             "--soft-resign-plies" => {
                 soft_resign_plies = usize_arg(&mut args, "--soft-resign-plies", 1)
             }
+            "--no-ply-input" => ply_input = false,
             "--net-watch" => daemon.net_watch = true,
             "--stop-file" => daemon.stop_file = Some(path_arg(&mut args, "--stop-file")),
             "--pause-file" => daemon.pause_file = Some(path_arg(&mut args, "--pause-file")),
@@ -371,7 +374,7 @@ fn parse_args() -> CliArgs {
                 eprintln!(
                     "Usage: taflzero [--net <model.onnx>] [--datagen <output.bin>] [--datagen-count <N|0=unlimited>] \
                      [--gamelog <path>] [--variant <name>] [--full-nodes N] [--cheap-nodes N] [--full-prob F] \
-                     [--gumbel <considered>] [--soft-resign T] [--soft-resign-plies N] [--max-plies N] [--max-no-capture N] \
+                     [--gumbel <considered>] [--soft-resign T] [--soft-resign-plies N] [--no-ply-input] [--max-plies N] [--max-no-capture N] \
                      [--net-watch] [--stop-file <path>] [--pause-file <path>] [--worker-id N] [--threads N] \
                      [--curriculum-fraction F] [--curriculum-path <path>] [--curriculum-max-size N] \
                      [--dump-sample <output.bin>] [--nn-eval <fen>] \
@@ -405,6 +408,7 @@ fn parse_args() -> CliArgs {
         gumbel,
         soft_resign,
         soft_resign_plies,
+        ply_input,
         daemon,
         threads,
         search_batch,
@@ -786,6 +790,7 @@ fn main() {
                 search_batch,
                 soft_resign: cli.soft_resign,
                 soft_resign_plies: cli.soft_resign_plies,
+                ply_input: cli.ply_input,
             },
             limits: GameLimits {
                 max_plies: cli.max_plies,
