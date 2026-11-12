@@ -615,6 +615,9 @@ class PlaneSpec:
 
     base: tuple[int, ...]
     extras: tuple[str, ...]
+    # False: the `ply` plane reads 0 for every sample, as the engine feeds it with
+    # --no-ply-input; the plane list (and so the net's input) stays the same.
+    ply_input: bool = True
 
     @property
     def num_planes(self) -> int:
@@ -663,7 +666,7 @@ class PlaneSpec:
         return out
 
 
-def parse_planes(spec: str) -> PlaneSpec:
+def parse_planes(spec: str, ply_input: bool = True) -> PlaneSpec:
     """`base,-throne,last2` -> PlaneSpec.  `base` is the 11 planes of today, `-x`
     removes base planes, the other names append planes (docs/probe-input-planes.md).
     Unknown names, a name given twice, overlapping history groups and a removal of a
@@ -693,16 +696,18 @@ def parse_planes(spec: str) -> PlaneSpec:
     extras = tuple(n for n in names if n in EXTRA_PLANES)
     if not base and not extras:
         raise ValueError(f"no planes left in {spec!r}")
-    return PlaneSpec(base=base, extras=extras)
+    return PlaneSpec(base=base, extras=extras, ply_input=bool(ply_input))
 
 
 def _mask_plane(record, at: int, geom: BoardGeometry) -> np.ndarray:
     return _unpack_bits(bytes(record[at:at + 16]), geom.sqs)
 
 
-def extra_planes(record, names: tuple[str, ...] | list[str], geom: BoardGeometry) -> np.ndarray:
+def extra_planes(record, names: tuple[str, ...] | list[str], geom: BoardGeometry,
+                 ply_input: bool = True) -> np.ndarray:
     """The extra planes of `names` for one sample, (k, N, N) float32.  `record` is the
-    sample's 144-byte side-file record (unused, may be None, for `ones` alone)."""
+    sample's 144-byte side-file record (unused, may be None, for `ones` alone).
+    Without `ply_input` the `ply` plane is 0."""
     out: list[np.ndarray] = []
     for name in names:
         if name in _HISTORY:
@@ -718,7 +723,7 @@ def extra_planes(record, names: tuple[str, ...] | list[str], geom: BoardGeometry
         elif name == "king12":
             out += [_mask_plane(record, FEAT_KING1, geom), _mask_plane(record, FEAT_KING2, geom)]
         elif name == "ply":
-            ply = int(record[FEAT_PLY]) | (int(record[FEAT_PLY + 1]) << 8)
+            ply = int(record[FEAT_PLY]) | (int(record[FEAT_PLY + 1]) << 8) if ply_input else 0
             out.append(np.full(geom.sqs, min(ply, PLY_PLANE_SCALE) / PLY_PLANE_SCALE, dtype=np.float32))
         elif name == "cap":
             out += [_mask_plane(record, FEAT_CAP_NOW, geom), _mask_plane(record, FEAT_CAP_NEXT, geom)]
@@ -765,7 +770,7 @@ def stack_planes(base_planes: np.ndarray, spec: PlaneSpec, record, geom: BoardGe
         return base_planes
     parts = [base_planes[list(spec.base)]] if spec.base else []
     if spec.extras:
-        parts.append(extra_planes(record, spec.extras, geom))
+        parts.append(extra_planes(record, spec.extras, geom, spec.ply_input))
     return np.ascontiguousarray(np.concatenate(parts, axis=0))
 
 

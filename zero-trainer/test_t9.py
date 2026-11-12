@@ -15,7 +15,7 @@ import pytest
 import torch
 
 from az_micro_net import TaflAlphaZeroNet
-from continuous import ContinuousRun, build_model, parse_config, parse_td_horizons, worker_command
+from continuous import ContinuousRun, build_model, config_to_json, parse_config, parse_td_horizons, worker_command
 from qnxx_io import load_qnxx, save_qnxx
 from replay import FEAT2_REDUCED, FEAT_FLAGS2, FEAT_SURPRISE, ReplayBuffer, sample_weights, td_targets
 from test_continuous import GEOM, _chunk, _tiny_args, make_game, write_games
@@ -252,6 +252,19 @@ def test_wdl_loss_includes_unknown_results_scalar_loss_masks_them() -> None:
     assert v_sc == 0     # unknown results stay masked for the scalar head
 
 
+def test_mask_unknown_value_drops_undecided_games_from_the_wdl_loss() -> None:
+    torch.manual_seed(4)
+    buf = ReplayBuffer(GEOM, augment=False, unknown_as_draw=False, extended_batch=True, td_horizons=(40, 12, 4))
+    buf.add(_chunk(8, winner="undecided"), window=1000)
+    batch = _batch(buf, 8)
+    dev = torch.device("cpu")
+    wdl = _t9_model(td_heads=3, soft_policy=False)
+    total, p, v, *_ = compute_batch_loss(wdl, batch, dev, 1.0, 0.0, 0.0, False, td_weight=0.5,
+                                         mask_unknown_value=True)
+    assert v == 0 and torch.isnan(batch[13]).all()   # no value term, td targets masked
+    assert torch.isclose(total, p)                     # only the policy trains on them
+
+
 # ─── config plumbing ────────────────────────────────────────────────────────
 
 
@@ -270,7 +283,23 @@ def test_defaults_build_the_old_model_and_worker_command(tmp_path: Path) -> None
     assert not m.value_wdl and "td_head" not in m._modules and "soft_policy_head" not in m._modules
     cmd = worker_command(parse_config(_tiny_args(tmp_path / "r", **{"engine-bin": "x.exe"})),
                          tmp_path, 0, tmp_path / "n.onnx")
-    assert "--soft-resign" not in cmd
+    assert "--soft-resign" not in cmd and "--no-ply-input" not in cmd
+    assert args.ply_input and not args.mask_unknown_value
+
+
+def test_no_ply_input_and_mask_unknown_value_reach_buffer_and_workers(tmp_path: Path) -> None:
+    over = {"value-wdl": True, "td-horizons": "40,12,4", "value-lambda": 1.0, "engine-bin": "x.exe",
+            "no-ply-input": True, "mask-unknown-value": True}
+    args = parse_config(_tiny_args(tmp_path / "r", **over))
+    assert not args.ply_input and args.mask_unknown_value
+    assert "--no-ply-input" in worker_command(args, tmp_path, 0, tmp_path / "n.onnx")
+    assert not ReplayBuffer(GEOM, ply_input=False).decode_settings().ply_input
+    cfg = config_to_json(args)
+    assert cfg["ply_input"] is False and cfg["mask_unknown_value"] is True
+    (tmp_path / "r").mkdir()
+    (tmp_path / "r" / "config.json").write_text(json.dumps(cfg))
+    back = parse_config(["--resume", str(tmp_path / "r")])   # the run's config.json keeps both
+    assert not back.ply_input and back.mask_unknown_value
 
 
 def test_t9_config_builds_heads_and_passes_soft_resign(tmp_path: Path) -> None:
