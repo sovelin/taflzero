@@ -142,6 +142,8 @@ fn play_game(
     cheap_config.forced_playouts_k = 0.0;
     full_config.batch_size = search_cfg.search_batch.max(1);
     cheap_config.batch_size = search_cfg.search_batch.max(1);
+    full_config.ply_input = search_cfg.ply_input;
+    cheap_config.ply_input = search_cfg.ply_input;
     if let Some(considered) = search_cfg.gumbel {
         let g = GumbelConfig {
             considered,
@@ -406,6 +408,9 @@ pub struct SearchConfig {
     pub soft_resign: Option<f32>,
     /// Consecutive plies beyond the threshold that start the reduced state.
     pub soft_resign_plies: usize,
+    /// Give the net the game's ply count (`MCTSConfig::ply_input`). Off
+    /// (`--no-ply-input`) for a run whose net plays and trains without it.
+    pub ply_input: bool,
 }
 
 impl Default for SearchConfig {
@@ -418,6 +423,7 @@ impl Default for SearchConfig {
             search_batch: MCTSConfig::default_train().batch_size,
             soft_resign: None,
             soft_resign_plies: 3,
+            ply_input: true,
         }
     }
 }

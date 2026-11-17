@@ -57,6 +57,7 @@ def compute_batch_loss(
     td_weight: float = 0.0,
     soft_policy_weight: float = 0.0,
     extra: dict | None = None,
+    mask_unknown_value: bool = False,
 ):
     """Forward + all loss terms for one batch.
 
@@ -67,7 +68,9 @@ def compute_batch_loss(
                           needs the 14-element replay batch (z, td targets).
       soft_policy_weight  soft policy CE (model built with soft_policy).
       a WDL value head (model built with value_wdl) trains on win/draw/loss
-                          classes: games with an unknown result are draws.
+                          classes: games with an unknown result are draws, or
+                          have no value term with `mask_unknown_value` (as a
+                          scalar head always does, see below).
     `extra`, when given, receives the T9 metrics (td, soft_p, draw_pred, draw_frac).
 
     `amp_dtype` (e.g. torch.bfloat16) runs the forward pass under autocast; the
@@ -98,7 +101,7 @@ def compute_batch_loss(
         return _compute_batch_loss_t9(
             model, batch, device, defender_weight, aux_policy_weight, corner_weight, use_aux,
             decided_policy_k, moves_left_weight, amp_dtype, cheap_value_weight,
-            value_weight, td_weight, soft_policy_weight, extra,
+            value_weight, td_weight, soft_policy_weight, extra, mask_unknown_value,
         )
 
     (planes, legal_mask, pi_target, value_target,
@@ -242,7 +245,7 @@ def soft_policy_target(pi_target: torch.Tensor, legal_mask: torch.Tensor, power:
 def _compute_batch_loss_t9(
     model, batch, device, defender_weight, aux_policy_weight, corner_weight, use_aux,
     decided_policy_k, moves_left_weight, amp_dtype, cheap_value_weight,
-    value_weight, td_weight, soft_policy_weight, extra,
+    value_weight, td_weight, soft_policy_weight, extra, mask_unknown_value=False,
 ):
     """compute_batch_loss with the T9 heads; same return tuple."""
     (planes, legal_mask, pi_target, value_target,
@@ -275,6 +278,8 @@ def _compute_batch_loss_t9(
         z = batch[12].to(device)
         cls = wdl_classes(z, known)
         vw = weights * cheap_scale
+        if mask_unknown_value:
+            vw = vw * known  # a game cut at the ply limit has no result to learn
         ce = F.cross_entropy(outs["value_logits"], cls, reduction="none")
         v_loss = (ce * vw).sum() / vw.sum().clamp_min(1e-6)
         if extra is not None:

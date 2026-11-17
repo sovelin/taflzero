@@ -193,6 +193,7 @@ class DecodeSettings:
     z_lambda: float
     value_gamma: float
     extended: bool
+    ply_input: bool = True
 
 
 def sample_payload(chunk: Chunk, i: int) -> tuple:
@@ -267,13 +268,15 @@ class ReplayBuffer:
                  value_gamma: float = 1.0, max_bytes: int = 0, decode_threads: int = 1,
                  planes: str = "base", td_horizons=(), unknown_as_draw: bool = False,
                  surprise_policy: float = 0.0, surprise_value: float = 0.0,
-                 reduced_weight: float = 1.0, extended_batch: bool = False) -> None:
+                 reduced_weight: float = 1.0, extended_batch: bool = False,
+                 ply_input: bool = True) -> None:
         """T9 options (docs/plan-T9.md), all off by default: `td_horizons` fills the
         short-term value targets, `unknown_as_draw` counts ply-limit games as draws
         for them (WDL runs), `surprise_*` / `reduced_weight` make sampling weighted,
-        `extended_batch` adds z and the td targets to every batch (14 elements)."""
+        `extended_batch` adds z and the td targets to every batch (14 elements).
+        Without `ply_input` the `ply` plane reads 0 (dataset.PlaneSpec.ply_input)."""
         self._geom = geom
-        self._spec = parse_planes(planes)
+        self._spec = parse_planes(planes, ply_input)
         self._z_lambda = z_lambda
         self._augment = augment
         self._value_gamma = value_gamma
@@ -452,7 +455,8 @@ class ReplayBuffer:
 
     def decode_settings(self) -> "DecodeSettings":
         """What decoding a sample needs besides its data (picklable, for worker processes)."""
-        return DecodeSettings(self._geom.board_size, self._spec.canonical, self._z_lambda, self._value_gamma, self._extended)
+        return DecodeSettings(self._geom.board_size, self._spec.canonical, self._z_lambda, self._value_gamma,
+                              self._extended, self._spec.ply_input)
 
     def decode_one(self, chunk: Chunk, i: int, sym: int):
         """Decode sample i of a chunk with D4 symmetry `sym` into numpy pieces."""

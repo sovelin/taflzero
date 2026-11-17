@@ -41,7 +41,7 @@ def _views(buf, layout: list[tuple[tuple[int, ...], str, int]]) -> list[np.ndarr
 
 def _init_worker(settings: DecodeSettings, layout, slot_names: list[str]) -> None:
     _W["geom"] = geometry(settings.board_size)
-    _W["spec"] = parse_planes(settings.planes)
+    _W["spec"] = parse_planes(settings.planes, settings.ply_input)
     _W["settings"] = settings
     _W["shms"] = [shared_memory.SharedMemory(name=n) for n in slot_names]
     _W["views"] = [_views(s.buf, layout) for s in _W["shms"]]
